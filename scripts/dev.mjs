@@ -32,7 +32,9 @@ catch (e) {
 
 // 🔴 解析成功 ≠ 解析对了。少了 vars 照样能 JSON.parse 成功，然后本地起来一个
 //    读不到任何配置的 worker，而我会以为是代码坏了。逐条断言拿到的是我以为的那份配置。
-const MUST = ["name", "main", "vars", "version_metadata"];
+// ⚠️ assets 也在必查之列：少了它照样能 JSON.parse 成功，然后本地起来一个
+//    **没有界面**的 worker（所有页面 404），而那看起来像"资源没上传"。
+const MUST = ["name", "main", "vars", "version_metadata", "assets"];
 const missing = MUST.filter((k) => !cfg[k]);
 if (missing.length) { console.error(`🔴 wrangler.jsonc 解析结果缺字段：${missing.join(", ")} —— 解析器可能坏了，停。`); process.exit(1); }
 if (cfg.name !== "airsonde-admin") { console.error(`🔴 name=${cfg.name}，不是 airsonde-admin，停。`); process.exit(1); }

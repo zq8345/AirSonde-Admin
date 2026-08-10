@@ -252,16 +252,13 @@ app.post("/api/products/:slug/preview", async (c) => {
 app.get("/api/contract", (c) =>
   c.json({ version: "C1 v1", categories: CATEGORIES, sensors: SENSORS, statuses: STATUSES }));
 
-// 根路径：界面在 public/ 里（assets 绑定），这里只兜住没有界面时的情况。
-app.get("/", (c) =>
-  c.text(
-    "AirSonde Admin\n" +
-      "  /api/_whoami                    进程身份（部署版本 / commit / 运行环境）\n" +
-      "  /api/products                   列出产品 JSON\n" +
-      "  /api/products/:slug             读单个产品（含契约校验结果）\n" +
-      "  /api/products/:slug/preview     POST：校验 + diff 预览（**不会真写**）\n" +
-      "  /api/contract                   契约枚举（界面用，避免前端抄第二份）\n",
-  ),
-);
+// ⭐ 没匹配上的路径 → 交给静态资源（界面在 public/）。
+//
+// ⚠️ `run_worker_first: true` 意味着**所有**请求都先进 worker，包括 `/` 和 `/app.js`。
+//    Hono 默认对没匹配上的路径回 404 —— 不接这一句的话，界面**一个字节也出不来**，
+//    而症状是"打开后台是一片 404"，看起来像资源没上传。
+//    ⚠️ 这一句在鉴权中间件**之后**：静态页同样在 Access + 名单门后面，这是开
+//       run_worker_first 的全部理由。
+app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default app;

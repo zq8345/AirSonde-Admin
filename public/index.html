@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>AirSonde Admin — 产品</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- 🔴 这条横幅不是装饰。当前阶段任何"保存"都不会写入，如果不把它做成第一眼就看到、
+     且滚动时不消失的东西，人会编辑二十分钟然后以为存下去了。 -->
+<div class="banner" id="banner">
+  <strong>预览模式（A2）</strong>
+  <span>校验与 diff 都是真的，但<b>不会写入任何文件</b>。官网数据仓不会被改动。</span>
+  <span class="banner-why" id="bannerWhy"></span>
+</div>
+
+<header class="topbar">
+  <div class="brand">AirSonde <span>Admin</span></div>
+  <div class="who" id="who">读取进程身份…</div>
+</header>
+
+<main class="layout">
+  <!-- ── 左：产品列表 ── -->
+  <aside class="pane pane-list">
+    <div class="pane-head">
+      <h2>产品</h2>
+      <span class="count" id="listCount"></span>
+    </div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="搜 slug / 名称 / 型号" autocomplete="off">
+      <select id="statusFilter">
+        <option value="">全部状态</option>
+        <option value="published">published</option>
+        <option value="draft">draft</option>
+      </select>
+    </div>
+    <ul class="list" id="list"></ul>
+    <div class="empty" id="listEmpty" hidden></div>
+  </aside>
+
+  <!-- ── 右：详情 / 编辑 ── -->
+  <section class="pane pane-detail">
+    <div class="placeholder" id="placeholder">
+      <p>从左边选一个产品。</p>
+      <p class="muted">或者 <button type="button" class="link" id="newBtn">新建一个</button>（同样只做校验与预览，不写入）。</p>
+    </div>
+
+    <article class="detail" id="detail" hidden>
+      <div class="detail-head">
+        <div>
+          <h2 id="dTitle">—</h2>
+          <div class="path muted" id="dPath"></div>
+        </div>
+        <div class="tabs">
+          <button type="button" class="tab is-on" data-view="view">详情</button>
+          <button type="button" class="tab" data-view="edit">编辑</button>
+        </div>
+      </div>
+
+      <!-- 校验结果：读出来就校验，不等到保存时才说 -->
+      <div id="issues"></div>
+
+      <!-- 详情视图 -->
+      <div id="viewPane"></div>
+
+      <!-- 编辑表单 -->
+      <form id="editPane" hidden autocomplete="off">
+        <div class="field">
+          <label for="f_slug">slug <b class="req">必填</b></label>
+          <input id="f_slug" name="slug" spellcheck="false">
+          <p class="hint">小写字母/数字/连字符。<b>文件名即 slug</b>，两者必须一致。改名＝改文件名，本阶段不支持。</p>
+        </div>
+
+        <div class="field">
+          <label for="f_name">name <b class="req">必填</b></label>
+          <input id="f_name" name="name">
+          <p class="hint">⚠️ 不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。</p>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="f_model">model <b class="req">必填</b></label>
+            <input id="f_model" name="model" placeholder="AS-D16" spellcheck="false">
+            <p class="hint">我方型号，<code>AS-</code> 前缀。贴牌生意，型号是我们的资产。</p>
+          </div>
+          <div class="field">
+            <label for="f_category">category <b class="req">必填</b></label>
+            <select id="f_category" name="category"></select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>sensors <b class="req">必填</b></label>
+          <div class="chips" id="f_sensors"></div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label for="f_status">status <b class="req">必填</b></label>
+            <select id="f_status" name="status"></select>
+            <p class="hint"><code>draft</code> 的产品绝不允许出现在构建产物里。</p>
+          </div>
+          <div class="field">
+            <label for="f_moq">moq</label>
+            <input id="f_moq" name="moq" type="number" min="1" step="1" placeholder="留空 = 面议">
+            <p class="hint">⚠️ 想表达「面议」就<b>留空</b>，不要填 0。</p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="f_imgmain">images.main <b class="req">必填</b></label>
+          <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false">
+          <p class="hint">相对 <code>public/</code> 的路径，不是外链。</p>
+        </div>
+
+        <div class="field">
+          <label>images.gallery</label>
+          <div class="repeat" id="f_gallery"></div>
+          <button type="button" class="add" data-add="gallery">+ 加一张</button>
+        </div>
+
+        <div class="field">
+          <label>highlights</label>
+          <div class="repeat" id="f_highlights"></div>
+          <button type="button" class="add" data-add="highlights">+ 加一条</button>
+          <p class="hint">短句。详情页参数表用 specs，别塞进这里。</p>
+        </div>
+
+        <div class="field">
+          <label>specs</label>
+          <div class="kv" id="f_specs"></div>
+          <button type="button" class="add" data-add="specs">+ 加一行</button>
+          <p class="hint">自由键值，值必须是字符串。单位和写法自己写全，别让渲染层去猜。</p>
+        </div>
+
+        <div class="field field-internal">
+          <label for="f_supplier">supplierRef <b class="internal">内部字段</b></label>
+          <input id="f_supplier" name="supplierRef" spellcheck="false">
+          <p class="hint">🔴 绝不允许出现在构建产物里。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
+        </div>
+
+        <div class="actions">
+          <!-- 🔴 按钮上不写"保存"。写"保存"而它不保存，就是在骗使用者。 -->
+          <button type="submit" class="primary" id="previewBtn">校验并预览（不会保存）</button>
+          <button type="button" id="resetBtn">还原</button>
+          <span class="actions-note">写入能力在 M2，需要总工放行 + GitHub token。</span>
+        </div>
+      </form>
+
+      <!-- 预览结果 -->
+      <div id="preview" hidden></div>
+    </article>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

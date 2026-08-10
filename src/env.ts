@@ -6,6 +6,9 @@
 //    绝不是 `|| ""` 静默兜底（契约 C1 硬规则 4）。
 
 export interface Env {
+  /** public/ 静态资源。worker 没匹配上的路径转交给它（run_worker_first=true）。 */
+  ASSETS: { fetch: (req: Request) => Promise<Response> };
+
   // ---- 平台提供，伪造不了 ----
   /** Cloudflare 写入的部署版本元数据。dev 下为占位值。 */
   CF_VERSION_METADATA?: { id: string; tag: string; timestamp: string };
