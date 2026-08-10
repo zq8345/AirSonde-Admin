@@ -30,10 +30,19 @@
     // 🔴 允许进入本后台的邮箱（逗号分隔）。**空 = 拒绝全部**，不是"不限制"。
     // ⚠️ 放在 vars 而不是 secret，是为了**和代码同一次部署**：否则会有一段
     //    "代码已 fail-closed、变量还没配"的窗口，那段时间没有人进得来。
-    // ⚠️ 这一行必须与 Cloudflare Access 策略的名单**逐字拉平**。改了 Access 就回来改这里，
-    //    否则症状是"Access 放行了却仍被拒" —— 那不是 bug，是这份名单没跟着加。
-    //    （wanew-admin 同一个病犯过两次，见该仓 wrangler.jsonc 注释。）
-    "ALLOWED_EMAILS": "zq8345@gmail.com"
+    //
+    // 🔴🔴 **这一行的正确状态是「等于 Cloudflare Access 策略的 Include Emails」，不是「够用就行」。**
+    //    改了 Access 策略就回来改这里并重新部署，否则症状是"Access 放行了却仍被拒" ——
+    //    那不是 bug，是这份名单没跟着改。
+    //
+    // 2026-08-09 M1 首发时这里只有 zq8345@gmail.com（派单只写了这一个），而 Access 策略里是三个。
+    //    Joe 用 joe@wanew.com 登录 → Access 放行、worker 拒绝 → **他被自己的后台挡在门外**。
+    //    ⚠️ 当时的修法不是"把 joe@wanew.com 加进来"，而是**把三个补齐**：
+    //       只加他这次用的那个，下次他换个邮箱登录还会被挡 —— 那是治症状，这个病治不好。
+    //    （wanew-admin 同一个病犯过两次，见该仓 wrangler.jsonc 注释。第三次在这里。）
+    //
+    // 当前值 = Access 策略 airsonde-admin 的 Include Emails，逐字拉平（2026-08-09 由 Joe 截图核对）。
+    "ALLOWED_EMAILS": "zq8345@gmail.com,zq8345@outlook.com,joe@wanew.com"
 
     // 机密（`wrangler secret put`，绝不进 git、绝不写在这里）：
     //   GITHUB_TOKEN  —— M1 **不需要**：AirSonde-Web 是公开仓，列目录匿名可读。

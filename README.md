@@ -80,35 +80,55 @@ npm run deploy
 ②挡的是①**不在**的那些情况：误开 workers.dev、Access 应用被误删、将来多一条不经 Access 的路由。
 没有它，上述任何一种发生时后台就是裸奔的，而且没有人会收到通知。
 
-🔴 **两张名单必须逐字拉平。** 改了 Access 策略就回来改 `ALLOWED_EMAILS` 并重新部署，
-否则症状是"Access 放行了却仍被拒" —— 那不是 bug，是这份名单没跟着加。
-（wanew-admin 同一个病犯过两次。）
+### 🔴 两张名单必须**同源**，不是"够用就行"
+
+`ALLOWED_EMAILS` 的正确状态是 **等于 Access 策略的 Include Emails**。改了 Access 就回来改这里
+并重新部署 —— 否则症状是"Access 放行了却仍被拒"，那不是 bug，是这份名单没跟着改。
+
+⚠️ **出事时不要只加那一个人。** 2026-08-09 M1 首发就栽在这上面：这里只有 `zq8345@gmail.com`，
+而 Access 策略里是三个，Joe 用 `joe@wanew.com` 登录 → Access 放行、worker 拒绝 →
+**他被自己的后台挡在门外**。当时的修法是把三个**补齐**，不是把他这次用的那个加进来 ——
+只加一个的话，他下次换个邮箱登录还会被挡，这个病治不好。
+（wanew-admin 同一个病犯过两次，这是第三次。）
 
 ⚠️ **空 `ALLOWED_EMAILS` = 拒绝全部**，不是"不限制"。但它是**部署错**不是"你没权限"，
 所以回 500 不回 403 —— 混成一个码，排查的人会去查用户权限，而问题在配置。
 
 ⚠️ **没有 Basic Auth 兜底 = 故意的。** M2 之后这个 worker 会持有能写数据仓的 token，兜底口就是后门。
 
-### ⛔ 待办：边缘那道门还没挂上
+### 改完 Access 名单后的自检
 
-**Cloudflare Access 应用尚未创建**（本窗令牌无 Zero Trust 权限，`POST /access/apps` → `403 auth.forbidden`）。
-
-当前状态：匿名访问 `admin.airsonde.com` 得到的 **403 来自本 worker**（②那道门），不是来自 Access。
-数据不会泄露，但**没有登录入口** —— 也就是说现在谁也进不去，包括 Joe。
-
-要补上，在 Cloudflare Zero Trust 控制台建一个 self-hosted 应用：
-
-- Application domain：`admin.airsonde.com`
-- Policy：Allow，Include → Emails → `zq8345@gmail.com`
-- 团队域已存在：`wanewgroup.cloudflareaccess.com`
-
-补完后自检（**这是反向判据：能匿名打开就是不合格**）：
+**① 边缘那道门还在不在**（反向判据：**能匿名打开就是不合格**）：
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code} %{redirect_url}\n" https://admin.airsonde.com/
 ```
 
-期望 `302` 且 redirect 指向 `wanewgroup.cloudflareaccess.com`。
+期望 `302`，且 redirect 指向 `wanewgroup.cloudflareaccess.com`。
+
+⚠️ **不要用 Cloudflare API 的 `GET /access/apps` 去确认门在不在。** 令牌权限不足时它会返回
+`success:true` **加一个空列表** —— 那是**假零**，和"真的没有应用"长得一模一样。
+判别式只认上面这条匿名 curl（302 + `Www-Authenticate: Cloudflare-Access` + `Location` 指向团队域 + `CF_AppSession` cookie）。
+
+**② worker 那道门的名单对不对**（读**生产上真正生效的值**，不是读 `wrangler.jsonc` 的字面量）：
+
+```bash
+npx wrangler deployments list
+```
+
+生效版本的 vars 可用 CF API `GET /accounts/{account_id}/workers/scripts/airsonde-admin/settings` 读出
+`ALLOWED_EMAILS` 的实际字节。⚠️ **空值和"名单里没这个人"表现完全一样**，所以要看到值本身，不能只看行为。
+
+**③ 症状分诊** —— 登录后拿到的 body 就是判别式，三句话在 `src/index.ts` 里各只出现一次：
+
+| 看到 | 含义 |
+|---|---|
+| JSON | 两道门都通 |
+| `此账号不在本后台的允许名单内。` | Access 放行了，`ALLOWED_EMAILS` 没这个邮箱 |
+| `此后台需通过 Cloudflare Access 登录（airsonde-admin 应用）。` | 会话建立了但身份头没透到 worker，是 Access 应用配置问题，不是名单问题 |
+
+⚠️ 匿名请求**根本到不了 worker**（边缘 302 拦掉），所以它不产生任何 worker 日志 ——
+别拿"日志里没东西"当作 worker 没运行/坏了的证据。
 
 ---
 
