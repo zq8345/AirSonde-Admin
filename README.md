@@ -275,6 +275,37 @@ npx wrangler deployments list
 | `/api/products` 一直是空的 | 代码坏了 / token 没配 | 先看 `dirExists`：`false` = Web 窗还没建那个目录（正常，那个目录归它） |
 | `wrangler tail` 里一条日志都没有 | worker 没运行 / 部署坏了 | **匿名请求被 Access 在边缘就 302 拦掉了，根本到不了 worker** —— 没请求进来，当然没日志。这不是 worker 的问题 |
 | 读 CF API 全部 `403 Authentication error` | CI / 权限配置被搞坏了 | **本机 wrangler 的 OAuth 令牌过期了**。跑一次 `npx wrangler whoami` 让它自己刷新。⚠️ 照着症状报出去的结论会是"CI 把权限搞坏了"——完全错误，而且听起来很有道理 |
+| `/api/products` 说 `dirExists:false`，而那个目录明明有文件 | 目录真的不存在 / GitHub API 坏了 | **`.dev.vars` 把数据源指到了 `fixtures/products`**，读的根本不是 `AirSonde-Web`。⚠️ 两种情况的输出**长得完全一样** —— 先看 `/api/_whoami` 的 `data.repo` / `data.productsDir` |
+| 本地写入报 `GITHUB_TOKEN 未配置` | token 没配好 | **本机永远不准写生产数据仓**（出站闸）。配了 token 也照样被拦 —— 已修：出站策略现在第一个判，报的是真原因 |
+
+## 🔴 每一条事实性断言，都要能回答「我是什么时候、用什么方式量的」
+
+> **顺带提及的事实，和主结论适用同一条标准。**
+
+2026-08-10 A4 交付时犯过一次：报告的主结论部分做得很严（部署前后各读一次、正对照、判别式），
+却在末尾"顺带提及"了一句「`AirSonde-Web` 的 `src/content/products/` 目前还不存在（刚确认）」——
+**那个目录里当时有 23 个文件**，而"刚确认"三个字是假的：那是 M1 时期的旧观测。
+
+⚠️ **一个陈旧观测被冠上「刚确认」送出去，比没有观测更危险 —— 它看起来是实测。**
+
+### 这次的具体成因：仪器被指到了别处，而输出长得一模一样
+
+根因不只是"引用了旧数据"。本地 `.dev.vars` 把数据源指向了**本仓的 `fixtures/products`**（见 `fixtures/README.md`）：
+
+```
+GITHUB_REPO=zq8345/AirSonde-Admin      ← 不是 AirSonde-Web
+PRODUCTS_DIR=fixtures/products         ← 不是 src/content/products
+```
+
+于是近期所有 `dirExists` 观测**描述的都是 fixtures，不是真目标** ——
+而 `dirExists:false` 这个输出，**在两种情况下长得完全一样**。
+
+⇒ **规矩**：任何观测都要连同「**我当时指着谁**」一起记。本仓的 `/api/_whoami` 会吐出
+`data.repo` / `data.productsDir`，验收脚本第 ⓪ 条就是打印并断言它们
+（见 `scripts/dryrun-e2e.mjs`）—— **那一条不是仪式，它挡的正是这次这个错。**
+
+⚠️ 特别注意：**为了安全而搭的替身环境，本身就是一种"指向别处"。** 它让你敢跑测试，
+同时也让你的观测不再描述真目标。两件事同时成立，容易只记住前一件。
 
 ## 🔴 出结论之前，先证明仪器是好的
 
