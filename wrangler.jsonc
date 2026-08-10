@@ -48,7 +48,22 @@
     //    （wanew-admin 同一个病犯过两次，见该仓 wrangler.jsonc 注释。第三次在这里。）
     //
     // 当前值 = Access 策略 airsonde-admin 的 Include Emails，逐字拉平（2026-08-09 由 Joe 截图核对）。
-    "ALLOWED_EMAILS": "zq8345@gmail.com,zq8345@outlook.com,joe@wanew.com"
+    "ALLOWED_EMAILS": "zq8345@gmail.com,zq8345@outlook.com,joe@wanew.com",
+
+    // 🔴🔴 写能力总开关。有它 ⇒ 出站口放行非 GET ⇒ 这个 worker **能改官网的数据仓**。
+    //
+    // ⚠️ 它放在这里（而不是 secret、也不是控制台）是为了**留痕**：
+    //    「谁在什么时候把写打开的」＝ 这一行的 git blame。开写是一次显式的、有作者、
+    //    有时间、有 commit message 的动作，**不会被某个新端点顺带带出来**。
+    //    ⇒ 要关掉写，删掉这一行重新部署即可，同样留痕。
+    //
+    // 由 AirSonde-总工 于 2026-08-10 派单 A4 放行（M2：真实写入）。
+    // 前置条件当时都已满足：GITHUB_TOKEN 已由 Joe 配成 secret_text（fine-grained，
+    // 仅 zq8345/AirSonde-Web，Contents Read+write，90 天），且已实测跨 CI 部署仍存在。
+    //
+    // ⚠️ 打开它**不等于**本地也能写：src/github.ts 的第二道闸独立生效 ——
+    //    DEV_BYPASS_AUTH=1 时永远拒非 GET。两道闸互不为前提。
+    "ALLOW_GITHUB_WRITE": "1"
 
     // 机密（`wrangler secret put`，绝不进 git、绝不写在这里）：
     //   GITHUB_TOKEN  —— M1 **不需要**：AirSonde-Web 是公开仓，列目录匿名可读。

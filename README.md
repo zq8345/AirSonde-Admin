@@ -114,9 +114,15 @@ push 一个空提交，**8 秒后**才出现新部署。
 
 | 来源 | 重新部署（不重新传）后 | 含义 |
 |---|---|---|
-| `wrangler secret put/bulk` 的 secret | **保留** ✅ | `GITHUB_TOKEN` 不会被 CI 部署重置，配一次即可 |
+| `wrangler secret put/bulk` 的 secret | **保留** ✅ | 一次性 probe worker 上实测 |
+| **控制台「变量和密钥」里加的密钥** | **保留** ✅ | **跨一次真实 CI 部署实测**（`1d7a0d8` → `8ad1cb9`，部署前后各读一次 bindings）：`GITHUB_TOKEN` 仍在，类型仍是 `secret_text`。⇒ **CI 部署不会重置它，配一次即可** |
 | `wrangler.jsonc` 里的 `vars` | **保留** ✅ | `ALLOWED_EMAILS` 安全（它本来就随每次部署带上） |
 | CLI `--var` 注入的变量 | **🔴 被抹掉** | 正是上面那条：deploy command 必须走 `npm run deploy` |
+
+⚠️ 第二行为什么值得单独实测：控制台密钥和 `wrangler secret put` 在机制上**应该**等价，但那是推断。
+**如果这条错了，后果是隐蔽的**——某次 CI 部署后 token 悄悄消失，后台点保存开始失败，
+而失败原因看起来像"GitHub API 权限有问题"，又是一条症状指错方向的路。
+⚠️ 注意读法：**必须在部署前后各读一次**。同一时刻读两遍证明不了任何东西。
 
 顺带实测：`wrangler secret bulk` **不会**抹掉已有的 plain vars（两者共存）。
 
