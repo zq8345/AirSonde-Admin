@@ -1,0 +1,18 @@
+{
+  "slug": "fixture-supplier-leak",
+  "name": "Portable CO2 Meter",
+  "model": "AS-P02",
+  "category": "portable",
+  "sensors": [
+    "CO2",
+    "temperature"
+  ],
+  "specs": {
+    "display": "1.8-inch LCD",
+    "source": "https://www.alibaba.com/product-detail/FAKE-not-a-real-listing_0000000000.html"
+  },
+  "images": {
+    "main": "products/fixture-supplier-leak.webp"
+  },
+  "status": "published"
+}

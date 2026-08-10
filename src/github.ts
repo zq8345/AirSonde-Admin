@@ -17,14 +17,29 @@ export class EgressDenied extends Error {}
 /**
  * 唯一出站口。
  *
- * 🔴 dev 只准读：`DEV_BYPASS_AUTH=1` 时任何非 GET 方法直接拒绝。
- *    理由不是洁癖 —— 本地没有 Access 门挡着，而这个 token 打的是**生产数据仓**，
- *    误点一下就是真提交。把闸放在出站口而不是放在每个写端点里：
- *    写端点会越来越多，出站口只有一个。
+ * 🔴 **两道闸，都在这一个地方，都是默认拒绝：**
+ *
+ *  ① 写能力总开关：没有显式设置 `ALLOW_GITHUB_WRITE=1` 时，**任何非 GET 一律拒绝**。
+ *     A2 阶段（当下）写入是 dry-run，这个变量**故意没配** ⇒ 这个 worker 在结构上
+ *     就不可能改到官网数据仓，而不是"我们记得没去调写接口"。
+ *     ⚠️ 这道闸的位置很关键：它必须在**不可逆那一步之前**。放在端点里没用 ——
+ *        端点会越来越多，第五个一定会漏；出站口只有一个。
+ *     ⇒ M2 放行时，打开写入是一次**显式的配置动作**（改 wrangler.jsonc + 部署），
+ *        不会因为某个端点被加出来就悄悄具备了写能力。
+ *
+ *  ② dev 永远只准读：即使将来 ①打开了，`DEV_BYPASS_AUTH=1` 下仍然拒绝非 GET。
+ *     本地没有 Access 门挡着，而目标是**生产数据仓**，误点一下就是真提交。
+ *     ⚠️ 两道分开写、不互为前提：①是"这个环境该不该有写能力"，②是"本机绝不写生产"。
  */
 async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method || "GET").toUpperCase();
 
+  if (method !== "GET" && env.ALLOW_GITHUB_WRITE !== "1") {
+    throw new EgressDenied(
+      `写能力未开启：本 worker 当前不允许对 GitHub 发起 ${method}（A2 阶段写入是 dry-run）。` +
+      `要开启需显式配置 ALLOW_GITHUB_WRITE=1 并重新部署 —— 这是一次有意的动作，不该被某个端点顺带带出来。`,
+    );
+  }
   if (env.DEV_BYPASS_AUTH === "1" && method !== "GET") {
     throw new EgressDenied(
       `本地开发禁止对 GitHub 发起 ${method} —— 目标是生产数据仓 ${env.GITHUB_REPO}，本地没有 Access 门挡着。`,
@@ -122,4 +137,49 @@ export async function listProducts(env: Env): Promise<ListResult> {
     }));
 
   return { ...base, dirExists: true, count: files.length, files };
+}
+
+export interface ReadResult {
+  path: string;
+  /** 文件不存在（新建产品的情形）。⚠️ 与"读失败"是两回事，后者会抛。 */
+  exists: boolean;
+  /** GitHub 上这个 blob 的 sha —— 真写入时要拿它做乐观锁，防止覆盖别人的改动。 */
+  sha: string | null;
+  /** 原始文本。⚠️ 保留原字节，不做任何归一化 —— diff 要比的是真实字节。 */
+  text: string | null;
+}
+
+/**
+ * 读单个产品文件的原文。
+ *
+ * ⚠️ 返回**原始文本**而不是解析后的对象：diff 要拿真实字节去比。
+ *    先 parse 再 stringify 会把缩进、键序、行尾都抹掉，于是 diff 显示"没变化"，
+ *    而真写进去会产生一次全文件改动。
+ */
+export async function readProductFile(env: Env, slug: string): Promise<ReadResult> {
+  const repo = env.GITHUB_REPO, ref = env.GITHUB_BRANCH, dir = env.PRODUCTS_DIR;
+  if (!repo || !ref || !dir) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH/PRODUCTS_DIR 必须全部配置。");
+
+  const path = `${dir}/${slug}.json`;
+  const res = await ghFetch(env, `/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`);
+
+  if (res.status === 404) return { path, exists: false, sha: null, text: null };
+  if (!res.ok) throw new Error(`GitHub API ${res.status}：${(await res.text()).slice(0, 300)}`);
+
+  const j = (await res.json()) as any;
+  if (Array.isArray(j)) throw new Error(`${path} 是一个目录，不是文件。`);
+  if (j.encoding !== "base64" || typeof j.content !== "string") {
+    // 大文件 GitHub 会返回 encoding:"none" 且 content 为空。静默当成空文件 = 把"读不到"
+    // 伪装成"里面没东西"，随后 dry-run 会显示"整份新增"，而真写入会覆盖掉真实内容。
+    throw new Error(`GitHub 返回了非 base64 内容（encoding=${j.encoding}）——拒绝据此判断文件内容。`);
+  }
+  // atob → 字节 → UTF-8 解码。⚠️ 直接 atob 得到的是 latin1，中文/ñ á ç 会坏。
+  const bin = atob(j.content.replace(/\n/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  // ⚠️ ignoreBOM:false ⇒ 文件真带 BOM 时它会被剥掉。这是对的：BOM 留在字符串里
+  //    会让 JSON.parse 直接失败，而症状看起来像"文件内容坏了"。
+  const text = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(bytes);
+
+  return { path, exists: true, sha: j.sha as string, text };
 }

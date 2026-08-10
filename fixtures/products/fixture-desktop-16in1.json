@@ -1,0 +1,32 @@
+{
+  "slug": "fixture-desktop-16in1",
+  "name": "16-in-1 Desktop Air Quality Monitor",
+  "model": "AS-D16",
+  "category": "desktop",
+  "sensors": [
+    "CO2",
+    "PM2.5",
+    "PM10",
+    "HCHO",
+    "TVOC",
+    "temperature",
+    "humidity"
+  ],
+  "highlights": [
+    "7-inch TFT display",
+    "USB-C powered"
+  ],
+  "specs": {
+    "display": "7-inch TFT",
+    "power": "USB-C / built-in battery",
+    "connectivity": "Wi-Fi + mobile app"
+  },
+  "moq": 1000,
+  "images": {
+    "main": "products/fixture-desktop-16in1.webp",
+    "gallery": [
+      "products/fixture-desktop-16in1-2.webp"
+    ]
+  },
+  "status": "published"
+}

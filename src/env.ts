@@ -24,8 +24,15 @@ export interface Env {
   BUILD_TIME?: string;
 
   // ---- secret（wrangler secret put）----
-  /** M1 不需要（公开仓匿名可读）；M2 写入才配。 */
+  /** M1/A2 不需要（公开仓匿名可读）；真写入才配。 */
   GITHUB_TOKEN?: string;
+
+  /**
+   * 🔴 写能力总开关。**没有它 = 出站口拒绝一切非 GET。**
+   * A2 阶段故意不配 ⇒ 结构上不可能改到官网数据仓，而不是"我们记得没去调写接口"。
+   * 开启是一次显式动作（改 wrangler.jsonc + 部署），不该被某个新端点顺带带出来。
+   */
+  ALLOW_GITHUB_WRITE?: string;
 
   // ---- 仅 scripts/dev.mjs 派生的本地配置里有；生产出现即 500 ----
   DEV_BYPASS_AUTH?: string;

@@ -5,7 +5,12 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, EgressDenied } from "./github";
+import { listProducts, readProductFile, EgressDenied } from "./github";
+import {
+  validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct,
+  CATEGORIES, SENSORS, STATUSES,
+} from "./contract";
+import { summarizeDiff } from "./diff";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -140,13 +145,122 @@ app.get("/api/products", async (c) => {
   }
 });
 
-// 根路径：M1 还没有界面（界面是 M2）。给一句话说明自己是谁，而不是 404。
+// ───────────────────── 读单个产品 ─────────────────────
+app.get("/api/products/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  try {
+    const f = await readProductFile(c.env, slug);
+    if (!f.exists) return c.json({ slug, exists: false, path: f.path, product: null, validation: null }, 404);
+
+    let product: unknown = null;
+    let parseError: string | null = null;
+    try { product = JSON.parse(f.text!); }
+    catch (e) { parseError = String(e); }
+
+    // 🔴 解析失败**绝不返回 `{}`**。返 `{}` 加上前端的 `|| ""` 兜底，
+    //    再加上无条件覆盖，就是"静默清空还返 ok"那条已经吃过亏的路。
+    if (parseError) {
+      return c.json({ slug, exists: true, path: f.path, sha: f.sha, product: null, parseError,
+        raw: f.text, hint: "文件不是合法 JSON。请先修好它——本后台不会替它猜内容。" }, 422);
+    }
+
+    return c.json({
+      slug, exists: true, path: f.path, sha: f.sha,
+      product, raw: f.text,
+      validation: validateProduct(product),
+      slugPathIssue: checkSlugMatchesPath((product as any)?.slug ?? "", `${slug}.json`),
+    });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "product_read_failed", slug, msg: String(e) }));
+    return c.json({ error: "读取 GitHub 失败", detail: String(e) }, 502);
+  }
+});
+
+// ───────────────── A2-2：写入的 dry-run（**不会真写**）─────────────────
+//
+// 🔴 这个端点**没有能力**写。不是"我们没去调写接口"，是出站口（src/github.ts）
+//    在 `ALLOW_GITHUB_WRITE !== "1"` 时拒绝一切非 GET，而那个变量此刻故意没配。
+//    ⇒ 即使这里将来被人加了一行 POST，它也会在出站口被挡住。
+//
+// ⚠️ 总工 2026-08-09 明确：Web 窗此刻正在写同一批文件，真写入会撞；且写公开仓需要
+//    token（`ghTokenConfigured:false`）。真写入等他通知，不在本批。
+app.post("/api/products/:slug/preview", async (c) => {
+  const slug = c.req.param("slug");
+  let patch: Record<string, unknown>;
+  try {
+    const body = await c.req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
+    patch = body as Record<string, unknown>;
+  } catch (e) {
+    return c.json({ error: "请求体不是合法 JSON 对象", detail: String(e) }, 400);
+  }
+
+  try {
+    const f = await readProductFile(c.env, slug);
+
+    let existing: Record<string, unknown> | null = null;
+    if (f.exists) {
+      try { existing = JSON.parse(f.text!); }
+      catch (e) {
+        // ⚠️ 现有文件坏了就停。在一份解析不出来的文件上做 merge，
+        //    等于拿"我以为的原内容"去覆盖真内容 —— 那是数据丢失，不是保存。
+        return c.json({ error: "现有文件不是合法 JSON，拒绝在它上面合并", path: f.path, detail: String(e) }, 422);
+      }
+    }
+
+    const { merged, cleared, touched } = mergeProduct(existing, patch);
+    const validation = validateProduct(merged);
+    const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
+    if (slugIssue) validation.errors.push(slugIssue);
+
+    const newText = serializeProduct(merged);
+    const oldText = f.text ?? "";
+    const diff = summarizeDiff(oldText, newText);
+
+    return c.json({
+      mode: "dry-run",
+      // 🔴 这三个字段是这个响应里最重要的话，放最前面：**什么都没写。**
+      wrote: false,
+      writeCapability: c.env.ALLOW_GITHUB_WRITE === "1" ? "已开启（⚠️但本端点仍不写）" : "未开启（出站口拒绝一切非 GET）",
+      note: "这是预览。没有向 GitHub 发起任何写请求，官网数据仓未被改动。",
+
+      target: { path: f.path, exists: f.exists, currentSha: f.sha },
+      ok: validation.ok && !diff.identical,
+      validation,
+      change: {
+        touched,                      // 真的变了值的字段
+        cleared,                      // 显式传 null 清空的字段
+        identical: diff.identical,    // 🔴 两边字节一致 ⇒ 这次保存什么也不会改
+        added: diff.added,
+        removed: diff.removed,
+      },
+      diff: diff.lines,
+      wouldWrite: { bytes: new TextEncoder().encode(newText).length, text: newText },
+    });
+  } catch (e) {
+    if (e instanceof EgressDenied) {
+      console.error(JSON.stringify({ evt: "egress_denied", slug, msg: String(e.message) }));
+      return c.json({ error: "出站被策略拒绝", detail: String(e.message) }, 403);
+    }
+    console.error(JSON.stringify({ evt: "preview_failed", slug, msg: String(e) }));
+    return c.json({ error: "预览失败", detail: String(e) }, 502);
+  }
+});
+
+// 契约的机器可读形态：界面用它渲染下拉框/多选框，避免枚举在前端被抄第二份。
+// ⚠️ 前端硬编码一份枚举 = 第二个真源：契约改了，界面不会跟着变，而它看起来一切正常。
+app.get("/api/contract", (c) =>
+  c.json({ version: "C1 v1", categories: CATEGORIES, sensors: SENSORS, statuses: STATUSES }));
+
+// 根路径：界面在 public/ 里（assets 绑定），这里只兜住没有界面时的情况。
 app.get("/", (c) =>
   c.text(
-    "AirSonde Admin — M1（只读）。\n" +
-      "  /api/_whoami   进程身份（部署版本 / commit / 运行环境）\n" +
-      "  /api/products  列出数据仓 src/content/products/ 下的产品 JSON\n" +
-      "界面与写入能力在 M2。\n",
+    "AirSonde Admin\n" +
+      "  /api/_whoami                    进程身份（部署版本 / commit / 运行环境）\n" +
+      "  /api/products                   列出产品 JSON\n" +
+      "  /api/products/:slug             读单个产品（含契约校验结果）\n" +
+      "  /api/products/:slug/preview     POST：校验 + diff 预览（**不会真写**）\n" +
+      "  /api/contract                   契约枚举（界面用，避免前端抄第二份）\n",
   ),
 );
 
