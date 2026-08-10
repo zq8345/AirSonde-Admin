@@ -112,6 +112,11 @@ app.get("/api/_whoami", (c) => {
       shortSha: sha ? sha.slice(0, 7) : null,
       dirty: c.env.GIT_DIRTY === "1",
       buildTime: c.env.BUILD_TIME || null,
+      // ⚠️ "谁发的"必须是看得见的事实：CI 接上后仍出现 local，说明有人绕过了自动部署，
+      //    而那正是"生产上跑的到底是哪一版"开始说不清的那一刻。
+      deploySource: c.env.DEPLOY_SOURCE || null,
+      ciBuildUuid: c.env.CI_BUILD_UUID || null,
+      ciBranch: c.env.CI_BRANCH || null,
     },
     request: {
       host: new URL(c.req.url).hostname,

@@ -25,6 +25,15 @@ export interface Env {
   /** "1" = 部署时工作区是脏的（有未提交改动）⇒ GIT_SHA 不足以还原这次部署的字节。 */
   GIT_DIRTY?: string;
   BUILD_TIME?: string;
+  /**
+   * "ci" | "local" —— 这一版是自动部署的还是有人手动发的。
+   * ⚠️ CI 接上之后，手动部署与自动部署会互相覆盖。规矩写在 README，但**规矩不是机制**：
+   *    这个字段让"谁发的"变成 /api/_whoami 上看得见的事实，不靠自觉。
+   */
+  DEPLOY_SOURCE?: string;
+  /** Workers Builds 的构建 id / 分支，用来在控制台 Builds 列表里对上号。 */
+  CI_BUILD_UUID?: string;
+  CI_BRANCH?: string;
 
   // ---- secret（wrangler secret put）----
   /** M1/A2 不需要（公开仓匿名可读）；真写入才配。 */

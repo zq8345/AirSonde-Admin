@@ -30,6 +30,8 @@ npm run typecheck
 npm run deploy
 ```
 
+🔴 **CI 接上之后，不要再手动 `npm run deploy`。** 见下面「自动部署」一节。
+
 🔴 **不要直接 `wrangler dev` / `wrangler deploy`**，两条都会坏事：
 
 - `wrangler dev` 会拿 `wrangler.jsonc` 里 `routes` 的第一条 custom_domain 去**合成请求 host**，
@@ -39,6 +41,51 @@ npm run deploy
   `scripts/deploy.mjs` 在部署那一刻从 git 现算并 `--var` 注入。
 
 ---
+
+## 自动部署（Workers Builds）
+
+push 到 `main` → Cloudflare 自动构建并部署。**用 Workers Builds，不是 Pages。**
+
+⛔ **绝不要为这个仓建 Cloudflare Pages 项目。** 两个理由：
+1. 这是 Workers 结构（`wrangler.jsonc` + `src/index.ts`），**没有构建输出目录**，Pages 的构建流程对不上；
+2. `admin.airsonde.com` 的 DNS 记录类型是 **Worker → `airsonde-admin`**。若再有一个 Pages 项目来绑同一个自定义域，
+   会和现有 Worker 路由打架，**可能把正在工作的后台顶掉** —— 那是现在唯一能进后台的路。
+
+### 🔴 Deploy command 必须改成 `npm run deploy`
+
+Workers Builds 的 **Deploy command 默认是 `npx wrangler deploy`**。用默认值这个后台会坏在一个不显眼的地方：
+
+`GIT_SHA` / `GIT_DIRTY` / `DEPLOY_SOURCE` / `BUILD_TIME` 是 `scripts/deploy.mjs` 用 `--var` 在部署那一刻注入的，
+而 **CLI `--var` 注入的变量不会在下一次部署里保留**（实测见下表）。
+⇒ 默认命令一跑，这四个变量当场消失，`/api/_whoami` 的 `git.sha` 变成 `null` ——
+**「能证明边缘现在跑的是哪一份代码」这个能力就没了**，而且没有任何报错，界面一切正常。
+
+### CI 里 `GIT_SHA` 从哪来
+
+`.git` 在构建容器里不保证存在，所以 `scripts/deploy.mjs` 优先取平台注入的 `WORKERS_CI_COMMIT_SHA`。
+
+⭐ **两个来源都拿得到时，必须相等，不等就停止部署。** 不等意味着"平台说在构建 commit A，而工作目录里是 commit B"——
+那时无论注入哪个都是在说谎，而说谎的恰恰是我们用来证明版本的那个字段。
+
+### 手动部署与 CI 冲突
+
+CI 接上之后手动 `npm run deploy`，两条路会互相覆盖，**谁也说不清生产上跑的是哪一版**。
+
+⚠️ 脚本**不硬拦**：硬拦会挡住真正的紧急发布，而被挡住的人会去找绕过的办法。
+约束改成看得见的事实 —— 手动部署会注入 `DEPLOY_SOURCE=local`，它出现在 `/api/_whoami` 里。
+**CI 接上后仍看到 `deploySource: "local"`，就是有人绕过了自动部署。** 下一次 CI 构建会把它覆盖回 `ci`。
+
+### 实测：一次部署会保留什么、抹掉什么
+
+⚠️ 下表**不是查文档得来的**，是在一个一次性 worker 上真跑出来的（无路由、`workers_dev:false`，零爆炸半径）。
+
+| 来源 | 重新部署（不重新传）后 | 含义 |
+|---|---|---|
+| `wrangler secret put/bulk` 的 secret | **保留** ✅ | `GITHUB_TOKEN` 不会被 CI 部署重置，配一次即可 |
+| `wrangler.jsonc` 里的 `vars` | **保留** ✅ | `ALLOWED_EMAILS` 安全（它本来就随每次部署带上） |
+| CLI `--var` 注入的变量 | **🔴 被抹掉** | 正是上面那条：deploy command 必须走 `npm run deploy` |
+
+顺带实测：`wrangler secret bulk` **不会**抹掉已有的 plain vars（两者共存）。
 
 ## 端点（M1）
 
