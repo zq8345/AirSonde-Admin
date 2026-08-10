@@ -259,6 +259,13 @@ export async function writeProductFile(
   text: string,
   opts: { expectedSha: string | null; operator: string; changedFields: string[] },
 ): Promise<WriteResult> {
+  // 🔴 出站策略必须**第一个**判 —— 顺序本身就是一条判据。
+  //    原来先判 token：本地跑一次写，报的是「GITHUB_TOKEN 未配置」，
+  //    而真正的原因是「本机永远不准写生产数据仓」。于是人会去配一个 token，
+  //    配完再撞上出站闸，被同一件事挡两次、看到两个不同的理由。
+  //    ⚠️ 这正是我们那张误判表要防的事：**报错报错了原因，比不报错更能把人带偏。**
+  assertEgressAllowed(env, "PUT");
+
   const repo = env.GITHUB_REPO, branch = env.GITHUB_BRANCH, dir = env.PRODUCTS_DIR;
   if (!repo || !branch || !dir) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH/PRODUCTS_DIR 必须全部配置。");
   if (!env.GITHUB_TOKEN) {
