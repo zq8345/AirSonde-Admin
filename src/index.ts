@@ -5,7 +5,7 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, EgressDenied } from "./github";
+import { listProducts, readProductFile, writeProductFile, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct,
   CATEGORIES, SENSORS, STATUSES,
@@ -128,6 +128,11 @@ app.get("/api/_whoami", (c) => {
       branch: c.env.GITHUB_BRANCH || null,
       productsDir: c.env.PRODUCTS_DIR || null,
       ghTokenConfigured: !!c.env.GITHUB_TOKEN, // 只报有无，绝不报值
+      // ⭐ 界面的按钮文案和横幅**由这个字段决定**，不是各写各的。
+      //    写死文案的话，闸的状态和界面说的话迟早不一致 —— 而那时界面说的是假话。
+      //    ⚠️ 两个条件缺一不可：闸开着、且 token 在。少一个就写不成。
+      writeEnabled: c.env.ALLOW_GITHUB_WRITE === "1" && !!c.env.GITHUB_TOKEN,
+      writeGateOpen: c.env.ALLOW_GITHUB_WRITE === "1",
     },
     operator: c.req.header("cf-access-authenticated-user-email") || (isDev ? "dev-bypass" : null),
     warnings,
@@ -249,6 +254,89 @@ app.post("/api/products/:slug/preview", async (c) => {
     }
     console.error(JSON.stringify({ evt: "preview_failed", slug, msg: String(e) }));
     return c.json({ error: "预览失败", detail: String(e) }, 502);
+  }
+});
+
+// ───────────────── A4：真实写入 ─────────────────
+//
+// 🔴 流程与 preview **完全共用前半段**（读 → merge → 校验 → 序列化）。
+//    不共用的话会出现"预览通过但保存被拒"或者更糟的反过来 —— 那时人会不再相信预览。
+//
+// ⚠️ 校验不通过 ⇒ **在发出任何写请求之前**返回，绝不产生 commit。
+//    这道闸的全部价值就是拦在**不可逆那一步之前**，"警告一下继续提交"等于没有它。
+app.put("/api/products/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const operator = c.req.header("cf-access-authenticated-user-email")
+    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
+
+  let patch: Record<string, unknown>;
+  try {
+    const body = await c.req.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
+    patch = body as Record<string, unknown>;
+  } catch (e) {
+    return c.json({ error: "请求体不是合法 JSON 对象", detail: String(e) }, 400);
+  }
+
+  try {
+    const f = await readProductFile(c.env, slug);
+
+    let existing: Record<string, unknown> | null = null;
+    if (f.exists) {
+      try { existing = JSON.parse(f.text!); }
+      catch (e) {
+        return c.json({ error: "现有文件不是合法 JSON，拒绝在它上面合并", path: f.path, detail: String(e) }, 422);
+      }
+    }
+
+    const { merged, cleared, touched } = mergeProduct(existing, patch);
+    const validation = validateProduct(merged);
+    const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
+    if (slugIssue) validation.errors.push(slugIssue);
+
+    // 🔴 拦在写之前。wrote:false 要说得明明白白 —— 让人一眼看出"没有产生 commit"。
+    if (!validation.ok) {
+      console.error(JSON.stringify({ evt: "write_rejected", slug, operator, codes: validation.errors.map((e) => e.code) }));
+      return c.json({ wrote: false, reason: "契约校验未通过，未产生任何 commit", validation }, 422);
+    }
+
+    const newText = serializeProduct(merged);
+    const diff = summarizeDiff(f.text ?? "", newText);
+    // 内容没变就不写。⚠️ 不然 git 里会堆一串空 commit，而每一个都会触发一次官网重建。
+    if (diff.identical) {
+      return c.json({ wrote: false, reason: "内容与现有文件逐字节相同，无需提交", change: { identical: true } });
+    }
+
+    const w = await writeProductFile(c.env, slug, newText, {
+      expectedSha: f.sha,
+      operator,
+      changedFields: [...touched, ...cleared.map((k) => `-${k}`)],
+    });
+    console.log(JSON.stringify({ evt: "write_ok", slug, operator, commit: w.commitSha, fields: touched }));
+
+    return c.json({
+      wrote: true,
+      ...w,
+      change: { touched, cleared, added: diff.added, removed: diff.removed },
+      validation,
+      note: "已提交到数据仓。CF Pages 会自动重建 airsonde.com —— 线上生效有延迟，不是没写成功。",
+    });
+  } catch (e) {
+    if (e instanceof EgressDenied) {
+      console.error(JSON.stringify({ evt: "egress_denied", slug, msg: String(e.message) }));
+      return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
+    }
+    if (e instanceof ConflictError) {
+      return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    }
+    if (e instanceof ByteMismatchError) {
+      // ⚠️ 这一条 commit 可能已经产生了。绝不能说成"保存失败"——那会让人再存一次。
+      console.error(JSON.stringify({ evt: "byte_mismatch", slug, msg: String(e.message) }));
+      return c.json({ wrote: "unknown", error: "字节校验不一致，需要人工核对", detail: String(e.message) }, 500);
+    }
+    console.error(JSON.stringify({ evt: "write_failed", slug, operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "写入失败", detail: String(e) }, 502);
   }
 });
 

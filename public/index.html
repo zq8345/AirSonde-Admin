@@ -9,11 +9,12 @@
 </head>
 <body>
 
-<!-- 🔴 这条横幅不是装饰。当前阶段任何"保存"都不会写入，如果不把它做成第一眼就看到、
-     且滚动时不消失的东西，人会编辑二十分钟然后以为存下去了。 -->
+<!-- 🔴 这条横幅不是装饰，而且它的内容**由服务端的真实写能力决定**（/api/_whoami 的 writeEnabled），
+     不是写死在这里的。写死的话，闸的状态和界面说的话迟早不一致 —— 而那时界面说的是假话。
+     初始文案故意是"未知"：在问到服务端之前，界面**不知道**自己能不能写，就不该假装知道。 -->
 <div class="banner" id="banner">
-  <strong>预览模式（A2）</strong>
-  <span>校验与 diff 都是真的，但<b>不会写入任何文件</b>。官网数据仓不会被改动。</span>
+  <strong id="bannerTitle">正在确认写入能力…</strong>
+  <span id="bannerText">在服务端答复之前，不要假设这里能保存。</span>
   <span class="banner-why" id="bannerWhy"></span>
 </div>
 
@@ -143,10 +144,13 @@
         </div>
 
         <div class="actions">
-          <!-- 🔴 按钮上不写"保存"。写"保存"而它不保存，就是在骗使用者。 -->
-          <button type="submit" class="primary" id="previewBtn">校验并预览（不会保存）</button>
+          <!-- 🔴 按钮文案由 app.js 按真实写能力填。写"保存"而它不保存，就是在骗使用者；
+               反过来，能写了还写着"不会保存"，同样是假话。两个方向都不许。
+               ⚠️ 先校验预览、再单独确认提交 —— 这是**有意的两步**：写的目标是生产官网的数据源，
+                  一步到位的保存按钮会让人在没看 diff 的情况下就提交。 -->
+          <button type="submit" class="primary" id="previewBtn">校验并预览</button>
           <button type="button" id="resetBtn">还原</button>
-          <span class="actions-note">写入能力在 M2，需要总工放行 + GitHub token。</span>
+          <span class="actions-note" id="actionsNote"></span>
         </div>
       </form>
 

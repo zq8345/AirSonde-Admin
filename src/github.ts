@@ -149,6 +149,41 @@ export async function listProducts(env: Env): Promise<ListResult> {
   return { ...base, dirExists: true, count: files.length, files };
 }
 
+// ── git blob SHA：让「GitHub 存下的字节 == 我们发出去的字节」变成可证明的 ──────────
+//
+// ⭐ 不用探针，用**确定性哈希**自证：
+//    git 的 blob SHA = `sha1("blob " + 字节数 + "\0" + 字节)` —— 是**内容的函数**。
+//    而 contents API 的响应里带着 **GitHub 算出来的 `content.sha`**。
+//    本地按 UTF-8 算出期望值，与响应比对：**相等 ⇒ 服务端存的字节与我们发的完全相同。**
+//    零额外子请求，也不用再读回来。
+//
+// ⚠️ 长度必须是**字节数**不是字符数：`"é".length === 1` 但 UTF-8 是 2 字节。
+//    写成 `.length` 的话纯 ASCII 全对、一遇非 ASCII 就错 —— 正是最容易漏测的那种。
+const HEX = "0123456789abcdef";
+function toHex(buf: ArrayBuffer): string {
+  const b = new Uint8Array(buf);
+  let s = "";
+  for (let i = 0; i < b.length; i++) s += HEX[b[i]! >> 4]! + HEX[b[i]! & 15]!;
+  return s;
+}
+
+export async function gitBlobSha(text: string): Promise<string> {
+  const body = new TextEncoder().encode(text);
+  const header = new TextEncoder().encode(`blob ${body.length}\0`); // ⚠️ 字节数
+  const all = new Uint8Array(header.length + body.length);
+  all.set(header, 0);
+  all.set(body, header.length);
+  return toHex(await crypto.subtle.digest("SHA-1", all));
+}
+
+/** UTF-8 → base64。⚠️ 不能直接 btoa(text)：btoa 只吃 latin1，非 ASCII 会抛或写坏。 */
+function toBase64Utf8(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin);
+}
+
 export interface ReadResult {
   path: string;
   /** 文件不存在（新建产品的情形）。⚠️ 与"读失败"是两回事，后者会抛。 */
@@ -192,4 +227,96 @@ export async function readProductFile(env: Env, slug: string): Promise<ReadResul
   const text = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false }).decode(bytes);
 
   return { path, exists: true, sha: j.sha as string, text };
+}
+
+/** 别人在我们读取之后改动了同一个文件 —— 不是失败，是必须让人重新看一眼的情况。 */
+export class ConflictError extends Error {}
+/** GitHub 存下的字节与我们发出去的不一致。**这一条永远不该发生**，发生了要吼。 */
+export class ByteMismatchError extends Error {}
+
+export interface WriteResult {
+  path: string;
+  created: boolean;
+  commitSha: string;
+  commitUrl: string;
+  blobSha: string;
+  bytes: number;
+}
+
+/**
+ * 把一份产品 JSON 提交到数据仓。
+ *
+ * 🔴 调用方必须**先**跑完契约校验并确认没有 error —— 这里不再校验一次。
+ *    不是偷懒：校验放在两个地方就会有两份规则，而两份规则迟早不一样。
+ *    这里只负责"写得对不对"，"该不该写"归 contract.ts。
+ *
+ * ⚠️ `expectedSha` 是乐观锁：它必须是**这次编辑所基于的那一版**的 blob sha。
+ *    不传的话，GitHub 会把并发的改动**静默覆盖掉** —— 那正是"保存成功，别人的改动没了"。
+ */
+export async function writeProductFile(
+  env: Env,
+  slug: string,
+  text: string,
+  opts: { expectedSha: string | null; operator: string; changedFields: string[] },
+): Promise<WriteResult> {
+  const repo = env.GITHUB_REPO, branch = env.GITHUB_BRANCH, dir = env.PRODUCTS_DIR;
+  if (!repo || !branch || !dir) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH/PRODUCTS_DIR 必须全部配置。");
+  if (!env.GITHUB_TOKEN) {
+    // fail-closed：没有 token 就明说，别让它退化成一次匿名请求然后回 401 —— 那个症状看起来像 token 错了。
+    throw new Error("GITHUB_TOKEN 未配置，拒绝写入（读可以匿名，写不行）。");
+  }
+
+  const path = `${dir}/${slug}.json`;
+  const expected = await gitBlobSha(text);
+
+  // commit message：以后官网内容出问题，要能从 git log 直接查到是后台哪一次操作、谁做的。
+  // ⚠️ operator 来自 Access 的身份头，不是用户可填的字段 —— 它伪造不了（边缘会剥掉客户端自带的）。
+  const fields = opts.changedFields.length ? opts.changedFields.join(", ") : "(无字段变化)";
+  const message =
+    `admin: ${opts.expectedSha ? "update" : "create"} ${slug} (${opts.operator})\n\n` +
+    `字段：${fields}\n` +
+    `来源：admin.airsonde.com`;
+
+  const body: Record<string, unknown> = {
+    message,
+    content: toBase64Utf8(text),
+    branch,
+  };
+  if (opts.expectedSha) body.sha = opts.expectedSha;   // 有它才是乐观锁；新建时必须没有
+
+  const res = await ghFetch(env, `/repos/${repo}/contents/${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 409 || res.status === 422) {
+    // 422 在这个端点上通常也是 sha 不匹配（GitHub 用它表达"你给的 sha 不是当前版本"）
+    throw new ConflictError(
+      `文件在你打开它之后被改过了（GitHub ${res.status}）。请重新读一次再改 —— ` +
+      `直接覆盖会把别人的改动弄丢。原话：${(await res.text()).slice(0, 200)}`,
+    );
+  }
+  if (!res.ok) throw new Error(`GitHub 写入失败 ${res.status}：${(await res.text()).slice(0, 300)}`);
+
+  const j = (await res.json()) as any;
+  const gotBlob = j?.content?.sha as string | undefined;
+
+  // ⭐ 密码学自证：GitHub 算出的 blob sha 必须等于我们本地按 UTF-8 算的。
+  //    不等 ⇒ 存下去的字节和我们发的不一样。**必须吼出来**，不能"写成功了"就完事。
+  if (gotBlob !== expected) {
+    throw new ByteMismatchError(
+      `🔴 GitHub 存下的字节与发出去的不一致：期望 blob ${expected}，实际 ${gotBlob || "(响应里没有 content.sha)"}。` +
+      `commit 可能已经产生（${j?.commit?.sha || "?"}），请人工核对 ${path}。`,
+    );
+  }
+
+  return {
+    path,
+    created: !opts.expectedSha,
+    commitSha: j?.commit?.sha,
+    commitUrl: j?.commit?.html_url,
+    blobSha: expected,
+    bytes: new TextEncoder().encode(text).length,
+  };
 }

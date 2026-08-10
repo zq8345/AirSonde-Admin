@@ -16,6 +16,10 @@ const state = {
   loaded: null,     // 当前产品的服务端原始响应
   draft: null,      // 编辑中的对象
   isNew: false,
+  // 🔴 写能力是**服务端告诉我们的事实**，不是前端的一个开关。
+  //    null = 还没问到。在问到之前界面不该假装知道自己能不能写。
+  write: null,      // { enabled, gateOpen, tokenConfigured }
+  lastPreview: null,
 };
 
 // ── 通用请求：**失败要说出服务器的原话**，不要自己概括成"加载失败" ──
@@ -45,9 +49,41 @@ async function loadWho() {
       const b = el("span", "banner-why", "⚠️ " + w.warnings.join("；"));
       $("#banner").append(b);
     }
-    $("#bannerWhy").textContent = `写能力：${w.data.ghTokenConfigured ? "token 已配" : "无 token"}，写入等 M2 放行。`;
+    state.write = {
+      enabled: !!w.data.writeEnabled,
+      gateOpen: !!w.data.writeGateOpen,
+      tokenConfigured: !!w.data.ghTokenConfigured,
+    };
+    applyWriteMode();
   } catch (e) {
     $("#who").textContent = "身份读取失败：" + e.message;
+    // 🔴 问不到就**保持"未知"**，绝不默认成"能写"。
+    //    默认能写的话，一次网络抖动就会让界面开始说它没有把握的话。
+    $("#bannerTitle").textContent = "写入能力未知";
+    $("#bannerText").textContent = "问不到服务端。在确认之前不要假设这里能保存。";
+  }
+}
+
+/** 把「服务端到底能不能写」翻译成界面上的每一句话。**只有这一个地方决定文案。** */
+function applyWriteMode() {
+  const w = state.write;
+  const banner = $("#banner"), title = $("#bannerTitle"), text = $("#bannerText"), why = $("#bannerWhy");
+
+  if (w.enabled) {
+    banner.classList.add("banner-live");
+    title.textContent = "写入已开启";
+    text.innerHTML = "保存会<b>真的提交到官网数据仓</b>，并自动触发 airsonde.com 重建。";
+    why.textContent = "提交前先看 diff —— 这是生产数据。";
+    $("#actionsNote").textContent = "先校验预览，确认 diff 之后才会出现提交按钮。";
+  } else {
+    banner.classList.remove("banner-live");
+    title.textContent = "预览模式";
+    text.innerHTML = "校验与 diff 都是真的，但<b>不会写入任何文件</b>。";
+    // 两个原因要分开说：闸没开 和 没有 token 是两件事，修法也不同。
+    why.textContent = !w.gateOpen
+      ? "原因：出站写闸未开启（ALLOW_GITHUB_WRITE 未配置）。"
+      : !w.tokenConfigured ? "原因：GITHUB_TOKEN 未配置。" : "原因：未知。";
+    $("#actionsNote").textContent = "当前无法保存，但可以复制预览里的完整内容。";
   }
 }
 
@@ -359,7 +395,9 @@ function renderPreview(r) {
   } else if (!r.validation.ok) {
     wrap.append(mkNotice("bad", `契约校验未通过（${r.validation.errors.length} 个错误），这份内容不允许写入。上方已逐条列出。`));
   } else {
-    wrap.append(mkNotice("ok", "契约校验通过。以下是将要写入的改动 —— 但本阶段不会写入。"));
+    wrap.append(mkNotice("ok", state.write?.enabled
+      ? "契约校验通过。以下是将要写入的改动 —— **确认无误后再点下面的提交**。"
+      : "契约校验通过。以下是将要写入的改动 —— 但当前无法写入。"));
   }
 
   if (r.change.cleared?.length) {
@@ -386,9 +424,68 @@ function renderPreview(r) {
   det.append(pre);
   wrap.append(det);
 
-  wrap.append(mkNotice("warn", r.note + `（写能力：${r.writeCapability}）`));
+  // ── 提交按钮：**只在真能写、且这份内容确实该写的时候才出现** ──
+  // ⚠️ 不做成"永远显示但 disabled"：一个灰着的提交按钮会让人以为"再试试就能点"，
+  //    而真实情况是这份内容根本不允许提交。不该出现的东西就不要出现。
+  if (state.write?.enabled && r.validation.ok && !r.change.identical) {
+    const bar = el("div", "commit-bar");
+    const btn = el("button", "primary", `提交到数据仓（${r.target.exists ? "更新" : "新建"} ${r.target.path.split("/").pop()}）`);
+    btn.type = "button";
+    btn.onclick = () => doCommit(r, btn);
+    bar.append(btn);
+    bar.append(el("span", "actions-note", "提交会产生一次 commit 并触发 airsonde.com 重建。"));
+    wrap.append(bar);
+  } else {
+    wrap.append(mkNotice("warn", r.note + `（写能力：${r.writeCapability}）`));
+  }
+
   box.append(wrap);
   wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// ═══════════════ 真实提交 ═══════════════
+async function doCommit(prev, btn) {
+  const slug = state.isNew ? ($("#f_slug").value.trim() || "unnamed") : state.slug;
+  btn.disabled = true;
+  btn.textContent = "提交中…";
+  try {
+    const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(readForm()),
+    });
+    const b = await r.json().catch(() => null);
+    const box = $("#preview");
+
+    if (b?.wrote === true) {
+      const ok = el("div", "notice notice-ok");
+      ok.append(el("b", null, "已提交。"));
+      ok.append(document.createTextNode(` commit `));
+      const a = el("a", null, b.commitSha.slice(0, 7));
+      a.href = b.commitUrl; a.target = "_blank"; a.rel = "noopener";
+      ok.append(a);
+      ok.append(document.createTextNode(`  ·  ${b.bytes}B  ·  字节校验通过（blob ${b.blobSha.slice(0, 7)}）`));
+      box.prepend(ok);
+      // ⚠️ 必须说清楚"线上还没变" —— 不说的话，人会立刻去刷 airsonde.com，
+      //    看到旧内容，然后以为没保存成功，于是**再存一次**。
+      box.prepend(mkNotice("warn", "官网重建需要一两分钟。**现在去刷 airsonde.com 看到的仍是旧内容，这不是没保存成功。**"));
+      btn.remove();
+      // 重新读一次：拿到新的 blob sha，否则下一次编辑会带着过期的乐观锁去提交。
+      await select(slug);
+    } else if (r.status === 409) {
+      box.prepend(mkNotice("bad", `**并发冲突**：${b.detail}`));
+      btn.disabled = false; btn.textContent = "重新提交";
+    } else if (b?.wrote === "unknown") {
+      // 🔴 这一条绝不能说成"保存失败" —— commit 可能已经产生了，说失败会让人再存一次。
+      box.prepend(mkNotice("bad", `**状态未知，需要人工核对**：${b.detail}`));
+    } else {
+      box.prepend(mkNotice("bad", `**未提交**（没有产生 commit）：${b?.detail || b?.reason || b?.error || r.status}`));
+      btn.disabled = false; btn.textContent = "重新提交";
+    }
+  } catch (e) {
+    $("#preview").prepend(mkNotice("bad", "提交请求失败：" + e.message));
+    btn.disabled = false; btn.textContent = "重新提交";
+  }
 }
 
 function mkNotice(kind, msg) {
