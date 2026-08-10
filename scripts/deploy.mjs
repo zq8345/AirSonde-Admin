@@ -16,6 +16,14 @@ import { execFileSync, spawnSync } from "child_process";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dryRun = process.argv.includes("--dry-run");
 
+// ⭐ `wrangler versions upload`（非生产分支用）与 `wrangler deploy` **是同一个病**：
+//    实测 `--dry-run` 下，不带 `--var` 的 versions upload 拿不到 GIT_SHA / DEPLOY_SOURCE。
+//    ⇒ 非生产分支上传的会是"**没有身份字段的版本**"。现在不影响生产，但将来用 preview
+//      排查问题时，会看到一个 git.sha 为 null 的版本，然后去查一遍部署脚本 —— 查错方向。
+//    所以两条路共用这一个脚本、共用同一套 SHA 求值逻辑，只换子命令。
+const versionsUpload = process.argv.includes("--versions-upload");
+const SUBCMD = versionsUpload ? ["versions", "upload"] : ["deploy"];
+
 const isCI = process.env.WORKERS_CI === "1";
 const ciSha = process.env.WORKERS_CI_COMMIT_SHA || "";
 const ciBranch = process.env.WORKERS_CI_BRANCH || "";
@@ -68,10 +76,13 @@ if (isCI) {
   //    这里不硬拦 —— 硬拦会挡住真正的紧急发布，而被挡住的人会去找绕过的办法。
   //    真正的约束是下面注入的 DEPLOY_SOURCE=local：它会出现在 /api/_whoami 里，
   //    **谁手动发的、发的哪一版，是看得见的事实，不靠自觉。**
-  console.warn(
-    "⚠️ 这是一次**手动**部署。README 的规矩是：CI 接上之后不要手动 deploy。\n" +
-    "   本次会注入 DEPLOY_SOURCE=local，/api/_whoami 上会显示出来 —— 下一次 CI 构建会把它覆盖回 ci。",
-  );
+  //    （versions upload 不动生产流量，所以不吼这一句。）
+  if (!versionsUpload) {
+    console.warn(
+      "⚠️ 这是一次**手动**部署。README 的规矩是：CI 接上之后不要手动 deploy。\n" +
+      "   本次会注入 DEPLOY_SOURCE=local，/api/_whoami 上会显示出来 —— 下一次 CI 构建会把它覆盖回 ci。",
+    );
+  }
 }
 
 if (dirty === "1") {
@@ -92,16 +103,19 @@ if (isCI) {
   if (ciBranch) vars.CI_BRANCH = ciBranch;
 }
 
-const args = ["wrangler", "deploy"];
+const args = ["wrangler", ...SUBCMD];
 for (const [k, v] of Object.entries(vars)) args.push("--var", `${k}:${v}`);
 if (dryRun) args.push("--dry-run", "--outdir", ".wrangler/dry-run");
 
-console.log(`部署来源：${source}${isCI ? `（分支 ${ciBranch || "?"}）` : ""}  commit ${sha.slice(0, 7)}${dirty === "1" ? "（脏）" : ""}`);
+const what = versionsUpload ? "上传版本（不动生产流量）" : "部署";
+console.log(`${what} · 来源：${source}${isCI ? `（分支 ${ciBranch || "?"}）` : ""}  commit ${sha.slice(0, 7)}${dirty === "1" ? "（脏）" : ""}`);
 console.log(`→ npx ${args.join(" ")}\n`);
 const r = spawnSync("npx", args, { cwd: ROOT, stdio: "inherit", shell: true });
 if (r.status !== 0) process.exit(r.status ?? 1);
 
 if (!dryRun) {
-  console.log(`\n✅ 已部署 ${sha.slice(0, 7)}（来源 ${source}）`);
-  console.log("   验收：登录后打开 https://admin.airsonde.com/api/_whoami，核对 git.sha / deploy.source / deploy.versionId。");
+  console.log(`\n✅ 已${what} ${sha.slice(0, 7)}（来源 ${source}）`);
+  if (!versionsUpload) {
+    console.log("   验收：登录后打开 https://admin.airsonde.com/api/_whoami，核对 git.sha / deploy.source / deploy.versionId。");
+  }
 }

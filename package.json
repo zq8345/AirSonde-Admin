@@ -9,6 +9,8 @@
     "_comment_typecheck": "契约自检并进 typecheck：校验器是写入路径上唯一的闸，它坏了不会有任何症状——直到脏数据进了官网仓。所以它必须和类型检查一样是每次都跑的东西，不是「想起来才跑」的脚本。",
     "guard:contract": "node scripts/contract-selftest.mjs",
     "deploy": "node scripts/deploy.mjs",
+    "versions:upload": "node scripts/deploy.mjs --versions-upload",
+    "_comment_versions_upload": "非生产分支用。⚠️ 控制台里那一行目前仍是默认的 `npx wrangler versions upload`，与本脚本不一致——实测默认命令拿不到 GIT_SHA/DEPLOY_SOURCE，上传的会是「没有身份字段的版本」。改控制台那一行的待办在总工手上，等 Joe 下次进控制台时一并做。详见 README「已知的不一致」。",
     "_comment_deploy": "不能直接 `wrangler deploy`：GIT_SHA / BUILD_TIME 由 scripts/deploy.mjs 从 git 现算并 --var 注入，裸 deploy 出来的 /api/_whoami 认不出自己是哪个 commit。"
   },
   "devDependencies": {
