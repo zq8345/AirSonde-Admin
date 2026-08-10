@@ -31,20 +31,30 @@ export class EgressDenied extends Error {}
  *     本地没有 Access 门挡着，而目标是**生产数据仓**，误点一下就是真提交。
  *     ⚠️ 两道分开写、不互为前提：①是"这个环境该不该有写能力"，②是"本机绝不写生产"。
  */
-async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method || "GET").toUpperCase();
+// ⭐ 闸单独抽成一个纯函数，为的是**它自己能被测**。
+//    藏在 ghFetch 里的话，要验证它就得真发一次请求 —— 而"验证一道防写闸"的测试
+//    如果需要真发一次写请求，那这个测试本身就是它要防的那件事。
+//    纯函数版可以用无害的输入把两道闸的四种组合全部量一遍。
+export function assertEgressAllowed(env: Env, method: string): void {
+  const m = method.toUpperCase();
+  if (m === "GET" || m === "HEAD") return;
 
-  if (method !== "GET" && env.ALLOW_GITHUB_WRITE !== "1") {
+  if (env.ALLOW_GITHUB_WRITE !== "1") {
     throw new EgressDenied(
-      `写能力未开启：本 worker 当前不允许对 GitHub 发起 ${method}（A2 阶段写入是 dry-run）。` +
+      `写能力未开启：本 worker 当前不允许对 GitHub 发起 ${m}（A2 阶段写入是 dry-run）。` +
       `要开启需显式配置 ALLOW_GITHUB_WRITE=1 并重新部署 —— 这是一次有意的动作，不该被某个端点顺带带出来。`,
     );
   }
-  if (env.DEV_BYPASS_AUTH === "1" && method !== "GET") {
+  if (env.DEV_BYPASS_AUTH === "1") {
     throw new EgressDenied(
-      `本地开发禁止对 GitHub 发起 ${method} —— 目标是生产数据仓 ${env.GITHUB_REPO}，本地没有 Access 门挡着。`,
+      `本地开发禁止对 GitHub 发起 ${m} —— 目标是生产数据仓 ${env.GITHUB_REPO}，本地没有 Access 门挡着。`,
     );
   }
+}
+
+async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method || "GET").toUpperCase();
+  assertEgressAllowed(env, method);
 
   const headers: Record<string, string> = {
     "User-Agent": UA,
