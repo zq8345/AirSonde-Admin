@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+dist/
+
+# 🔴 机密：本地开发用的 GITHUB_TOKEN 等，永远不进 git
+.dev.vars
+.dev.vars.*
+
+# scripts/dev.mjs 每次从 wrangler.jsonc 派生，绝不手改、绝不入库
+.wrangler.dev.jsonc

@@ -1,0 +1,51 @@
+{
+  // AirSonde 产品后台 M1 —— 独立 worker。
+  // 架构：admin.airsonde.com = Workers + Hono，Cloudflare Access 门控，
+  //       通过 GitHub API 读写 zq8345/AirSonde-Web 的 src/content/products/*.json。
+  // **没有数据库**：产品数据的真源就是那些 JSON 文件（契约 C1）。本 worker 是编辑器，不是宿主。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "airsonde-admin",
+
+  // 账号显式钉死：账号级令牌无 memberships 读权时 wrangler 会静默退出。
+  // 值 = `wrangler whoami` 实测（zq8345@gmail.com）。
+  "account_id": "7421acfcf984fd557bca79796dbb2cdb",
+
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 结构化日志落 Workers Logs。鉴权拒绝/出站失败都在这里查——失败路径不产生任何别的痕迹。
+  "observability": { "enabled": true },
+
+  // ⭐ 部署身份由**平台**提供，不由代码自称：id/tag/timestamp 是 Cloudflare 写的，伪造不了。
+  //    /api/_whoami 的"真实部署版本"就取自这里；git commit hash 另由 deploy.mjs 注入（见 vars 注释）。
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+
+  "vars": {
+    // 数据真源仓（契约 C1）。Admin 只读写这一个仓的这一个目录。
+    "GITHUB_REPO": "zq8345/AirSonde-Web",
+    "GITHUB_BRANCH": "main",
+    "PRODUCTS_DIR": "src/content/products",
+
+    // 🔴 允许进入本后台的邮箱（逗号分隔）。**空 = 拒绝全部**，不是"不限制"。
+    // ⚠️ 放在 vars 而不是 secret，是为了**和代码同一次部署**：否则会有一段
+    //    "代码已 fail-closed、变量还没配"的窗口，那段时间没有人进得来。
+    // ⚠️ 这一行必须与 Cloudflare Access 策略的名单**逐字拉平**。改了 Access 就回来改这里，
+    //    否则症状是"Access 放行了却仍被拒" —— 那不是 bug，是这份名单没跟着加。
+    //    （wanew-admin 同一个病犯过两次，见该仓 wrangler.jsonc 注释。）
+    "ALLOWED_EMAILS": "zq8345@gmail.com"
+
+    // 机密（`wrangler secret put`，绝不进 git、绝不写在这里）：
+    //   GITHUB_TOKEN  —— M1 **不需要**：AirSonde-Web 是公开仓，列目录匿名可读。
+    //                    M2 写入才需要 fine-grained PAT（仅 zq8345/AirSonde-Web，Contents Read+write）。
+    // 部署时由 scripts/deploy.mjs 用 --var 现算注入（不写在这里，写在这里就会变成"上次那个值"）：
+    //   GIT_SHA / GIT_DIRTY / BUILD_TIME
+  },
+
+  // custom_domain：部署时自动建 DNS + 证书。
+  // ⚠️ Access 应用**必须**另行在 Zero Trust 里挂到这个 hostname 上——绑域本身不带门。
+  "routes": [{ "pattern": "admin.airsonde.com", "custom_domain": true }],
+
+  // workers.dev 关闭：后台没有任何公开端点需求，少一个绕过 Access 的裸口。
+  "workers_dev": false
+}

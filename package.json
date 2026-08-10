@@ -1,0 +1,20 @@
+{
+  "name": "airsonde-admin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "_comment_dev": "🔴 不能直接 `wrangler dev`：wrangler.jsonc 里有 routes[custom_domain]，wrangler dev 会拿第一条路由去合成请求 host，于是本机也被当成 admin.airsonde.com，开发旁路的 host 检查会 500 停服。scripts/dev.mjs 从 wrangler.jsonc 派生一份去掉 routes 的本地配置。",
+    "typecheck": "tsc --noEmit",
+    "deploy": "node scripts/deploy.mjs",
+    "_comment_deploy": "不能直接 `wrangler deploy`：GIT_SHA / BUILD_TIME 由 scripts/deploy.mjs 从 git 现算并 --var 注入，裸 deploy 出来的 /api/_whoami 认不出自己是哪个 commit。"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260717.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.110.0"
+  },
+  "dependencies": {
+    "hono": "^4.6.14"
+  }
+}
