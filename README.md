@@ -211,9 +211,15 @@ npx wrangler deployments list
 
 ## 常见误判
 
-| 症状 | 真实原因 |
-|---|---|
-| 门后出现 "Failed to fetch" | 不是代码 bug，是边缘 302 到登录页 = 会话过期。硬刷新解封；`curl` 看 `Location` 才是石锤 |
-| 本地起来就 500，说"出现后门" | 直接跑了 `wrangler dev`，host 被 routes 合成了。用 `npm run dev` |
-| Access 明明放行了却仍被拒 | `ALLOWED_EMAILS` 没跟着 Access 策略加人 |
-| `/api/products` 一直是空的 | 先看 `dirExists`：`false` = Web 窗还没建那个目录（正常，那个目录归它） |
+⚠️ 这张表专收**「真因和症状长得完全不像」**的那几种 —— 症状指向哪里，真因就偏不在那里。
+不写下来的话，每个人都会先照着症状去查，而症状是错的。
+
+| 症状 | 症状会让你去查 | 真实原因 |
+|---|---|---|
+| 后台打开是一片 404，界面一个字节都没有 | 静态资源没上传 / `public/` 没打包 | **`src/index.ts` 少了 `app.notFound(… ASSETS.fetch …)`**。`run_worker_first:true` 让**所有**请求先进 worker，Hono 对没匹配上的路径默认回 404 —— 资源好好地在那儿，只是没人把请求转交给它 |
+| `/api/_whoami` 的 `git.sha` 是 `null` | 部署脚本坏了 / 变量没配 | **Deploy command 用了默认的 `npx wrangler deploy`**。CLI `--var` 注入的变量不会在下一次部署里保留，所以它被上一次部署带走了。改成 `npm run deploy` |
+| 门后出现 "Failed to fetch" / 空白页 | 前端请求写错了 / 端点挂了 | 边缘 302 到登录页 = **会话过期**。硬刷新解封；`curl` 看 `Location` 才是石锤 |
+| 本地一起来就 500，说"出现后门" | 鉴权代码写错了 | 直接跑了 `wrangler dev`，**host 被 routes 合成成了生产域名**。用 `npm run dev` |
+| Access 明明放行了却仍被拒 | 用户权限 / Access 策略 | **`ALLOWED_EMAILS` 没跟着 Access 策略改**。看 body 文案分诊（见上面自检 ③） |
+| `/api/products` 一直是空的 | 代码坏了 / token 没配 | 先看 `dirExists`：`false` = Web 窗还没建那个目录（正常，那个目录归它） |
+| `wrangler tail` 里一条日志都没有 | worker 没运行 / 部署坏了 | **匿名请求被 Access 在边缘就 302 拦掉了，根本到不了 worker** —— 没请求进来，当然没日志。这不是 worker 的问题 |
