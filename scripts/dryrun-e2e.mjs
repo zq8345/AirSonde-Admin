@@ -6,6 +6,7 @@
 // 🔴 走的是**真实 GitHub contents API**，不是本地假数据注入：
 //    假数据旁路测的是一条生产上根本不存在的代码路径，测过了也不说明什么。
 // A2-2 端到端验收：走真实 GitHub contents API 读 fixtures，验 dry-run 的行为。
+import { pathToFileURL } from "url";
 const B = "http://localhost:8788";
 let pass = 0, fail = 0; const out = [];
 const check = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}`); } else { fail++; out.push(`🔴 ${n}\n     ${d}`); } };
@@ -128,8 +129,15 @@ check("⓪ 数据源确实指向 fixtures（否则下面全部量的是别的东
 // ── 契约枚举端点（界面用，避免前端抄第二份）──
 {
   const r = await get("/api/contract");
-  check("⑪ /api/contract 吐出枚举", r.body?.categories?.length === 6 && r.body?.sensors?.length === 13,
-    JSON.stringify({ c: r.body?.categories?.length, s: r.body?.sensors?.length }));
+  // ⚠️ 原来写的是 `sensors.length === 13` —— 那是**比字面量**：契约 v1.1 加了个 `CO`，
+  //    这条断言当场过时，而它过时的方式是"报红"，会被当成端点坏了。
+  //    改成**比真源**：端点吐出来的必须与 src/contract.ts 里那份**集合相等**。
+  //    这样它只有一个正确答案，也永远不需要跟着契约手动改。
+  const { CATEGORIES, SENSORS, STATUSES } = await import(pathToFileURL("C:/开发/airsonde/airsonde-admin/src/contract.ts").href);
+  const same = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
+  check("⑪ /api/contract 与 src/contract.ts 集合相等（比真源，不比条数）",
+    same(r.body?.categories || [], CATEGORIES) && same(r.body?.sensors || [], SENSORS) && same(r.body?.statuses || [], STATUSES),
+    JSON.stringify({ 端点sensors: r.body?.sensors?.length, 模块sensors: SENSORS.length }));
 }
 
 console.log(out.join("\n"));

@@ -220,11 +220,26 @@ function renderIssues(v) {
   v.warnings.forEach((i) => box.append(mkIssue("warn", i.field, i.message)));
 }
 
+/**
+ * 把 `**粗体**` 渲染成真的粗体，并把文本安全地放进节点。
+ *
+ * ⚠️ 原来只有 mkNotice 会渲染，mkIssue 直接 textContent —— 于是校验消息里的
+ *    `**内部字段**` 在界面上**原样漏出星号**。同一套消息被两个地方用不同方式渲染，
+ *    迟早有一边露馅。合并成一个函数，两边不可能再不一致。
+ * ⚠️ 用 createTextNode 而不是 innerHTML：消息里会带用户填的值（slug、路径、URL），
+ *    拼进 innerHTML 就是把用户输入当 HTML 执行。
+ */
+function appendMd(node, text) {
+  String(text).split(/\*\*(.+?)\*\*/g).forEach((part, i) => {
+    node.append(i % 2 ? el("b", null, part) : document.createTextNode(part));
+  });
+  return node;
+}
+
 function mkIssue(kind, field, msg) {
   const d = el("div", `issue issue-${kind}`);
   if (field) d.append(el("span", "issue-field", field));
-  d.append(el("span", null, msg));
-  return d;
+  return appendMd(d.appendChild(el("span")), msg), d;
 }
 
 // ═══════════════ 详情视图 ═══════════════
@@ -489,10 +504,7 @@ async function doCommit(prev, btn) {
 }
 
 function mkNotice(kind, msg) {
-  const d = el("div", `notice notice-${kind}`);
-  // 支持 **粗体**
-  msg.split(/\*\*(.+?)\*\*/g).forEach((part, i) => d.append(i % 2 ? el("b", null, part) : document.createTextNode(part)));
-  return d;
+  return appendMd(el("div", `notice notice-${kind}`), msg);
 }
 
 // ═══════════════ 视图切换 / 事件 ═══════════════

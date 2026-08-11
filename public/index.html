@@ -114,7 +114,12 @@
         <div class="field">
           <label for="f_imgmain">images.main <b class="req">必填</b></label>
           <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false">
-          <p class="hint">相对 <code>public/</code> 的路径，不是外链。</p>
+          <p class="hint">
+            相对 <code>src/assets/</code> 的路径，不是外链。图片放在官网仓的
+            <code>src/assets/products/</code> 下。
+            <br>⚠️ <b>draft 产品的图放 <code>products/_draft/</code> 子目录</b> ——
+            那个子目录不会被打包进官网，draft 的图从物理上进不了产物。
+          </p>
         </div>
 
         <div class="field">

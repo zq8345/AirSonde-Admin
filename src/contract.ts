@@ -1,6 +1,12 @@
 // 契约 C1 v1 的**可执行**形态。
-// 真源是 `C:\开发\airsonde文件\契约\产品数据schema-v1.md`（总工 2026-08-09 冻结）。
+// 真源是 `C:\开发\airsonde\airsonde文件\契约\产品数据schema-v1.md`（总工 2026-08-09 冻结）。
+//   ⚠️ 路径 2026-08-10 更新过：文档目录从 `C:\开发\airsonde文件\` 迁到了 `C:\开发\airsonde\airsonde文件\`。
+//      旧路径已不存在（实测），指着它的注释会把人送到空目录。
 // ⚠️ 要改字段先回报总工 —— Web 窗按同一份契约读，单方面改会把官网构建搞挂。
+//
+// 本文件当前对齐到 **v1.1**（2026-08-10）：
+//   ① sensors 新增 `CO`
+//   ② images 路径基准 `public/` → `src/assets/`（字段形状不变，只是它指向仓内哪里）
 //
 // 🔴 本文件的全部立场：**缺就是缺，不兜底。**
 //    契约硬规则 4 原话："必填字段缺失 = 构建失败，不要用 `|| ""` 兜底静默通过。"
@@ -8,8 +14,12 @@
 
 export const CATEGORIES = ["desktop", "portable", "wall-mounted", "wearable", "industrial", "other"] as const;
 
+// ⚠️ `CO` 是契约 v1.1 §① 新增的（2026-08-10，总工批准）：素材里有家用 CO 报警器，
+//    而枚举里原本只有 `CO2` 和 `combustible-gas`，两个都不是它。
+//    🔴 这一行漏掉的话，后果不是"少个选项"，是**带 CO 的产品在后台根本存不了**
+//       —— 而报出来的会是"sensors 含契约外的值"，看起来像数据错了，其实是校验器过时了。
 export const SENSORS = [
-  "CO2", "PM1.0", "PM2.5", "PM10", "HCHO", "TVOC",
+  "CO2", "CO", "PM1.0", "PM2.5", "PM10", "HCHO", "TVOC",
   "temperature", "humidity", "AQI", "radiation", "alcohol", "WBGT", "combustible-gas",
 ] as const;
 
@@ -227,11 +237,11 @@ export function validateProduct(input: unknown): ValidationResult {
   } else {
     const main = p.images.main;
     if (typeof main !== "string" || !main.trim()) {
-      errors.push(err("images.main", "required", "images.main 必填（相对 public/ 的路径）。"));
+      errors.push(err("images.main", "required", "images.main 必填（相对 src/assets/ 的路径，例如 products/xxx.webp）。"));
     } else {
       if (/^https?:\/\//i.test(main)) {
         errors.push(err("images.main", "must_be_relative",
-          `images.main 必须是相对 public/ 的路径，不是外链（当前：${main}）。外链＝图片在别人服务器上，随时会消失。`));
+          `images.main 必须是相对 src/assets/ 的路径，不是外链（当前：${main}）。外链＝图片在别人服务器上，随时会消失。`));
       } else if (main.startsWith("/")) {
         errors.push(err("images.main", "leading_slash", `images.main 不要以 / 开头（当前：${main}）。`));
       }
@@ -244,7 +254,7 @@ export function validateProduct(input: unknown): ValidationResult {
         if (bad.length) errors.push(err("images.gallery", "type", `images.gallery 第 ${bad.join(", ")} 项不是非空字符串。`));
         p.images.gallery.forEach((g, i) => {
           if (typeof g === "string" && /^https?:\/\//i.test(g)) {
-            errors.push(err(`images.gallery[${i}]`, "must_be_relative", `必须是相对 public/ 的路径，不是外链（当前：${g}）。`));
+            errors.push(err(`images.gallery[${i}]`, "must_be_relative", `必须是相对 src/assets/ 的路径，不是外链（当前：${g}）。`));
           }
         });
       }
@@ -298,8 +308,13 @@ export function validateProduct(input: unknown): ValidationResult {
     if (typeof p.supplierRef !== "string" || !p.supplierRef.trim()) {
       errors.push(err("supplierRef", "type", "supplierRef 必须是非空字符串（选填）。"));
     } else {
+      // ⚠️ 这句是给**使用后台的人**看的，不是给开发者看的。
+      //    原来写的是契约原文（"Web 侧必须在渲染层过滤，验收要 grep dist/ 断言 0 命中"）——
+      //    那是实现细节，对着屏幕填表的人既看不懂也做不了什么。
+      //    ⚠️ 也不要在句首重复字段名：界面已经把字段名单独显示在左边了，重复会变成
+      //       "supplierRef supplierRef 是……"。
       warnings.push(err("supplierRef", "internal_field",
-        "supplierRef 是**内部字段**，绝不允许出现在构建产物里。Web 侧必须在渲染层过滤，验收要 grep dist/ 断言 0 命中。"));
+        "这是内部字段，**不会出现在官网上**。供应商链接只能放这里 —— 粘进 specs 或 highlights 会被直接拒绝。"));
     }
   }
 
