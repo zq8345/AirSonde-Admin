@@ -39,8 +39,16 @@ async function repoTree() {
 const has = (tree, p) => tree.has(p);
 
 // ══════════ ⓪ 仪器自检：先证明我在跟谁说话、以及这次真的能写 ══════════
-const who = await req("/api/_whoami");
-if (who.status !== 200) { console.log(`🔴 dev 起不来（/api/_whoami → ${who.status}）`); process.exit(2); }
+// ⚠️ 这一段自己必须先健壮：dev 没起时 fetch 会**抛**，不是回一个状态码。
+//    不接住的话，脚本以未捕获异常 exit 1 结束 —— 而 1 的含义是"判据没过"，
+//    看结果的人会去查被测对象，可实际上根本没量到东西。exit 2 才是"我没量成"。
+let who;
+try { who = await req("/api/_whoami"); }
+catch (e) {
+  console.log(`🔴 连不上 ${B}（${e.message}）—— 先在另一个终端跑 \`npm run dev\`。本次不出任何结论。`);
+  process.exit(2);
+}
+if (who.status !== 200) { console.log(`🔴 /api/_whoami → ${who.status}，不出结论。`); process.exit(2); }
 const d = who.body.data;
 say(`⓪ 进程身份：repo=${d.repo}  dir=${d.productsDir}  writeEnabled=${d.writeEnabled}  isLocalDev=${who.body.request.isLocalDev}`);
 if (d.repo !== TARGET_REPO || d.productsDir !== DIR) {
