@@ -26,6 +26,7 @@ const state = {
   media: null, mediaTab: "all",
   audit: null,
   cats: null,       // /api/categories：枚举 + 官网显示名（计数不在里面，见 renderCats）
+  who: null,        // /api/_whoami 的完整响应 —— 设置页整页由它渲染
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -65,6 +66,7 @@ async function loadWho() {
       const b = el("span", "banner-why", "⚠️ " + w.warnings.join("；"));
       $("#banner").append(b);
     }
+    state.who = w;          // 设置页整页由它渲染 —— 不为同一份事实开第二个端点
     state.repo = w.data.repo; state.branch = w.data.branch;
     state.write = {
       enabled: !!w.data.writeEnabled,
@@ -915,6 +917,134 @@ function renderMedia() {
   if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
 }
 
+// ═══════════════ 设置（只读运行口径）═══════════════
+//
+// ⛔ **一个可写的控件都没有**，这是有意的：这里的每一项都是部署命脉
+//    （写入闸、token、允许名单、发布目标）。后台若能改它们，就等于后台能给自己开权限 ——
+//    那道闸从此不是闸。改它们要动仓库配置 / secret 并重新部署，那是一次看得见的动作。
+//
+// 🔴 这一页要回答的是两个真会发生的问题：
+//    ①「为什么保存不了」—— 答案是写入闸与 token 的组合，原本散在环境变量和源码注释里。
+//    ②「为什么他进不来」—— 答案要区分**两道门**中的哪一道，而症状完全不同。
+function renderSettings() {
+  const w = state.who;
+  const box = $("#settingsBody"); box.innerHTML = "";
+  if (!w) { box.append(mkNotice("bad", "拿不到 /api/_whoami —— 这一页的每一项都来自它，因此什么都不显示，而不是显示一堆空格子。")); return; }
+
+  const card = (title, sub) => {
+    const s = el("section", "card");
+    const h = el("h3", null, title);
+    if (sub) h.append(el("span", "h3sub", " " + sub));
+    s.append(h);
+    return s;
+  };
+  // 一行：名字 + 值（+ 可选说明）。值用等宽，方便与配置文件逐字比对。
+  const row = (parent, k, valNode, hint) => {
+    const r = el("div", "srow");
+    r.append(el("span", "sk", k));
+    const v = el("span", "sv");
+    v.append(typeof valNode === "string" ? document.createTextNode(valNode) : valNode);
+    r.append(v);
+    parent.append(r);
+    if (hint) parent.append(appendMd(el("div", "shint"), hint));
+  };
+  const yes = (t) => el("span", "badge badge-published", t);
+  const no = (t) => el("span", "badge badge-draft", t);
+  const grid = el("div", "settings-grid");
+
+  // ── ① 写入能力：把「为什么保存不了」拆成它真正的两个因子 ──
+  {
+    const c = card("写入能力", "「为什么保存不了」看这里");
+    row(c, "结论", w.data.writeEnabled ? yes("可以保存") : no("不能保存"),
+      "**两个条件缺一不可**：闸开着、且 token 在。界面上的按钮与横幅都由这一个字段决定，不是各写各的文案。");
+    row(c, "写入闸 ALLOW_GITHUB_WRITE", w.data.writeGateOpen ? yes("已开") : no("未开"),
+      "闸装在**唯一的出站口**（src/github.ts），不在各个端点里。放在端点上的话，端点越加越多，第五个一定会漏。");
+    row(c, "GitHub token", w.data.ghTokenConfigured ? yes("已配置") : no("未配置"),
+      "⚠️ 只报**有无**，任何界面和接口都不回显它的值，连前缀也不。");
+    if (w.request.isLocalDev) {
+      row(c, "本机额外一道闸", no("本机只能写靶子仓"),
+        "🔴 本机**永远**写不到官网数据仓（zq8345/AirSonde-Web 硬编码在出站闸的黑名单里，不是开关）。" +
+        "所以本地看到「可以保存」不代表能改官网 —— 真按下去会被这道闸拦住并说明理由。");
+    }
+    grid.append(c);
+  }
+
+  // ── ② 谁能进来：**两道门**，而这里只看得见一道 ──
+  {
+    const a = w.access || {};
+    const c = card("谁能进来", "两道独立的门");
+    row(c, "当前操作人", el("b", null, w.operator || "(无身份)"),
+      "来自 Access 的身份头，**伪造不了**（边缘会剥掉客户端自带的 Cf-Access-* 头）。");
+    const list = el("div", "sv-list");
+    (a.allowlist || []).forEach((e) => list.append(el("span", "chip", e)));
+    if (!(a.allowlist || []).length) list.append(el("span", "badge badge-draft", "空 —— 空名单=拒绝所有"));
+    row(c, `后台名单（${(a.allowlist || []).length} 人）`, list, a.allowlistSource);
+    row(c, "Access 策略名单", no("本后台看不见"), a.accessPolicyNote);
+    row(c, "两道门必须一致", "集合相等",
+      "Access 放行而这份名单没有 ⇒ 那个人看到 **403**；这份名单有而 Access 没有 ⇒ 那个人**连登录页都过不去**。" +
+      "两种症状不同、修的地方也不同，所以不能只补一边。");
+    grid.append(c);
+  }
+
+  // ── ③ 发布目标：改动最终落到哪、多久上线 ──
+  {
+    const c = card("发布目标", "改动落到哪里");
+    row(c, "数据仓", el("code", null, w.data.repo || "—"));
+    row(c, "分支", el("code", null, w.data.branch || "—"));
+    row(c, "产品目录", el("code", null, w.data.productsDir || "—"),
+      "⚠️ 本后台在官网仓的**写入范围只有这一个目录**。页面、模板、样式、配置都不归它管。");
+    const site = el("a", "linkish", "airsonde.com/products/");
+    site.href = "https://airsonde.com/products/"; site.target = "_blank"; site.rel = "noopener";
+    row(c, "官网", site,
+      "链路：后台保存 → 官网仓产生一个 commit → Cloudflare Pages 自动重建 ≈1 分钟 → 站上可见。" +
+      "**保存成功 ≠ 站上已经变了**，中间隔着一次构建。");
+    grid.append(c);
+  }
+
+  // ── ④ 这一版是什么：出事时第一个要问的问题 ──
+  {
+    const g = w.git, d = w.deploy;
+    const c = card("这一版是什么", "联调/排障的第一步");
+    const sha = el("span");
+    sha.append(el("code", null, g.shortSha || "无 sha"));
+    if (g.dirty) sha.append(el("span", "flag-bad", "部署时工作区是脏的"));
+    row(c, "代码 commit", sha,
+      g.sha ? "" : "⚠️ 没有 sha ⇒ 这次部署不是走 npm run deploy 发的，**无法确认它对应哪个 commit**。");
+    row(c, "谁发的", el("code", null, g.deploySource || (w.request.isLocalDev ? "本地 dev" : "未知")),
+      "CI 接上后仍出现 local ⇒ 有人绕过了自动部署，而那正是「生产上跑的到底是哪一版」开始说不清的时刻。");
+    row(c, "构建时间", el("code", null, g.buildTime || "—"));
+    row(c, "平台版本 ID", el("code", null, d.versionId || "（无此绑定）"),
+      "**Cloudflare 写的，代码碰不到** —— 三个来源里最伪造不了的一个。" +
+      "⚠️ 本地 dev 也有这个 id（每次重载换一个），所以它**不能**用来判断「这是不是生产」，那要看下面的接入节点。");
+    row(c, "接入节点", el("code", null, `${w.request.host} · ${w.request.colo || "-"}`));
+    grid.append(c);
+  }
+
+  // ── ⑤ 契约：数据的形状由它定，不由界面定 ──
+  {
+    const ct = state.contract;
+    const c = card("契约", "数据的形状由它定");
+    row(c, "版本", el("code", null, ct?.version || "—"),
+      "界面上所有下拉/多选框的选项**都来自它**，前端不抄第二份 —— 抄一份的话契约改了界面不会跟着变，而且看起来一切正常。");
+    row(c, "机型", `${ct?.categories?.length ?? "—"} 个（冻结）`,
+      "增删或改名要改两个仓的源码并改契约。详见「分类」页。");
+    row(c, "传感器", `${ct?.sensors?.length ?? "—"} 种`);
+    // ⚠️ 这里不用反引号：appendMd 只认 **粗体**，而给它加反引号语法是危险的 ——
+    //    同一个函数还要渲染**用户填的 specs 值**，那些值里出现一个反引号就会被吃掉半句。
+    row(c, "状态", (ct?.statuses || []).join(" / ") || "—",
+      "**draft 的产品绝不允许出现在构建产物里**；它的图也物理隔离在 products/_draft/（那个子目录不参与打包）。");
+    grid.append(c);
+  }
+
+  box.append(grid);
+
+  if (w.warnings?.length) box.append(mkNotice("warn", "⚠️ " + w.warnings.join("；")));
+  box.append(mkNotice("ok",
+    "**这一页全部只读，没有一个可写控件 —— 这是有意的。** 上面每一项都是部署命脉：" +
+    "后台若能改它们，就等于后台能给自己开权限，那道闸从此不是闸。" +
+    "改它们要动仓库配置 / secret 并重新部署 —— 那是一次看得见、留得下痕迹的动作。"));
+}
+
 // ═══════════════ 分类（机型轴）═══════════════
 //
 // 这一页做三件事，**没有第四件**：
@@ -1072,12 +1202,14 @@ function showNav(which) {
   $("#mediaView").hidden = which !== "media";
   $("#auditView").hidden = which !== "audit";
   $("#catsView").hidden = which !== "cats";
+  $("#settingsView").hidden = which !== "settings";
   $("#detailView").hidden = true;
   document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
   if (which === "media" && !state.media) loadMedia();
   if (which === "audit" && !state.audit) loadAudit();
   // ⚠️ 分类页的计数每次都要重算（列表可能刚被批量改过），但接口只在第一次拉。
   if (which === "cats") { if (state.cats) renderCats(); else loadCats(); }
+  if (which === "settings") renderSettings();   // 起步时已经拉过 _whoami，不重复请求
 }
 document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
 

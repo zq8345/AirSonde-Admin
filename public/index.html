@@ -42,7 +42,7 @@
 
     <div class="nav-sec">系统</div>
     <button class="nav-item" data-nav="audit">审计日志</button>
-    <div class="nav-item soon" title="设置">设置 <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="settings" title="运行口径：写入能力 / 发布目标 / 谁能进 / 这一版是什么（只读）">设置</button>
     <!-- ✅ 这一条是真链接：询盘归 CRM 管 -->
     <a class="nav-item" href="https://crm.airsonde.com" target="_blank" rel="noopener"
        title="询盘/线索归 CRM 管理（新标签打开）">询盘 <span class="ext">↗</span></a>
@@ -131,6 +131,16 @@
           <tbody id="auditRows"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- ══════ 设置（只读运行口径）══════
+         ⚠️ **全部只读**：这几项是部署命脉（写入闸、token、名单、发布目标）。
+            后台开写口 = 后台能给自己开权限，那道闸就不再是闸。改它们要动仓库配置/secret 并重新部署。
+         🔴 这一页存在的理由是"为什么保存不了/为什么他进不来"这两个问题 ——
+            答案原本散在环境变量、Access 面板和源码注释里，出事时没人拼得出来。 -->
+    <section id="settingsView" hidden>
+      <div class="page-head"><h1>设置 <span class="h3sub">运行口径 · 只读</span></h1></div>
+      <div id="settingsBody"></div>
     </section>
 
     <!-- ══════ 媒体库 ══════ -->

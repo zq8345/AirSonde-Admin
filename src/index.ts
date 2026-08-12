@@ -104,13 +104,21 @@ app.get("/api/_whoami", (c) => {
 
   return c.json({
     app: "airsonde-admin",
-    milestone: "M1（只读，无写入能力）",
+    // 🔴 这个字段一度长期写着「M1（只读，无写入能力）」，而那时它早就能写了。
+    //    一个**诊断端点里的假话**是最坏的一种假话：出事时第一个被引用的就是它。
+    //    ⇒ 别再写死阶段名。能力由**同一份事实**推出来（下面 data.writeEnabled 也是它算的）。
+    milestone: c.env.ALLOW_GITHUB_WRITE === "1" && hasWriteToken(c.env)
+      ? "可写（写入闸已开、token 已配）"
+      : "只读（写入闸未开或 token 未配 —— 见 data.writeGateOpen / ghTokenConfigured）",
     deploy: {
-      // dev 下 Cloudflare 不提供这个绑定，明说没有，别编一个
+      // 拿不到就是 null，别编一个占位串。
+      // ⚠️ 更正（2026-08-12 实测）：本地 `wrangler dev` **也会**给一个 version_metadata id
+      //    （每次重载换一个）。所以「有 versionId」不代表「这是生产」——
+      //    要判是不是生产，看 request.host / isLocalDev，不要看这个字段。
       versionId: vm?.id ?? null,
       versionTag: vm?.tag ?? null,
       versionTimestamp: vm?.timestamp ?? null,
-      source: vm ? "cloudflare version_metadata 绑定（平台写入）" : "不可用（本地 dev 无此绑定）",
+      source: vm ? "cloudflare version_metadata 绑定（平台写入）" : "不可用（没有该绑定）",
     },
     git: {
       sha,
@@ -142,6 +150,27 @@ app.get("/api/_whoami", (c) => {
       writeGateOpen: c.env.ALLOW_GITHUB_WRITE === "1",
     },
     operator: c.req.header("cf-access-authenticated-user-email") || (isDev ? "dev-bypass" : null),
+    // ───── 两道门。**这里只报得出其中一道，另一道必须明说看不见** ─────
+    //
+    // ⚠️ Access（边缘那道）的策略名单，这个 worker **看不到**：
+    //    ① 请求到得了这里，就说明它已经过了 Access —— 被挡住的那些**根本不产生请求**；
+    //    ② 拿 CF API 去查也不行：无 Zero Trust 权限时 `GET /access/apps` 会返回
+    //       `success:true` + **空列表**，与"真的一个应用都没有"**同形**（2026-08 实测）。
+    //       用它下结论，等于把"我没权限看"读成"那里没有门"。
+    // ⇒ 只报 worker 侧这道，并把"另一道看不见"作为**结论的一部分**说出去。
+    //    ⚠️ 两道门的名单**必须集合相等**：Access 放进来而这里没有 ⇒ 那个人看到 403；
+    //       这里有而 Access 没有 ⇒ 那个人连页面都打不开。两种症状完全不同，修法也不同。
+    access: {
+      allowlist: ALLOW_LIST(c.env),
+      // ⚠️ 措辞是有讲究的：不能写"生产值" —— 本地 dev 里这句话就是假的。
+      //    "本进程当前生效的值"在两种环境下都为真，而在生产上跑时它**就是**生产值。
+      allowlistSource: "worker 环境变量 ALLOWED_EMAILS —— 本进程当前生效的值（不是配置文件里写着什么）",
+      accessPolicyVisible: false,
+      accessPolicyNote:
+        "Cloudflare Access 那道门的策略名单本后台看不到（被它挡下的请求根本到不了这里；" +
+        "CF API 在无 Zero Trust 权限时返回的空列表与真·零应用同形，不能据此下结论）。" +
+        "对账办法：让人真去登一次 —— 过不了 Access = 停在登录页；过了 Access 但不在下面这份名单里 = 403。",
+    },
     warnings,
   });
 });
