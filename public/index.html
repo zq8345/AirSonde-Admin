@@ -112,16 +112,34 @@
       <div id="viewPane"></div>
 
       <form id="editPane" hidden autocomplete="off">
+        <!-- 🔴 sticky 保存条：改动计数 + 提交入口常驻。
+             不做的话，人要滚到页面最底才找得到"保存"，而这条页面的主路是"传图+填标题+保存"。 -->
+        <div class="editbar">
+          <span class="dirty" id="dirtyCount">未改动</span>
+          <span class="spacer"></span>
+          <button type="submit" class="primary" id="previewBtn">校验并预览</button>
+          <button type="button" id="resetBtn">还原</button>
+          <button type="button" id="deleteBtn" class="danger" hidden>删除…</button>
+        </div>
+
+        <!-- ⚠️ 分组顺序按 Joe 的真实用途排：他要做的是"上传产品图 + 填标题"。
+             ⇒ 图片面板常驻右栏顶部、name 是左栏第一个字段，其余全部给这条主路让路。
+                原先把图片排在第 4 位是错的 —— 那把他最常做的两件事分别放到了中间和最后。 -->
+        <div class="edit-grid">
+        <div class="edit-col-main">
+
+        <section class="card">
+          <h3>基本信息 <span class="h3sub">标题与型号</span></h3>
+        <div class="field">
+          <label for="f_name">产品标题 <b class="req">必填</b><span class="h3sub"> name</span></label>
+          <input id="f_name" name="name" placeholder="16-in-1 Desktop Air Quality Monitor">
+          <p class="hint">⚠️ 不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。</p>
+        </div>
+
         <div class="field">
           <label for="f_slug">slug <b class="req">必填</b></label>
           <input id="f_slug" name="slug" spellcheck="false">
           <p class="hint">小写字母/数字/连字符。<b>文件名即 slug</b>，两者必须一致。改名＝改文件名，本阶段不支持。</p>
-        </div>
-
-        <div class="field">
-          <label for="f_name">name <b class="req">必填</b></label>
-          <input id="f_name" name="name">
-          <p class="hint">⚠️ 不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。</p>
         </div>
 
         <div class="row2">
@@ -136,73 +154,87 @@
           </div>
         </div>
 
-        <div class="field">
-          <label>sensors <b class="req">必填</b></label>
+        </section>
+
+        <section class="card">
+          <h3>传感器 <span class="h3sub">sensors · 至少选一个</span></h3>
           <div class="chips" id="f_sensors"></div>
-        </div>
+        </section>
 
-        <div class="row2">
-          <div class="field">
-            <label for="f_status">status <b class="req">必填</b></label>
-            <select id="f_status" name="status"></select>
-            <p class="hint"><code>draft</code> 的产品绝不允许出现在构建产物里。</p>
-          </div>
-          <div class="field">
-            <label for="f_moq">moq</label>
-            <input id="f_moq" name="moq" type="number" min="1" step="1" placeholder="留空 = 面议">
-            <p class="hint">⚠️ 想表达「面议」就<b>留空</b>，不要填 0。</p>
-          </div>
-        </div>
-
-        <div class="field">
-          <label>主图 <b class="req">必填</b></label>
-          <div class="imgrow">
-            <div class="thumb" id="mainThumb"><span class="thumb-empty">无图</span></div>
-            <div class="imgrow-side">
-              <label class="filebtn">选择图片<input type="file" id="f_mainfile" accept="image/*" hidden></label>
-              <p class="hint" id="mainImgNote"></p>
+        <section class="card">
+          <h3>商务 <span class="h3sub">上架状态与起订量</span></h3>
+          <div class="row2">
+            <div class="field">
+              <label for="f_status">status <b class="req">必填</b></label>
+              <select id="f_status" name="status"></select>
+              <p class="hint"><code>draft</code> 的产品绝不允许出现在构建产物里。</p>
+            </div>
+            <div class="field">
+              <label for="f_moq">moq</label>
+              <input id="f_moq" name="moq" type="number" min="1" step="1" placeholder="留空 = 面议">
+              <p class="hint">⚠️ 想表达「面议」就<b>留空</b>，不要填 0。</p>
             </div>
           </div>
-          <!-- ⚠️ 路径由 slug 与 status 决定，不给人手填：手填等于让人去维护一条服务端已经在维护的规则 -->
-          <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false" readonly>
-          <p class="hint">
-            相对 <code>src/assets/</code> 的路径，不是外链。图片放在官网仓的 <code>src/assets/products/</code> 下。
-            <br>⚠️ <b>draft 产品的图放 <code>products/_draft/</code> 子目录</b> —— 那个子目录不会被打包进官网，draft 的图从物理上进不了产物。
-          </p>
-        </div>
+        </section>
 
-        <div class="field">
-          <label>更多图片（gallery）</label>
-          <div class="gallery" id="galleryBox"></div>
-          <label class="add filebtn">+ 加一张<input type="file" id="f_galfile" accept="image/*" hidden></label>
-        </div>
+        <section class="card">
+          <h3>文案 <span class="h3sub">卖点与参数表</span></h3>
+          <div class="field">
+            <label>highlights</label>
+            <div class="repeat" id="f_highlights"></div>
+            <button type="button" class="add" data-add="highlights">+ 加一条</button>
+            <p class="hint">短句。详情页参数表用 specs，别塞进这里。</p>
+          </div>
 
-        <div class="field">
-          <label>highlights</label>
-          <div class="repeat" id="f_highlights"></div>
-          <button type="button" class="add" data-add="highlights">+ 加一条</button>
-          <p class="hint">短句。详情页参数表用 specs，别塞进这里。</p>
-        </div>
+          <div class="field">
+            <label>specs</label>
+            <div class="kv" id="f_specs"></div>
+            <button type="button" class="add" data-add="specs">+ 加一行</button>
+            <p class="hint">自由键值，值必须是字符串。单位和写法自己写全，别让渲染层去猜。</p>
+          </div>
+        </section>
 
-        <div class="field">
-          <label>specs</label>
-          <div class="kv" id="f_specs"></div>
-          <button type="button" class="add" data-add="specs">+ 加一行</button>
-          <p class="hint">自由键值，值必须是字符串。单位和写法自己写全，别让渲染层去猜。</p>
-        </div>
+        <section class="card card-internal">
+          <h3>内部字段 <span class="h3sub">绝不上站</span></h3>
+          <div class="field">
+            <label for="f_supplier">supplierRef <b class="internal">内部字段</b></label>
+            <input id="f_supplier" name="supplierRef" spellcheck="false">
+            <p class="hint">🔴 绝不允许出现在构建产物里。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
+          </div>
+        </section>
 
-        <div class="field field-internal">
-          <label for="f_supplier">supplierRef <b class="internal">内部字段</b></label>
-          <input id="f_supplier" name="supplierRef" spellcheck="false">
-          <p class="hint">🔴 绝不允许出现在构建产物里。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
-        </div>
+        </div><!-- /edit-col-main -->
+
+        <!-- 🔴 右栏：图片。常驻（sticky）且排在视觉动线最前 —— Joe 的主路是"传图 + 填标题 + 保存"。 -->
+        <div class="edit-col-side">
+        <section class="card">
+          <h3>产品图片 <span class="h3sub">主图必填</span></h3>
+          <div class="field">
+            <div class="imgrow">
+              <div class="thumb" id="mainThumb"><span class="thumb-empty">无图</span></div>
+              <div class="imgrow-side">
+                <label class="filebtn">选择主图<input type="file" id="f_mainfile" accept="image/*" hidden></label>
+                <p class="hint" id="mainImgNote"></p>
+              </div>
+            </div>
+            <!-- ⚠️ 路径由 slug 与 status 决定，不给人手填：手填等于让人去维护一条服务端已经在维护的规则 -->
+            <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false" readonly>
+            <p class="hint">
+              自动转 WebP、≤2MB。放在官网仓 <code>src/assets/products/</code> 下。
+              <br>⚠️ <b>draft 的图放 <code>products/_draft/</code></b> —— 那个子目录不会被打包，draft 图从物理上进不了产物。
+            </p>
+          </div>
+
+          <div class="field">
+            <label>更多图片（gallery）</label>
+            <div class="gallery" id="galleryBox"></div>
+            <label class="add filebtn">+ 加一张<input type="file" id="f_galfile" accept="image/*" hidden></label>
+          </div>
+        </section>
+        </div><!-- /edit-col-side -->
+        </div><!-- /edit-grid -->
 
         <div class="actions">
-          <!-- 🔴 文案由真实写能力决定。写"保存"而它不保存是骗人；能写了还写"不会保存"同样是骗人。
-               ⚠️ 先预览再单独确认提交，是**有意的两步**：目标是生产官网的数据源。 -->
-          <button type="submit" class="primary" id="previewBtn">校验并预览</button>
-          <button type="button" id="resetBtn">还原</button>
-          <button type="button" id="deleteBtn" class="danger" hidden>删除这个产品…</button>
           <span class="actions-note" id="actionsNote"></span>
         </div>
       </form>

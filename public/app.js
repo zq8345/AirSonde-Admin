@@ -480,6 +480,8 @@ function setThumb(node, src, alt) {
 
 /** 把当前草稿 + 待上传的图渲染成缩略图。 */
 function renderImages() {
+  // 图片增删改后同步刷新 sticky 条的计数（这里是所有图片变化的汇合点）
+  setTimeout(() => { try { updateDirty(); } catch {} }, 0);
   const p = state.draft || {};
   const pend = state.pending;
 
@@ -815,6 +817,33 @@ document.querySelectorAll(".add[data-add]").forEach((b) => {
     else repeatRow($("#f_highlights"), "");
   };
 });
+// ── sticky 条上的改动计数 ──
+// 🔴 数的是**与已保存内容的实际差异**，不是"你敲过几下键盘"：
+//    敲进去又改回来，那不算改动；只报"有未保存改动"的话，人分不清自己动了什么。
+function updateDirty() {
+  const n = $("#dirtyCount");
+  if (!n) return;
+  if (state.isNew) { n.innerHTML = "<b>新产品</b>（尚未创建）"; return; }
+  if (!state.draft) { n.textContent = "未改动"; return; }
+  let changed = [];
+  try {
+    const now = readForm(), base = state.draft;
+    for (const k of Object.keys(now)) {
+      // images 由服务端按 status 归一化，前端比它没意义 —— 图片的改动用下面的待上传计数表达
+      if (k === "images") continue;
+      if (JSON.stringify(now[k] ?? null) !== JSON.stringify(base[k] ?? null)) changed.push(k);
+    }
+  } catch { /* 表单还没填好时不报错，保持上一次的显示 */ }
+  const imgs = (state.pending.main ? 1 : 0) + state.pending.gallery.length + state.pending.removed.size;
+  if (!changed.length && !imgs) { n.textContent = "未改动"; return; }
+  const parts = [];
+  if (changed.length) parts.push(`<b>${changed.length}</b> 个字段（${changed.join("、")}）`);
+  if (imgs) parts.push(`<b>${imgs}</b> 项图片`);
+  n.innerHTML = "已改：" + parts.join(" · ");
+}
+$("#editPane").addEventListener("input", updateDirty);
+$("#editPane").addEventListener("change", updateDirty);
+
 $("#f_mainfile").onchange = (e) => pickImage(e.target, "main");
 $("#f_galfile").onchange = (e) => pickImage(e.target, "gallery");
 
@@ -862,4 +891,5 @@ $("#deleteBtn").onclick = async () => {
     $("#listEmpty").textContent = "加载失败：" + e.message;
   }
 })();
+
 
