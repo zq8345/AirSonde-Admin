@@ -1,11 +1,12 @@
-// AirSonde 产品后台（admin.airsonde.com）—— M1：只读打通。
+﻿// AirSonde 产品后台（admin.airsonde.com）—— M1：只读打通。
 //
 // M1 范围：进程身份端点 + Access 门控 + GitHub 只读列目录。**没有任何写入能力。**
 // 写入是 M2，单独派单。别在这个文件里"顺手"加保存端点。
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, hasWriteToken, base64ToBytes, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { crossReference } from "./media";
 import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
@@ -193,6 +194,57 @@ app.get("/api/products-expanded", async (c) => {
   } catch (e) {
     console.error(JSON.stringify({ evt: "expand_failed", msg: String(e) }));
     return c.json({ error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+// ─────────── A8 媒体库：图片清单 + 引用对账（孤儿扫描）───────────
+//
+// ⛔ **只报告，绝不自动删。** 判错一张在用的图 = 官网当场缺图，而删除不可逆。
+//    要删由人在界面上逐张确认（走既有的 PUT/DELETE 路径），这里不提供"一键清理孤儿"。
+app.get("/api/media", async (c) => {
+  const repo = c.env.GITHUB_REPO, branch = c.env.GITHUB_BRANCH;
+  if (!repo || !branch) return c.json({ error: "配置缺失：GITHUB_REPO / GITHUB_BRANCH" }, 500);
+  try {
+    // ① 仓内全部 blob
+    const rr = await ghFetch(c.env, `/repos/${repo}/git/trees/${branch}?recursive=1`);
+    if (!rr.ok) throw new Error(`读 tree 失败 ${rr.status}：${(await rr.text()).slice(0, 200)}`);
+    const tj = (await rr.json()) as any;
+    if (tj.truncated) {
+      // ⚠️ 截断的树里"找不到某张图"和"那张图不存在"长得一模一样 ——
+      //    在这种输入上做孤儿判定会把在用的图判成孤儿。宁可停。
+      return c.json({ error: "仓内文件数超出一次 tree 查询上限（truncated），拒绝在不完整清单上做孤儿判定" }, 503);
+    }
+    const blobs = (tj.tree || [])
+      .filter((t: any) => t.type === "blob")
+      .map((t: any) => ({ path: t.path as string, size: (t.size as number) ?? 0, sha: t.sha as string }));
+
+    // ② 全部产品 JSON（引用来自**解析后的字段**，不是文本匹配）
+    const list = await listProducts(c.env);
+    const products = await Promise.all(list.files.map(async (f) => {
+      try {
+        const r = await readProductFile(c.env, f.slug);
+        if (!r.exists || !r.text) return { slug: f.slug, images: null, unreadable: true };
+        return { slug: f.slug, images: (JSON.parse(r.text) as any).images ?? null };
+      } catch { return { slug: f.slug, images: null, unreadable: true }; }
+    }));
+
+    // 🔴 有产品读不出来 ⇒ 它声明的引用我们看不见 ⇒ 那些图会被误判成孤儿。
+    //    这种情况下**不给孤儿结论**，只给清单 —— 半份输入算不出可信的孤儿。
+    const unreadable = products.filter((p: any) => p.unreadable).map((p: any) => p.slug);
+    const report = crossReference(blobs, products as any);
+
+    return c.json({
+      repo, branch,
+      ...report,
+      unreadable,
+      orphansTrustworthy: unreadable.length === 0,
+      note: unreadable.length
+        ? `⚠️ 有 ${unreadable.length} 个产品读不出来（${unreadable.join("、")}），它们声明的引用看不见 ⇒ **本次孤儿结论不可信**，先修好那些文件。`
+        : "孤儿仅供人工确认，本接口不提供自动删除。",
+    });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "media_failed", msg: String(e) }));
+    return c.json({ error: "读取媒体库失败", detail: String(e) }, 502);
   }
 });
 
@@ -647,3 +699,4 @@ app.get("/api/contract", (c) =>
 app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default app;
+

@@ -33,7 +33,7 @@
     <div class="nav-item soon" title="分类/机型轴管理，后续批次">分类 <span class="soon-tag">SOON</span></div>
 
     <div class="nav-sec">内容</div>
-    <div class="nav-item soon" title="媒体库：浏览/上传/替换/孤儿图扫描">图片 <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="media">图片<span class="cnt" id="navMediaCount"></span></button>
     <div class="nav-item soon" title="首页模块编辑">首页 <span class="soon-tag">SOON</span></div>
     <div class="nav-item soon" title="联系方式">联系方式 <span class="soon-tag">SOON</span></div>
 
@@ -89,6 +89,17 @@
         </table>
       </div>
       <div class="empty" id="listEmpty" hidden></div>
+    </section>
+
+    <!-- ══════ 媒体库 ══════ -->
+    <section id="mediaView" hidden>
+      <div class="page-head">
+        <h1>图片</h1>
+        <div class="tabs-status" id="mediaTabs"></div>
+      </div>
+      <div id="mediaSummary"></div>
+      <div class="gallery gallery-lib" id="mediaGrid"></div>
+      <div class="empty" id="mediaEmpty" hidden></div>
     </section>
 
     <!-- ══════ 详情 / 编辑视图 ══════ -->

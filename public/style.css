@@ -325,3 +325,11 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .editbar .dirty b { color: var(--accent); }
 .editbar .spacer { margin-left: auto; }
 .card .field:last-child { margin-bottom: 0; }
+
+/* ── A8 媒体库 ── */
+.gallery-lib { gap: 12px; }
+.mcard { width: 150px; }
+.mcard .thumb { width: 150px; height: 150px; }
+.mcard .gtag { white-space: normal; line-height: 1.35; }
+/* 未被引用的压黄边 —— 但**只是提示**，界面不提供一键删除 */
+.mcard.is-orphan .thumb { border-color: var(--warn); background: var(--warn-soft); }

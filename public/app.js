@@ -22,6 +22,8 @@ const state = {
   lastPreview: null,
   repo: null, branch: null,
   tab: "all",                 // 状态 tab：all | published | draft
+  nav: "products",            // 左导航当前视图：products | media
+  media: null, mediaTab: "all",
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -817,6 +819,96 @@ document.querySelectorAll(".add[data-add]").forEach((b) => {
     else repeatRow($("#f_highlights"), "");
   };
 });
+// ═══════════════ A8 媒体库 ═══════════════
+//
+// ⛔ **只报告，绝不提供"一键清理孤儿"。** 判错一张在用的图 = 官网当场缺图，而删除不可逆。
+//    要删就去那个产品的编辑页逐张确认 —— 多点两下，换的是"删错了没法撤"这件事不会发生。
+async function loadMedia() {
+  const grid = $("#mediaGrid"); grid.innerHTML = "";
+  $("#mediaSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
+  try {
+    const { body } = await api("/api/media");
+    state.media = body;
+    renderMedia();
+  } catch (e) {
+    $("#mediaSummary").innerHTML = "";
+    $("#mediaSummary").append(mkNotice("bad", "读取失败：" + e.message));
+  }
+}
+
+function renderMedia() {
+  const m = state.media; if (!m) return;
+  $("#navMediaCount").textContent = String(m.total);
+
+  const sum = $("#mediaSummary"); sum.innerHTML = "";
+  // 🔴 对账不成立 ⇒ 这次扫描本身有问题，结论不可用。放最前面，红着说。
+  if (!m.reconciled) sum.append(mkNotice("bad", "🔴 **对账不成立**（被引用 + 孤儿 ≠ 总数）—— 本次扫描结果不可用。"));
+  // 🔴 有产品读不出来 ⇒ 它声明的引用看不见 ⇒ 那些图会被误判成孤儿
+  if (!m.orphansTrustworthy) sum.append(mkNotice("bad", m.note));
+  sum.append(mkNotice(m.orphans ? "warn" : "ok",
+    `在用 **${m.referenced}** · 未被引用 **${m.orphans}** · 原图存档 **${m.archived}**（有意保留，不算孤儿）· 共 ${m.total} 张` +
+    (m.missing?.length ? ` · ⚠️ 产品声明了但仓里没有：**${m.missing.length}** 处` : "")));
+  if (m.missing?.length) {
+    // ⚠️ 这是与孤儿**相反**的一种病：不是"图没人要"，是"要的图不在"。修法也不同。
+    sum.append(mkNotice("bad", "以下引用指向不存在的文件（官网会缺图）：" +
+      m.missing.map((x) => `${x.slug} → ${x.rel}`).join("；")));
+  }
+
+  const tabs = $("#mediaTabs"); tabs.innerHTML = "";
+  const defs = [["all", "全部", m.total], ["orphan", "未被引用", m.orphans],
+                ["originals", "原图存档", m.archived],
+                ["published", "在线", m.files.filter((f) => f.area === "published").length],
+                ["draft", "草稿", m.files.filter((f) => f.area === "draft").length]];
+  defs.forEach(([k, label, n]) => {
+    const b = el("button", "stab" + (state.mediaTab === k ? " is-on" : "")); b.type = "button";
+    b.append(document.createTextNode(label), el("span", "stab-n", String(n)));
+    b.onclick = () => { state.mediaTab = k; renderMedia(); };
+    tabs.append(b);
+  });
+
+  const rows = m.files.filter((f) => {
+    if (state.mediaTab === "orphan") return f.referencedBy.length === 0 && f.area !== "originals";
+    if (["published","draft","originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
+    return true;
+  });
+
+  const grid = $("#mediaGrid"); grid.innerHTML = "";
+  rows.forEach((f) => {
+    const card = el("div", "gcard mcard");
+    if (!f.referencedBy.length) card.classList.add("is-orphan");
+    const t = el("div", "thumb"); setThumb(t, rawUrl(f.rel), f.rel);
+    card.append(t);
+    card.append(el("span", "gtag", f.rel.replace(/^products\//, "").replace(/^_draft\//, "")));
+    const use = el("span", "gtag");
+    if (f.referencedBy.length) {
+      use.textContent = "用于 " + f.referencedBy.join("、");
+      // 点一下直接跳到引用它的产品 —— 想删它就得从那里改
+      card.style.cursor = "pointer";
+      card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
+    } else {
+      use.textContent = "未被引用";
+      use.style.color = "var(--warn)";
+    }
+    card.append(use, el("span", "gtag", `${(f.size / 1024).toFixed(0)}KB · ${f.area}`));
+    grid.append(card);
+  });
+
+  const empty = $("#mediaEmpty");
+  empty.hidden = rows.length > 0;
+  if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
+}
+
+/** 左导航切视图。⚠️ 只切这三个，SOON 项不可点（见 index.html 的 .soon）。 */
+function showNav(which) {
+  state.nav = which;
+  $("#listView").hidden = which !== "products";
+  $("#mediaView").hidden = which !== "media";
+  $("#detailView").hidden = true;
+  document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
+  if (which === "media" && !state.media) loadMedia();
+}
+document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
+
 // ── sticky 条上的改动计数 ──
 // 🔴 数的是**与已保存内容的实际差异**，不是"你敲过几下键盘"：
 //    敲进去又改回来，那不算改动；只报"有未保存改动"的话，人分不清自己动了什么。
@@ -891,5 +983,7 @@ $("#deleteBtn").onclick = async () => {
     $("#listEmpty").textContent = "加载失败：" + e.message;
   }
 })();
+
+
 
 
