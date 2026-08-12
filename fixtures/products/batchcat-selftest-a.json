@@ -7,7 +7,7 @@
     "CO2"
   ],
   "images": {
-    "main": "products/batchcat-selftest-a.webp"
+    "main": "products/_draft/batchcat-selftest-a.webp"
   },
-  "status": "published"
+  "status": "draft"
 }
