@@ -1,4 +1,4 @@
-// AirSonde Admin 界面 —— A2：读 + 校验 + dry-run 预览。**没有保存能力。**
+﻿// AirSonde Admin 界面 —— A2：读 + 校验 + dry-run 预览。**没有保存能力。**
 //
 // ⚠️ 枚举全部来自 /api/contract，前端**不抄第二份**：
 //    抄一份的话，契约改了界面不会跟着变，而它看起来一切正常 —— 那是第二个真源。
@@ -851,23 +851,6 @@ $("#deleteBtn").onclick = async () => {
   }
 };
 
-// ═══════════════ 主题 ═══════════════
-// 🔴 **默认浅色，不看系统偏好。** 派单要的是浅色工作台；跟随系统的话，
-//    同一份后台在两个人眼里是两种样子，而"我这边是浅色的"会让 bug 报告对不上。
-//    暗色是人**主动**切出来的，选择记在 localStorage。
-function applyTheme(t) {
-  if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
-  else document.documentElement.removeAttribute("data-theme");
-  const el2 = document.getElementById("themeLabel");
-  if (el2) el2.textContent = t === "dark" ? "浅色" : "暗色";   // 按钮写的是"切到哪去"
-}
-applyTheme(localStorage.getItem("as-theme") || "light");
-$("#themeToggle").onclick = () => {
-  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-  localStorage.setItem("as-theme", next);
-  applyTheme(next);
-};
-
 // ── 起步 ──
 (async () => {
   await loadWho();
@@ -879,3 +862,4 @@ $("#themeToggle").onclick = () => {
     $("#listEmpty").textContent = "加载失败：" + e.message;
   }
 })();
+

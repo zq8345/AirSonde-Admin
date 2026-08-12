@@ -1,4 +1,6 @@
-/* AirSonde Admin —— 后台样式。深浅色都要能看，因为没人会为了用后台去切系统主题。 */
+﻿/* AirSonde Admin —— 后台样式。**浅色是唯一主题**（Joe 2026-08-12 拍板：这个后台不要深色底）。
+   ⚠️ 不做暗色、也不跟随 prefers-color-scheme —— 跟随系统会让同一份后台在两个人眼里是两种样子，
+      而"我这边是浅色的"会让 bug 报告对不上。wanew 有切换，但 Joe 没要，不顺手加。 */
 
 :root {
   --bg: #f6f7f9;
@@ -22,31 +24,6 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-/* 🔴 **默认浅色，不跟随系统。**
-   原来这里是 `@media (prefers-color-scheme: dark)` —— 于是 Joe 的系统是暗色，
-   后台就整个呈现暗色，而派单要的是浅色。⚠️ 我当时报了"✅ 外壳：浅色"，
-   但我验的是几何布局，**从没验过"呈现出来是浅色"** —— 那句 ✅ 描述的是 CSS 里那组
-   默认变量，不是屏幕上的结果。判据必须落在产出上，不落在源码上。
-   ⇒ 改成显式主题：无 data-theme ＝ 浅色（工作台默认），data-theme="dark" ＝ 暗色（人主动切）。 */
-:root[data-theme="dark"] {
-  --bg: #14161a;
-  --surface: #1c1f24;
-  --line: #2c3138;
-  --text: #e6e8ea;
-  --muted: #9aa3ad;
-  --accent: #5aa2f0;
-  --accent-soft: #16283d;
-  --danger: #f97066;
-  --danger-soft: #2d1614;
-  --warn: #f0b429;
-  --warn-soft: #2d2413;
-  --ok: #47c67f;
-  --ok-soft: #102a1c;
-  --add: #47c67f;
-  --add-soft: #102a1c;
-  --del: #f97066;
-  --del-soft: #2d1614;
-}
 
 * { box-sizing: border-box; }
 
@@ -321,3 +298,5 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .notice-ok { background: var(--ok-soft); color: var(--ok); }
 .notice-warn { background: var(--warn-soft); color: var(--warn); }
 .notice-bad { background: var(--danger-soft); color: var(--danger); }
+
+
