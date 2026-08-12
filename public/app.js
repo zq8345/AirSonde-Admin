@@ -20,7 +20,15 @@ const state = {
   //    null = 还没问到。在问到之前界面不该假装知道自己能不能写。
   write: null,      // { enabled, gateOpen, tokenConfigured }
   lastPreview: null,
+  repo: null, branch: null,
+  // 待上传/待删除的图 —— 只存在于内存，**保存之前一个字节都不会进仓**
+  pending: { main: null, gallery: [], removed: new Set() },
 };
+
+/** 换产品、还原、新建时必须清空 —— 否则上一份的待上传图会跟着走到下一个产品身上。 */
+function resetPending() {
+  state.pending = { main: null, gallery: [], removed: new Set() };
+}
 
 // ── 通用请求：**失败要说出服务器的原话**，不要自己概括成"加载失败" ──
 async function api(path, init) {
@@ -49,6 +57,7 @@ async function loadWho() {
       const b = el("span", "banner-why", "⚠️ " + w.warnings.join("；"));
       $("#banner").append(b);
     }
+    state.repo = w.data.repo; state.branch = w.data.branch;
     state.write = {
       enabled: !!w.data.writeEnabled,
       gateOpen: !!w.data.writeGateOpen,
@@ -68,6 +77,8 @@ async function loadWho() {
 function applyWriteMode() {
   const w = state.write;
   const banner = $("#banner"), title = $("#bannerTitle"), text = $("#bannerText"), why = $("#bannerWhy");
+  // 删除按钮只在真能写时出现 —— 一个点了没反应的删除按钮比没有更糟
+  $("#deleteBtn").hidden = !(w.enabled && state.slug);
 
   if (w.enabled) {
     banner.classList.add("banner-live");
@@ -166,6 +177,8 @@ const cache = new Map();
 // ═══════════════ 选中 / 读取 ═══════════════
 async function select(slug) {
   state.slug = slug; state.isNew = false;
+  resetPending();                       // 换产品必须清空待上传，否则上一份的图会跟过来
+  $("#deleteBtn").hidden = !state.write?.enabled;
   $("#placeholder").hidden = true; $("#detail").hidden = false;
   $("#preview").hidden = true;
   $("#dTitle").textContent = slug;
@@ -198,6 +211,9 @@ async function select(slug) {
 
 function startNew() {
   state.isNew = true; state.slug = null; state.loaded = null;
+  resetPending();
+  $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
+  $("#f_slug").readOnly = false;
   $("#placeholder").hidden = true; $("#detail").hidden = false; $("#preview").hidden = true;
   $("#dTitle").textContent = "新建产品";
   $("#dPath").textContent = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
@@ -292,6 +308,111 @@ function renderView(p) {
 }
 
 // ═══════════════ 表单 ═══════════════
+// ═══════════════ 图片 ═══════════════
+//
+// 🔴 一律在浏览器里转成 WebP 再上传，服务端**只认 WebP 且按文件头判**。
+//    收 png/jpg 的话，文件名是 `.webp` 而内容不是 —— 那种错**不会有任何症状**
+//    （Astro 和浏览器多半照样显示），直到某天某个按扩展名解析的工具遇上它。
+const MAX_UPLOAD = 2 * 1024 * 1024;
+
+async function toWebp(file) {
+  if (!/^image\//.test(file.type)) throw new Error("这不是图片文件。");
+  const bmp = await createImageBitmap(file);
+  // 产品图最长边 1600 足够 —— Astro 的 <Image> 会再出响应式尺寸，源图无需更大
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(bmp.width * scale);
+  cv.height = Math.round(bmp.height * scale);
+  cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+
+  // 逐档降质直到进 2MB。⚠️ 降到底仍超标就**报错，不静默上传**——
+  //    静默截断或硬传会让服务端那道 2MB 闸来拒，而那时人已经等了一轮上传。
+  for (const q of [0.85, 0.7, 0.55, 0.4]) {
+    const blob = await new Promise((r) => cv.toBlob(r, "image/webp", q));
+    if (!blob) throw new Error("这个浏览器的 canvas 导不出 WebP。");
+    if (blob.size <= MAX_UPLOAD) return { blob, quality: q, w: cv.width, h: cv.height };
+  }
+  throw new Error("图片降到最低画质仍超过 2MB，请先自行压缩。");
+}
+
+const blobToBase64 = (blob) =>
+  new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(",")[1]);   // 去掉 data: 前缀
+    fr.onerror = () => rej(new Error("读取文件失败"));
+    fr.readAsDataURL(blob);
+  });
+
+/** 仓内图片的可显示 URL（公开仓，raw 直连）。⚠️ 只用于预览，不是产物里的路径。 */
+const rawUrl = (jsonPath) =>
+  `https://raw.githubusercontent.com/${state.repo || "zq8345/AirSonde-Web"}/${state.branch || "main"}/src/assets/${jsonPath}`;
+
+function setThumb(node, src, alt) {
+  node.innerHTML = "";
+  if (!src) { node.append(el("span", "thumb-empty", "无图")); return; }
+  const img = el("img");
+  img.alt = alt || "";
+  // 🔴 **不要 loading="lazy"**：renderImages() 是在编辑面板还 `hidden` 的时候跑的，
+  //    惰性图在 display:none 的容器里永远不进视口 ⇒ 切到编辑页之后也**不补加载**，
+  //    结果是一片空白缩略图。⚠️ 那个症状看起来像"图片路径错了 / raw 地址不可用"，
+  //    而实际上 URL 完全正常（裸 new Image() 同一个地址秒开）。
+  //    缩略图至多几张，lazy 一点收益都没有，却换来一个查错方向的 bug。
+  img.onerror = () => { node.innerHTML = ""; node.append(el("span", "thumb-empty", "取不到")); };
+  img.src = src;   // ⚠️ src 放在 onerror 之后：先设 src 的话，缓存命中时错误事件可能已经错过
+  node.append(img);
+}
+
+/** 把当前草稿 + 待上传的图渲染成缩略图。 */
+function renderImages() {
+  const p = state.draft || {};
+  const pend = state.pending;
+
+  setThumb($("#mainThumb"), pend.main ? pend.main.url : (p.images?.main ? rawUrl(p.images.main) : null), "主图");
+  $("#mainImgNote").textContent = pend.main
+    ? `待上传：${pend.main.w}×${pend.main.h}，${(pend.main.size / 1024).toFixed(0)}KB（质量 ${pend.main.quality}）`
+    : (p.images?.main ? "已有图片。选择新图会替换它，旧文件在同一个 commit 里删除。" : "还没有主图。");
+
+  const box = $("#galleryBox"); box.innerHTML = "";
+  (p.images?.gallery || []).forEach((g, i) => {
+    const card = el("div", "gcard");
+    if (pend.removed.has(i)) card.classList.add("is-removed");
+    const t = el("div", "thumb"); setThumb(t, rawUrl(g), g);
+    const del = el("button", "gdel", pend.removed.has(i) ? "↩" : "×");
+    del.type = "button";
+    del.title = pend.removed.has(i) ? "撤销删除" : "删除这张";
+    del.onclick = () => { pend.removed.has(i) ? pend.removed.delete(i) : pend.removed.add(i); renderImages(); };
+    card.append(del, t, el("span", "gtag", g.split("/").pop()));
+    box.append(card);
+  });
+  pend.gallery.forEach((u, k) => {
+    const card = el("div", "gcard is-new");
+    const t = el("div", "thumb"); setThumb(t, u.url, "待上传");
+    const del = el("button", "gdel", "×"); del.type = "button"; del.title = "取消这张";
+    del.onclick = () => { pend.gallery.splice(k, 1); renderImages(); };
+    card.append(del, t, el("span", "gtag", `待上传 ${(u.size / 1024).toFixed(0)}KB`));
+    box.append(card);
+  });
+}
+
+async function pickImage(input, target) {
+  const file = input.files?.[0];
+  input.value = "";                    // 允许连续选同一个文件
+  if (!file) return;
+  const note = $("#mainImgNote");
+  const prev = note.textContent;
+  note.textContent = "正在转成 WebP…";
+  try {
+    const { blob, quality, w, h } = await toWebp(file);
+    const rec = { base64: await blobToBase64(blob), url: URL.createObjectURL(blob), size: blob.size, quality, w, h };
+    if (target === "main") state.pending.main = rec;
+    else state.pending.gallery.push(rec);
+    renderImages();
+  } catch (e) {
+    note.textContent = prev;
+    renderIssues({ ok: false, errors: [{ field: "图片", code: "image", message: e.message }], warnings: [] });
+  }
+}
+
 function repeatRow(container, value) {
   const r = el("div", "repeat-row");
   const i = el("input"); i.value = value || "";
@@ -319,9 +440,9 @@ function fillForm(p) {
 
   $("#f_sensors").querySelectorAll("input").forEach((cb) => { cb.checked = (p.sensors || []).includes(cb.value); });
 
-  const g = $("#f_gallery"); g.innerHTML = ""; (p.images?.gallery || []).forEach((x) => repeatRow(g, x));
   const h = $("#f_highlights"); h.innerHTML = ""; (p.highlights || []).forEach((x) => repeatRow(h, x));
   const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
+  renderImages();
 }
 
 /**
@@ -337,6 +458,9 @@ function readForm() {
     const a = [...$(sel).querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean);
     return a.length ? a : null;
   };
+  // gallery 现在由缩略图管理，不再是一排文本框；把草稿里的原值原样带回去，
+  // 具体搬到哪个目录由服务端的 planImages 决定 —— 前端不拼路径。
+  const galleryFromDraft = state.draft?.images?.gallery || null;
   const specs = (() => {
     const o = {};
     $("#f_specs").querySelectorAll(".kv-row").forEach((r) => {
@@ -349,7 +473,7 @@ function readForm() {
 
   const sensors = [...$("#f_sensors").querySelectorAll("input:checked")].map((i) => i.value);
   const moqRaw = $("#f_moq").value.trim();
-  const gallery = list("#f_gallery");
+  const gallery = galleryFromDraft;
   const main = nz($("#f_imgmain").value);
 
   const patch = {
@@ -369,6 +493,20 @@ function readForm() {
   return patch;
 }
 
+/** 组装发给服务端的信封：patch + 待上传 + 待删除。两个端点用同一个函数，形状不可能不一致。 */
+function buildEnvelope(extra = {}) {
+  const uploads = [];
+  if (state.pending.main) uploads.push({ slot: "main", base64: state.pending.main.base64 });
+  const galLen = (state.draft?.images?.gallery || []).length;
+  state.pending.gallery.forEach((u, k) => uploads.push({ slot: galLen + k, base64: u.base64 }));
+  return {
+    patch: readForm(),
+    uploads,
+    removeGallery: [...state.pending.removed],
+    ...extra,
+  };
+}
+
 // ═══════════════ 预览（dry-run）═══════════════
 async function doPreview(e) {
   e.preventDefault();
@@ -379,7 +517,7 @@ async function doPreview(e) {
     const { body } = await api(`/api/products/${encodeURIComponent(slug)}/preview`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(readForm()),
+      body: JSON.stringify(buildEnvelope()),
     });
     renderPreview(body);
     renderIssues(body.validation);
@@ -417,6 +555,21 @@ function renderPreview(r) {
 
   if (r.change.cleared?.length) {
     wrap.append(mkNotice("warn", `会被**清空**的字段：${r.change.cleared.join("、")}`));
+  }
+
+  // 🔴 图片动作必须显式列出来。它们和 JSON 在**同一个 commit** 里，
+  //    不列出来的话，人以为自己只改了一个 status，实际上还搬动了几个文件。
+  if (r.imageOps?.length) {
+    const box = el("div", "notice notice-warn");
+    box.append(el("b", null, `图片文件会有 ${r.imageOps.length} 项改动（与 JSON 同一个 commit）：`));
+    const ul = el("div");
+    const label = { upsert: "写入", copy: "搬动", delete: "删除" };
+    r.imageOps.forEach((o) => {
+      ul.append(el("div", null, `· ${label[o.op] || o.op} ${o.path.replace(/^src\/assets\//, "")}` +
+        (o.fromPath ? ` ← ${o.fromPath.replace(/^src\/assets\//, "")}` : "") + `  —— ${o.why}`));
+    });
+    box.append(ul);
+    wrap.append(box);
   }
 
   if (!r.change.identical) {
@@ -467,7 +620,7 @@ async function doCommit(prev, btn) {
     const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(readForm()),
+      body: JSON.stringify(buildEnvelope({ mustCreate: state.isNew })),
     });
     const b = await r.json().catch(() => null);
     const box = $("#preview");
@@ -485,7 +638,11 @@ async function doCommit(prev, btn) {
       //    看到旧内容，然后以为没保存成功，于是**再存一次**。
       box.prepend(mkNotice("warn", "官网重建需要一两分钟。**现在去刷 airsonde.com 看到的仍是旧内容，这不是没保存成功。**"));
       btn.remove();
-      // 重新读一次：拿到新的 blob sha，否则下一次编辑会带着过期的乐观锁去提交。
+      // 🔴 待上传清单必须清空：不清的话，下一次保存会把同一批图**再传一遍**，
+      //    而且如果这时切到别的产品，这批图会落到那个产品名下。
+      resetPending();
+      // 重新读一次：拿到新的 blob sha 与归一化后的图片路径，否则下一次编辑带着过期状态提交。
+      await loadList();
       await select(slug);
     } else if (r.status === 409) {
       box.prepend(mkNotice("bad", `**并发冲突**：${b.detail}`));
@@ -519,13 +676,47 @@ $("#q").oninput = renderList;
 $("#statusFilter").onchange = renderList;
 $("#newBtn").onclick = startNew;
 $("#editPane").onsubmit = doPreview;
-$("#resetBtn").onclick = () => { if (state.draft) fillForm(state.draft); $("#preview").hidden = true; };
-document.querySelectorAll(".add").forEach((b) => {
+$("#resetBtn").onclick = () => { resetPending(); if (state.draft) fillForm(state.draft); $("#preview").hidden = true; };
+document.querySelectorAll(".add[data-add]").forEach((b) => {
   b.onclick = () => {
     if (b.dataset.add === "specs") kvRow($("#f_specs"), "", "");
-    else repeatRow($(b.dataset.add === "gallery" ? "#f_gallery" : "#f_highlights"), "");
+    else repeatRow($("#f_highlights"), "");
   };
 });
+$("#f_mainfile").onchange = (e) => pickImage(e.target, "main");
+$("#f_galfile").onchange = (e) => pickImage(e.target, "gallery");
+
+// status 改了 ⇒ 图片路径会跟着搬家，立刻在界面上说出来，别等到预览才让人发现
+$("#f_status").addEventListener("change", () => {
+  const dir = $("#f_status").value === "published" ? "products/" : "products/_draft/";
+  $("#mainImgNote").textContent = `⚠️ status 改为 ${$("#f_status").value} ⇒ 保存时图片会搬到 ${dir}（在同一个 commit 里）。`;
+});
+
+// ── 删除：二次确认要求打出 slug 本身 ──
+// ⚠️ 不用"你确定吗"那种确认框：它训练人闭着眼睛点确定。要求打出名字，是让手停一下。
+$("#deleteBtn").onclick = async () => {
+  const slug = state.slug;
+  if (!slug) return;
+  const typed = prompt(`删除会同时删掉这个产品的 JSON 和它的图片，并触发官网重建。\n\n确认请输入 slug：\n${slug}`);
+  if (typed !== slug) { if (typed !== null) alert("输入不匹配，已取消。"); return; }
+  const btn = $("#deleteBtn"); btn.disabled = true; btn.textContent = "删除中…";
+  try {
+    const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    const b = await r.json().catch(() => null);
+    if (b?.wrote === true) {
+      $("#detail").hidden = true; $("#placeholder").hidden = false;
+      state.slug = null; cache.delete(slug); resetPending();
+      await loadList();
+      alert(`已删除。commit ${String(b.commitSha).slice(0, 7)}\n${b.note || ""}`);
+    } else {
+      alert(`未删除：${b?.detail || b?.error || r.status}`);
+    }
+  } catch (e) {
+    alert("删除请求失败：" + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "删除这个产品…";
+  }
+};
 
 // ── 起步 ──
 (async () => {

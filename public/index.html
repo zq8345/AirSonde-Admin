@@ -112,8 +112,17 @@
         </div>
 
         <div class="field">
-          <label for="f_imgmain">images.main <b class="req">必填</b></label>
-          <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false">
+          <label>主图 <b class="req">必填</b></label>
+          <div class="imgrow">
+            <div class="thumb" id="mainThumb"><span class="thumb-empty">无图</span></div>
+            <div class="imgrow-side">
+              <label class="filebtn">选择图片<input type="file" id="f_mainfile" accept="image/*" hidden></label>
+              <p class="hint" id="mainImgNote"></p>
+            </div>
+          </div>
+          <!-- ⚠️ 路径本身不给人手填：它由 slug 和 status 决定（published→products/、draft→products/_draft/）。
+               手填等于让人去维护一条服务端已经在维护的规则，两边迟早不一致。这里只显示，不可改。 -->
+          <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false" readonly>
           <p class="hint">
             相对 <code>src/assets/</code> 的路径，不是外链。图片放在官网仓的
             <code>src/assets/products/</code> 下。
@@ -123,9 +132,9 @@
         </div>
 
         <div class="field">
-          <label>images.gallery</label>
-          <div class="repeat" id="f_gallery"></div>
-          <button type="button" class="add" data-add="gallery">+ 加一张</button>
+          <label>更多图片（gallery）</label>
+          <div class="gallery" id="galleryBox"></div>
+          <label class="add filebtn">+ 加一张<input type="file" id="f_galfile" accept="image/*" hidden></label>
         </div>
 
         <div class="field">
@@ -155,6 +164,8 @@
                   一步到位的保存按钮会让人在没看 diff 的情况下就提交。 -->
           <button type="submit" class="primary" id="previewBtn">校验并预览</button>
           <button type="button" id="resetBtn">还原</button>
+          <!-- 删除放在最右、样式独立：它和"保存"是完全不同性质的动作，挨着放会被误点 -->
+          <button type="button" id="deleteBtn" class="danger" hidden>删除这个产品…</button>
           <span class="actions-note" id="actionsNote"></span>
         </div>
       </form>

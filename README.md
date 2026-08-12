@@ -276,6 +276,7 @@ npx wrangler deployments list
 | `wrangler tail` 里一条日志都没有 | worker 没运行 / 部署坏了 | **匿名请求被 Access 在边缘就 302 拦掉了，根本到不了 worker** —— 没请求进来，当然没日志。这不是 worker 的问题 |
 | 读 CF API 全部 `403 Authentication error` | CI / 权限配置被搞坏了 | **本机 wrangler 的 OAuth 令牌过期了**。跑一次 `npx wrangler whoami` 让它自己刷新。⚠️ 照着症状报出去的结论会是"CI 把权限搞坏了"——完全错误，而且听起来很有道理 |
 | `/api/products` 说 `dirExists:false`，而那个目录明明有文件 | 目录真的不存在 / GitHub API 坏了 | **`.dev.vars` 把数据源指到了 `fixtures/products`**，读的根本不是 `AirSonde-Web`。⚠️ 两种情况的输出**长得完全一样** —— 先看 `/api/_whoami` 的 `data.repo` / `data.productsDir` |
+| 编辑页缩略图一片空白 | 图片路径错了 / raw 地址不可用 / 沙盒挡了外链 | **`<img loading="lazy">` 在 `display:none` 的容器里永远不进视口**。`renderImages()` 是在编辑面板还 `hidden` 时跑的，惰性图从此不再补加载。⚠️ 判别式：裸 `new Image()` 打同一个 URL —— 秒开就说明 URL 没问题，问题在 lazy |
 | 本地写入报 `GITHUB_TOKEN 未配置` | token 没配好 | **本机永远不准写生产数据仓**（出站闸）。配了 token 也照样被拦 —— 已修：出站策略现在第一个判，报的是真原因 |
 
 ## 🔴 每一条事实性断言，都要能回答「我是什么时候、用什么方式量的」
