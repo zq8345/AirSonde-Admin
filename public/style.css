@@ -42,13 +42,30 @@ body {
   display: flex; flex-direction: column; overflow: hidden;
 }
 
-/* 固定顶栏：左格宽度与侧栏严格相同，字标才正对侧栏。 */
+/* 固定顶栏：左格宽度与侧栏严格相同，字标才正对侧栏。
+   ⭐ 高度**照 CRM 后台的构造值**取（Joe 指定对齐）：外层 padding 14px、
+      搜索框 padding 7px 10px / font 13px / border 1px ——
+      高度由这几个值算出来，不写死 height。
+      写死 height 的话，字体或输入框内边距一改，内容就会溢出或上下不居中，
+      而"高度还是 66px"看起来仍然是对的。 */
 .topbar {
-  flex: 0 0 auto; display: flex; align-items: center;
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px;
+  padding: 14px 12px;
   background: var(--surface); border-bottom: 1px solid var(--line);
 }
-.topbar-left { flex: 0 0 208px; display: flex; align-items: center; padding: 9px 10px 9px 18px; }
-@media (max-width: 860px) { .topbar-left { flex: 1 1 auto; } }
+/* 左格正对侧栏：208 − 顶栏左 padding 12 = 196，加回 12 才与侧栏 208 对齐 */
+.topbar-left { flex: 0 0 196px; display: flex; align-items: center; padding-left: 6px; }
+.topbar-right { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
+/* 与 CRM 的 #q 同一组度量值 —— 顶栏高度就是被它撑出来的 */
+.topbar-right #q {
+  width: 240px; min-width: 110px; padding: 7px 10px; font: inherit; font-size: 13px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+}
+.topbar-right #q:focus { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent); }
+@media (max-width: 860px) {
+  .topbar-left { flex: 0 0 auto; }
+  .topbar-right #q { width: 100%; }
+}
 
 /* ── 预览模式横幅：sticky，滚动时不消失 ── */
 .banner {

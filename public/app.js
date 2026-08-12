@@ -812,7 +812,12 @@ function switchView(v) {
 }
 
 document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => switchView(t.dataset.view); });
-$("#q").oninput = renderList;
+// 搜索框常驻顶栏 ⇒ 在别的视图里也看得见。
+// ⚠️ 不切视图的话，人在设置页打字会**什么都不发生** —— 而那看起来像搜索坏了。
+$("#q").oninput = () => {
+  if (state.nav !== "products") showNav("products");
+  renderList();
+};
 $("#catFilter").onchange = renderList;
 $("#newBtn").onclick = startNew;
 $("#backBtn").onclick = () => {

@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
 </head>
 <body>
 
@@ -46,6 +46,16 @@
          ⚠️ 带 width/height 属性是为了让浏览器在图到达前就留出位置 —— 不带的话顶栏会先塌后跳。
          ⚠️ alt 写 "AirSonde" 不写 "AirSonde logo"：读屏软件会自己播报"图像"。 -->
     <img class="brand-logo" src="/airsonde-logo-green-transparent.png?v=2" alt="AirSonde" width="1686" height="351">
+  </div>
+  <!-- 搜索框（Joe 定：顶栏放个搜索框，高度对齐 CRM）。
+       🔴 这是**搬过来的那一个**，不是新加一个：列表工具条里原本就有一个搜索框，
+          再加一个就会有两个输入框控制同一个筛选 —— 用户不知道哪个在生效，
+          而两个都在生效时，"我明明搜了却没结果"这种问题查都没法查。
+       ⚠️ 它现在常驻顶栏（顶栏不滚），所以在别的视图里也看得见 ⇒
+          在非产品页输入时，自动切回产品页再筛（见 app.js），
+          否则会出现"我在设置页打字，什么都没发生"。 -->
+  <div class="topbar-right">
+    <input type="search" id="q" placeholder="搜标题 / slug / 型号" autocomplete="off">
   </div>
 </header>
 
@@ -86,8 +96,8 @@
 
       <div class="toolbar">
         <div class="tabs-status" id="statusTabs"></div>
+        <!-- 搜索框已搬到顶栏（常驻、不随滚动消失）。这里只留机型筛选。 -->
         <div class="toolbar-right">
-          <input type="search" id="q" placeholder="搜标题 / slug / 型号" autocomplete="off">
           <select id="catFilter"><option value="">全部机型</option></select>
         </div>
       </div>
@@ -349,7 +359,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=4"></script>
+<script src="/app.js?v=5"></script>
 </body>
 </html>
 
