@@ -159,6 +159,135 @@ app.get("/api/products", async (c) => {
   }
 });
 
+// ─────────── 列表所需的全部元数据（表格要缩略图/标题/状态/机型，光有文件名不够）───────────
+//
+// ⚠️ 为什么单开一个 expand 而不是让前端逐个拉：列表页要一次画出 23 行，
+//    前端逐个拉就是 23 个串行往返，列表会一行一行地"长出来"，而且筛选/计数在数据到齐前都是错的。
+//    这里并发拉一次，前端拿到的就是完整的一页。
+app.get("/api/products-expanded", async (c) => {
+  try {
+    const list = await listProducts(c.env);
+    const items = await Promise.all(list.files.map(async (f) => {
+      try {
+        const r = await readProductFile(c.env, f.slug);
+        if (!r.exists || !r.text) return { slug: f.slug, error: "读不到" };
+        let p: any;
+        try { p = JSON.parse(r.text); }
+        catch (e) {
+          // ⚠️ 坏文件要**出现在列表里并标红**，不能被过滤掉 ——
+          //    过滤掉的话，一个解析不了的产品会从后台彻底消失，没人知道它存在。
+          return { slug: f.slug, error: "不是合法 JSON", detail: String(e).slice(0, 120) };
+        }
+        const v = validateProduct(p);
+        return {
+          slug: f.slug, name: p.name ?? null, model: p.model ?? null,
+          category: p.category ?? null, status: p.status ?? null,
+          image: p.images?.main ?? null, sensors: p.sensors ?? [],
+          hasSupplierRef: !!p.supplierRef,
+          valid: v.ok, errorCount: v.errors.length, warnCount: v.warnings.length,
+          size: f.size,
+        };
+      } catch (e) { return { slug: f.slug, error: String(e).slice(0, 120) }; }
+    }));
+    return c.json({ ...list, items });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "expand_failed", msg: String(e) }));
+    return c.json({ error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+// ─────────── 批量操作：一次批量 = **一个** commit ───────────
+//
+// 🔴 为什么合成一个 commit（与 wanew-admin 的 publishBulk 同一条路）：
+//    ① **原子**：要么全改要么全不改。逐个 commit 的话，中途失败会留下"改了一半"的状态，
+//       而那种状态没人知道它存在，直到官网上出现一半上架一半没上架。
+//    ② **一次构建**：逐个 commit = N 次 Pages 重建，官网被反复刷。
+//    ③ **审计**：一条 commit 里列全 slug，比翻 N 条 commit 容易看。
+// ⚠️ 契约闸对**每一个**产品照过；有任何一个不过 ⇒ **整批不写**，并把是谁挡的说清楚。
+//    这条是有意的：批量里混进一个坏数据时，"其余的照常写"会让人以为整批都成了。
+app.post("/api/products/batch", async (c) => {
+  const operator = c.req.header("cf-access-authenticated-user-email")
+    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
+
+  let body: { slugs?: string[]; op?: string; value?: string };
+  try { body = await c.req.json(); } catch (e) { return c.json({ error: "请求体不合法", detail: String(e) }, 400); }
+  const slugs = [...new Set(body.slugs || [])];
+  if (!slugs.length) return c.json({ wrote: false, error: "没有选中任何产品" }, 400);
+  if (body.op !== "status") return c.json({ wrote: false, error: `未知批量操作：${body.op}` }, 400);
+  if (!(STATUSES as readonly string[]).includes(String(body.value))) {
+    return c.json({ wrote: false, error: `status 非法：${body.value}` }, 400);
+  }
+  const value = String(body.value);
+
+  try {
+    const files: CommitFile[] = [];
+    const changed: string[] = [];
+    const skipped: { slug: string; why: string }[] = [];   // ⭐ 跳过的必须数出来并报出去
+    const rejected: { slug: string; codes: string[] }[] = [];
+    let imageOps = 0;
+
+    for (const slug of slugs) {
+      const f = await readProductFile(c.env, slug);
+      if (!f.exists) { skipped.push({ slug, why: "文件不存在" }); continue; }
+      let existing: any;
+      try { existing = JSON.parse(f.text!); }
+      catch { skipped.push({ slug, why: "不是合法 JSON，拒绝在它上面改" }); continue; }
+
+      if (existing.status === value) { skipped.push({ slug, why: `已经是 ${value}` }); continue; }
+
+      const { merged } = mergeProduct(existing, { status: value });
+      const plan = planImages(slug, value, existing.images ?? null, (merged as any).images ?? null, [], []);
+      (merged as any).images = plan.images;
+
+      const v = validateProduct(merged);
+      const si = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
+      if (si) v.errors.push(si);
+      if (!v.ok) { rejected.push({ slug, codes: v.errors.map((e) => e.code) }); continue; }
+
+      files.push({ path: f.path, text: serializeProduct(merged) });
+      for (const op of plan.ops) {
+        if (op.op === "upsert") files.push({ path: op.path, base64: op.base64! });
+        else if (op.op === "copy") files.push({ path: op.path, fromPath: op.fromPath! });
+        else files.push({ path: op.path, remove: true });
+      }
+      imageOps += plan.ops.length;
+      changed.push(slug);
+    }
+
+    // 🔴 有任何一个被契约闸挡下 ⇒ 整批不写。
+    if (rejected.length) {
+      return c.json({
+        wrote: false,
+        reason: "批量中有产品未通过契约校验，**整批未写入**（不产生任何 commit）",
+        rejected, skipped, wouldChange: changed,
+      }, 422);
+    }
+    if (!changed.length) {
+      return c.json({ wrote: false, reason: "没有需要改动的产品", skipped });
+    }
+
+    const r = await commitFiles(c.env, {
+      message:
+        `admin: bulk status=${value} · ${changed.length} 个产品 (${operator})\n\n` +
+        changed.map((s) => `- ${s}`).join("\n") +
+        (imageOps ? `\n\n图片 ${imageOps} 项改动（随状态搬家）` : "") +
+        `\n来源：admin.airsonde.com`,
+      files,
+    });
+    console.log(JSON.stringify({ evt: "bulk_ok", operator, op: body.op, value, count: changed.length, commit: r.commitSha }));
+
+    return c.json({ wrote: true, ...r, changed, skipped, imageOps,
+      note: `已在**一个 commit** 里改了 ${changed.length} 个产品${skipped.length ? `，跳过 ${skipped.length} 个` : ""}。` });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
+    console.error(JSON.stringify({ evt: "bulk_failed", operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "批量操作失败", detail: String(e) }, 502);
+  }
+});
+
 // ───────────────────── 读单个产品 ─────────────────────
 app.get("/api/products/:slug", async (c) => {
   const slug = c.req.param("slug");
