@@ -940,12 +940,17 @@ async function loadSite(which) {
   $("#siteTitle").textContent = SITE_SECTIONS[which].title;
   $("#siteNotes").innerHTML = '<div class="notice notice-warn">读取中…</div>';
   $("#siteForm").innerHTML = "";
+  // ⚠️ 读取期间必须**禁用**保存：一个空表单配一个看起来可点的保存按钮，
+  //    会让人以为"这里本来就是空的、存一下就好"。（点了其实是空转，但界面不该这么说话。）
+  state.site = null; state.siteDraft = null; state.siteBase = null;
+  const btn = $("#siteSave"); btn.disabled = true; btn.textContent = "读取中…";
   try {
     const { status, body } = await api("/api/site-content");
     if (status === 404 || status === 422) {
       state.site = null;
       $("#siteNotes").innerHTML = "";
       $("#siteNotes").append(mkNotice("bad", `读不到站点内容：${body.hint || body.error || status}`));
+      btn.textContent = "保存";   // 仍然 disabled —— 读不到就绝不允许写
       return;
     }
     state.site = body;
