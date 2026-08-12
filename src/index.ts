@@ -283,8 +283,27 @@ app.post("/api/products/batch", async (c) => {
     if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
     if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
     if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
-    console.error(JSON.stringify({ evt: "bulk_failed", operator, msg: String(e) }));
-    return c.json({ wrote: false, error: "批量操作失败", detail: String(e) }, 502);
+
+    // ⚠️ 「要搬动的文件在仓里不存在」是**某一个产品的数据问题**，不是"批量功能坏了"。
+    //    报成不透明的 502 的话，操作的人看到"批量操作失败"却不知道是谁害的，
+    //    只能一个个试 —— 而错误消息里其实带着路径，路径里就有 slug。
+    //    ⇒ 归因到 slug，按与契约拒绝一致的形状返回（422 + rejected），整批同样不写。
+    const msg = String(e);
+    const miss = /要搬动的文件在仓里不存在：(\S+)/.exec(msg);
+    if (miss) {
+      const path = miss[1]!;
+      const guilty = slugs.find((s) => path.includes(s)) || "(认不出是哪个产品)";
+      console.error(JSON.stringify({ evt: "bulk_missing_image", operator, path, guilty }));
+      return c.json({
+        wrote: false,
+        reason: "批量中有产品的图片文件在仓里不存在，**整批未写入**（不产生任何 commit）",
+        rejected: [{ slug: guilty, codes: ["image_missing"], detail: `JSON 指向 ${path}，但该文件不在仓里` }],
+        hint: "这条是数据本身不一致：产品 JSON 声明了一张图，而那张图没被提交进仓。先补上图或改掉 images.main。",
+      }, 422);
+    }
+
+    console.error(JSON.stringify({ evt: "bulk_failed", operator, msg }));
+    return c.json({ wrote: false, error: "批量操作失败", detail: msg }, 502);
   }
 });
 

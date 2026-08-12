@@ -21,6 +21,8 @@ const state = {
   write: null,      // { enabled, gateOpen, tokenConfigured }
   lastPreview: null,
   repo: null, branch: null,
+  tab: "all",                 // 状态 tab：all | published | draft
+  selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
   // 待上传/待删除的图 —— 只存在于内存，**保存之前一个字节都不会进仓**
@@ -123,54 +125,158 @@ async function loadContract() {
 
 // ═══════════════ 列表 ═══════════════
 async function loadList() {
-  const { body } = await api("/api/products");
+  // ⚠️ 用 expanded：表格要缩略图/标题/状态/机型，光有文件名画不出来。
+  //    前端逐个拉的话，列表会一行一行"长出来"，而且筛选与计数在数据到齐前都是错的。
+  const { body } = await api("/api/products-expanded");
   state.listMeta = body;
-  state.list = body.files || [];
+  state.list = body.items || [];
+  state.list.forEach((it) => { if (!it.error) cache.set(it.slug, it); });
   renderList();
 }
 
-function renderList() {
-  const ul = $("#list"); ul.innerHTML = "";
+/** 当前筛选下的行。tabs 计数与表格必须用**同一个函数**，否则数字和内容会对不上。 */
+function filteredRows() {
   const q = $("#q").value.trim().toLowerCase();
-  const sf = $("#statusFilter").value;
-
-  // ⚠️ 列表项来自目录清单，此时还没读过每个文件的内容 ⇒ **status 是未知的**，
-  //    不是 "unknown 状态"。选中过的会被缓存下来，那时才显示真实 status。
-  const rows = state.list.filter((f) => {
-    if (q && !(`${f.slug} ${f.name}`.toLowerCase().includes(q))) return false;
-    if (sf) { const s = cache.get(f.slug)?.status; if (s !== sf) return false; }
+  const cat = $("#catFilter").value;
+  return state.list.filter((it) => {
+    if (state.tab !== "all" && it.status !== state.tab) return false;
+    if (cat && it.category !== cat) return false;
+    if (q && !`${it.slug} ${it.name || ""} ${it.model || ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
+}
 
-  rows.forEach((f) => {
-    const li = el("li");
-    const b = el("button");
-    if (f.slug === state.slug) b.classList.add("is-on");
-    const top = el("div", "li-top");
-    top.append(el("span", "li-name", cache.get(f.slug)?.name || f.slug));
-    const st = cache.get(f.slug)?.status;
-    top.append(el("span", `badge badge-${st || "unknown"}`, st || "?"));
-    b.append(top, el("div", "li-sub", `${f.slug}.json · ${f.size}B`));
-    b.onclick = () => select(f.slug);
-    li.append(b);
-    ul.append(li);
+function renderList() {
+  // ── 机型下拉：选项从**真实数据**里长出来，不硬编码 ──
+  const cats = [...new Set(state.list.map((i) => i.category).filter(Boolean))].sort();
+  const sel = $("#catFilter"), keep = sel.value;
+  sel.innerHTML = "";
+  sel.append(new Option("全部机型", ""));
+  cats.forEach((c) => sel.append(new Option(c, c)));
+  sel.value = cats.includes(keep) ? keep : "";
+
+  // ── 状态 tabs（带计数）──
+  const counts = { all: state.list.length };
+  (state.contract?.statuses || ["published", "draft"]).forEach((s) => {
+    counts[s] = state.list.filter((i) => i.status === s).length;
+  });
+  const tabs = $("#statusTabs"); tabs.innerHTML = "";
+  const label = { all: "全部", published: "在线", draft: "草稿箱" };
+  ["all", ...(state.contract?.statuses || [])].forEach((k) => {
+    const b = el("button", "stab" + (state.tab === k ? " is-on" : ""));
+    b.type = "button";
+    b.append(document.createTextNode(label[k] || k), el("span", "stab-n", String(counts[k] ?? 0)));
+    b.onclick = () => { state.tab = k; state.selected.clear(); renderList(); };
+    tabs.append(b);
   });
 
-  $("#listCount").textContent = state.listMeta?.dirExists === false ? "目录不存在" : `${rows.length}/${state.list.length}`;
+  const rows = filteredRows();
+  const tb = $("#rows"); tb.innerHTML = "";
+
+  rows.forEach((it) => {
+    const tr = el("tr");
+    if (it.error) tr.classList.add("row-bad");
+
+    const ck = el("input"); ck.type = "checkbox"; ck.checked = state.selected.has(it.slug);
+    ck.disabled = !!it.error;
+    ck.onchange = () => { ck.checked ? state.selected.add(it.slug) : state.selected.delete(it.slug); renderBatch(); syncCkAll(); };
+    // ⚠️ Element.append() 返回 undefined，不能链式接 .lastChild —— 那会抛 TypeError，
+    //    而抛的位置在 tabs 渲染**之后**：于是 tabs 有数字、表格却是空的，
+    //    看起来像"筛选没匹配到"，实际上是渲染半路挂了。
+    const tdCk = el("td", "col-ck"); tdCk.append(ck); tr.append(tdCk);
+
+    const tdImg = el("td", "col-img");
+    const th = el("div", "thumb thumb-sm");
+    setThumb(th, it.image ? rawUrl(it.image) : null, it.name || it.slug);
+    tdImg.append(th); tr.append(tdImg);
+
+    const tdName = el("td");
+    if (it.error) {
+      tdName.append(el("div", "li-name", it.slug));
+      tdName.append(el("div", "li-sub bad", `🔴 ${it.error}${it.detail ? "：" + it.detail : ""}`));
+    } else {
+      const n = el("div", "li-name", it.name || it.slug);
+      // 校验有问题的要在列表上就看得见，而不是点进去才发现
+      if (!it.valid) n.append(el("span", "flag-bad", `${it.errorCount} 个错误`));
+      else if (it.warnCount) n.append(el("span", "flag-warn", `${it.warnCount} 提示`));
+      tdName.append(n, el("div", "li-sub", `${it.slug} · ${it.model || "—"}`));
+    }
+    tr.append(tdName);
+
+    const tdSt = el("td", "col-st");
+    tdSt.append(el("span", `badge badge-${it.status || "unknown"}`, it.status || "?"));
+    tr.append(tdSt);
+
+    tr.append(el("td", "col-cat", it.category || "—"));
+
+    const tdAct = el("td", "col-act");
+    const edit = el("button", "linkish", "编辑"); edit.type = "button";
+    edit.onclick = () => select(it.slug);
+    tdAct.append(edit);
+    if (!it.error && state.write?.enabled) {
+      const to = it.status === "published" ? "draft" : "published";
+      const t = el("button", "linkish", it.status === "published" ? "下架" : "上架");
+      t.type = "button";
+      t.onclick = () => bulk([it.slug], to);
+      tdAct.append(t);
+    }
+    tr.append(tdAct);
+    tb.append(tr);
+  });
+
+  $("#navCount").textContent = String(state.list.length);
+  syncCkAll(); renderBatch();
 
   const empty = $("#listEmpty");
   if (state.listMeta?.dirExists === false) {
-    // 🔴 这是当前的**正常状态**，不是错误。不说清楚的话，人会以为后台坏了。
+    // 🔴 这是**正常状态**，不是错误。不说清楚的话，人会以为后台坏了。
     empty.hidden = false;
-    empty.innerHTML = `<b>数据目录还不存在。</b><br>
-      <code>${state.listMeta.dir}</code> 归 AirSonde-Web 窗维护，它建出来之后这里会自动有内容。
-      <br><span class="muted">这不是故障，也不需要在这边创建它。</span>`;
+    empty.innerHTML = `<b>数据目录还不存在。</b><br><code>${state.listMeta.dir}</code> 归 AirSonde-Web 窗维护，它建出来之后这里会自动有内容。`;
   } else if (!rows.length) {
     empty.hidden = false;
     empty.textContent = state.list.length ? "没有匹配的产品。" : "目录是空的（存在，但里面没有产品 JSON）。";
-  } else {
-    empty.hidden = true;
-  }
+  } else empty.hidden = true;
+}
+
+function syncCkAll() {
+  const rows = filteredRows().filter((r) => !r.error);
+  const all = rows.length > 0 && rows.every((r) => state.selected.has(r.slug));
+  const some = rows.some((r) => state.selected.has(r.slug));
+  const ck = $("#ckAll");
+  ck.checked = all; ck.indeterminate = !all && some;
+}
+
+function renderBatch() {
+  const n = state.selected.size;
+  $("#batchBar").hidden = n === 0 || !state.write?.enabled;
+  $("#batchCount").textContent = `已选 ${n} 个`;
+}
+
+/** 批量改状态。单行的"上架/下架"也走这里 —— 一条路径，行为不可能分叉。 */
+async function bulk(slugs, value) {
+  if (!slugs.length) return;
+  const verb = value === "published" ? "上架" : "下架";
+  if (!confirm(`确认${verb} ${slugs.length} 个产品？\n\n会产生一次 commit 并触发官网重建。`)) return;
+  try {
+    const r = await fetch("/api/products/batch", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slugs, op: "status", value }),
+    });
+    const b = await r.json().catch(() => null);
+    if (b?.wrote === true) {
+      state.cacheBust = b.commitSha;
+      state.selected.clear();
+      await loadList();
+      alert(`已${verb} ${b.changed.length} 个。commit ${String(b.commitSha).slice(0, 7)}\n` +
+        (b.skipped?.length ? `跳过 ${b.skipped.length} 个：${b.skipped.map((s) => s.slug + "(" + s.why + ")").join("、")}` : ""));
+    } else if (b?.rejected?.length) {
+      // ⚠️ 整批未写要说明白，别让人以为"至少成了几个"
+      alert(`未写入任何东西（整批中止）。\n\n以下产品没通过契约校验：\n` +
+        b.rejected.map((x) => `· ${x.slug}：${x.codes.join(", ")}`).join("\n"));
+    } else {
+      alert(`未写入：${b?.reason || b?.detail || b?.error || r.status}`);
+    }
+  } catch (e) { alert("批量操作失败：" + e.message); }
 }
 
 /** slug → 已读到的产品对象，用来在列表里显示真实 name/status */
@@ -181,7 +287,7 @@ async function select(slug) {
   state.slug = slug; state.isNew = false;
   resetPending();                       // 换产品必须清空待上传，否则上一份的图会跟过来
   $("#deleteBtn").hidden = !state.write?.enabled;
-  $("#placeholder").hidden = true; $("#detail").hidden = false;
+  $("#listView").hidden = true; $("#detailView").hidden = false;
   $("#preview").hidden = true;
   $("#dTitle").textContent = slug;
   $("#dPath").textContent = "读取中…";
@@ -216,7 +322,7 @@ function startNew() {
   resetPending();
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
   $("#f_slug").readOnly = false;
-  $("#placeholder").hidden = true; $("#detail").hidden = false; $("#preview").hidden = true;
+  $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
   $("#dTitle").textContent = "新建产品";
   $("#dPath").textContent = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
   renderIssues(null);
@@ -684,8 +790,23 @@ function switchView(v) {
 
 document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => switchView(t.dataset.view); });
 $("#q").oninput = renderList;
-$("#statusFilter").onchange = renderList;
+$("#catFilter").onchange = renderList;
 $("#newBtn").onclick = startNew;
+$("#backBtn").onclick = () => {
+  $("#detailView").hidden = true; $("#listView").hidden = false;
+  state.slug = null; state.isNew = false; resetPending(); $("#preview").hidden = true;
+  renderList();
+};
+// ⚠️ 全选只选**当前筛选结果**，不是全部 23 个 —— 筛完再全选却选中看不见的行，是最容易误操作的一种
+$("#ckAll").onchange = (e) => {
+  const rows = filteredRows().filter((r) => !r.error);
+  rows.forEach((r) => e.target.checked ? state.selected.add(r.slug) : state.selected.delete(r.slug));
+  renderList();
+};
+$("#batchClear").onclick = () => { state.selected.clear(); renderList(); };
+document.querySelectorAll("[data-bulk]").forEach((b) => {
+  b.onclick = () => bulk([...state.selected], b.dataset.bulk);
+});
 $("#editPane").onsubmit = doPreview;
 $("#resetBtn").onclick = () => { resetPending(); if (state.draft) fillForm(state.draft); $("#preview").hidden = true; };
 document.querySelectorAll(".add[data-add]").forEach((b) => {
@@ -715,8 +836,9 @@ $("#deleteBtn").onclick = async () => {
     const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, { method: "DELETE" });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
-      $("#detail").hidden = true; $("#placeholder").hidden = false;
-      state.slug = null; cache.delete(slug); resetPending();
+      $("#detailView").hidden = true; $("#listView").hidden = false;
+      state.slug = null; cache.delete(slug); state.selected.delete(slug); resetPending();
+      state.cacheBust = b.commitSha;
       await loadList();
       alert(`已删除。commit ${String(b.commitSha).slice(0, 7)}\n${b.note || ""}`);
     } else {
