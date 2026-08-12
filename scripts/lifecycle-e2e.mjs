@@ -1,4 +1,5 @@
-﻿// A6 全链实跑：新建（含图）→ draft→published → published→draft → 删除。
+﻿const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝对路径：CI 是 Linux，`C:/…` 在那里根本不存在
+// A6 全链实跑：新建（含图）→ draft→published → published→draft → 删除。
 //
 // 🔴 打的是**靶子仓** `zq8345/AirSonde-Admin` 的 `fixtures/products/`，**绝不碰官网数据仓**。
 //    这不是靠自觉：src/github.ts 的出站闸把 `zq8345/AirSonde-Web` 写死在黑名单里，
@@ -21,7 +22,7 @@ const DIR = "fixtures/products";
 //    但如果不区分，它们都会让判据变红，而查的方向完全错。
 //    ⚠️ token 从 .dev.vars 读进来**只用于 header**，绝不打印、绝不进任何输出。
 import fs from "fs";
-const DEV_VARS = "C:/开发/airsonde/airsonde-admin/.dev.vars";
+const DEV_VARS = new URL("../.dev.vars", import.meta.url);
 const TOKEN = (() => {
   try {
     const m = /^\s*GITHUB_TOKEN_SELFTEST\s*=\s*([^\s#]+)/m.exec(fs.readFileSync(DEV_VARS, "utf8"));
@@ -220,4 +221,5 @@ try {
 console.log("\n" + out.filter((l) => l.startsWith("✅") || l.startsWith("🔴") || l.startsWith("⚠️")).join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+
 

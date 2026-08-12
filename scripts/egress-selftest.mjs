@@ -1,3 +1,4 @@
+﻿const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝对路径：CI 是 Linux，`C:/…` 在那里根本不存在
 // 出站写闸自检 —— 用**无害输入**把三个维度（方法 × 环境 × 目标仓）的组合量一遍。
 //
 // 🔴 为什么这个测试值得单独存在：这道闸防的是"误改官网数据仓"。
@@ -7,7 +8,7 @@
 // ⚠️ 判据纪律：正对照必须在。只测"被拒"的话，一个恒 throw 的空壳也全绿 ——
 //    那种闸的表现是"谁也别想读/写"，而症状会是"列表一直空的"或"生产存不了东西"。
 import { pathToFileURL } from "url";
-const { assertEgressAllowed } = await import(pathToFileURL("C:/开发/airsonde/airsonde-admin/src/github.ts").href);
+const { assertEgressAllowed } = await import(SRC + "github.ts");
 
 let pass = 0, fail = 0; const out = [];
 const ck = (name, cond, detail = "") => {
@@ -84,3 +85,4 @@ for (const [label, env] of [["生产", PROD_OFF], ["本地", DEV_OFF]]) {
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+

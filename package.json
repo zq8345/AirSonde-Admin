@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "_comment_dev": "🔴 不能直接 `wrangler dev`：wrangler.jsonc 里有 routes[custom_domain]，wrangler dev 会拿第一条路由去合成请求 host，于是本机也被当成 admin.airsonde.com，开发旁路的 host 检查会 500 停服。scripts/dev.mjs 从 wrangler.jsonc 派生一份去掉 routes 的本地配置。",
-    "typecheck": "tsc --noEmit && node scripts/contract-selftest.mjs && node scripts/egress-selftest.mjs && node scripts/imagepaths-selftest.mjs",
+    "typecheck": "node scripts/no-abs-paths.mjs && tsc --noEmit && node scripts/contract-selftest.mjs && node scripts/egress-selftest.mjs && node scripts/imagepaths-selftest.mjs",
     "_comment_typecheck": "契约自检并进 typecheck：校验器是写入路径上唯一的闸，它坏了不会有任何症状——直到脏数据进了官网仓。所以它必须和类型检查一样是每次都跑的东西，不是「想起来才跑」的脚本。",
     "guard:contract": "node scripts/contract-selftest.mjs",
     "deploy": "node scripts/deploy.mjs",

@@ -1,3 +1,4 @@
+﻿const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝对路径：CI 是 Linux，`C:/…` 在那里根本不存在
 // 图片位置规划自检 —— 本批最容易漏的那条联动（status 切换时图片搬家）在这里被量。
 //
 // 🔴 判据纪律：**往返两个方向都要测**。
@@ -7,7 +8,7 @@
 //    否则每次保存都产生一次无谓的文件搬动 commit，官网跟着重建，
 //    而且 git 历史会被"搬来搬去"淹没，真正的改动看不出来。
 import { pathToFileURL } from "url";
-const M = await import(pathToFileURL("C:/开发/airsonde/airsonde-admin/src/imagepaths.ts").href);
+const M = await import(SRC + "imagepaths.ts");
 const { planImages, planDelete, dirForStatus, repoPath } = M;
 
 let pass = 0, fail = 0; const out = [];
@@ -115,3 +116,4 @@ let afterToDraft;
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+

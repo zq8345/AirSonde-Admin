@@ -1,4 +1,5 @@
-﻿// dry-run 端到端验收（20 条）。⚠️ 需要**先**满足两个前提，否则它量的是别的东西：
+﻿const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝对路径：CI 是 Linux，`C:/…` 在那里根本不存在
+// dry-run 端到端验收（20 条）。⚠️ 需要**先**满足两个前提，否则它量的是别的东西：
 //   1) .dev.vars 里把数据源指到本仓 fixtures（见 fixtures/README.md）
 //   2) 另一个终端跑着 `npm run dev`（本脚本打 localhost:8788）
 // 脚本第 ⓪ 条会先证明「我在跟谁说话」—— 数据源不对就直接红，不会拿别的目录的结果冒充通过。
@@ -133,7 +134,7 @@ check("⓪ 数据源确实指向 fixtures（否则下面全部量的是别的东
   //    这条断言当场过时，而它过时的方式是"报红"，会被当成端点坏了。
   //    改成**比真源**：端点吐出来的必须与 src/contract.ts 里那份**集合相等**。
   //    这样它只有一个正确答案，也永远不需要跟着契约手动改。
-  const { CATEGORIES, SENSORS, STATUSES } = await import(pathToFileURL("C:/开发/airsonde/airsonde-admin/src/contract.ts").href);
+  const { CATEGORIES, SENSORS, STATUSES } = await import(SRC + "contract.ts");
   const same = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();
   check("⑪ /api/contract 与 src/contract.ts 集合相等（比真源，不比条数）",
     same(r.body?.categories || [], CATEGORIES) && same(r.body?.sensors || [], SENSORS) && same(r.body?.statuses || [], STATUSES),
@@ -143,5 +144,6 @@ check("⓪ 数据源确实指向 fixtures（否则下面全部量的是别的东
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+
 
 
