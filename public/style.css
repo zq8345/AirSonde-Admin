@@ -27,16 +27,33 @@
 
 * { box-sizing: border-box; }
 
+/* 🔴 页面本身**不滚动**（照 CRM 后台的做法）：body 撑满视口并纵向分成
+   横幅 / 顶栏 / 内容三段，滚动发生在内容区的两个面板**内部**。
+   ⇒ 顶栏与横幅天然固定，**下面的内容不需要算任何偏移**。
+   ⚠️ 旧写法是 `sticky + top:40px`，那个 40 假设横幅永远是一行 ——
+      而横幅带上 warning 就会换行变高，40 当场就错，且没有任何症状。
+   ⚠️ 用 dvh：移动端浏览器地址栏收起/展开时 vh 会跳，dvh 不会。 */
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; overflow: hidden;
 }
+
+/* 固定顶栏：左格宽度与侧栏严格相同，字标才正对侧栏。 */
+.topbar {
+  flex: 0 0 auto; display: flex; align-items: center;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.topbar-left { flex: 0 0 208px; display: flex; align-items: center; padding: 9px 10px 9px 18px; }
+@media (max-width: 860px) { .topbar-left { flex: 1 1 auto; } }
 
 /* ── 预览模式横幅：sticky，滚动时不消失 ── */
 .banner {
-  position: sticky; top: 0; z-index: 20;
+  /* 不再需要 sticky：body 是 flex 列，横幅本来就在滚动区之外，永远在。 */
+  flex: 0 0 auto; z-index: 20;
   display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline;
   padding: 9px 18px;
   background: var(--warn-soft);
@@ -51,12 +68,11 @@ body {
 .banner b { color: inherit; }
 .banner-why { color: var(--muted); font-size: 12px; }
 
-.topbar {
-  display: flex; justify-content: space-between; align-items: center; gap: 16px;
-  padding: 12px 18px; background: var(--surface); border-bottom: 1px solid var(--line);
-}
-.brand { font-weight: 650; letter-spacing: .01em; }
-.brand span { color: var(--muted); font-weight: 500; }
+/* ⚠️ 这里原本还有一条 `.topbar { … }`（旧设计的遗留，HTML 里当时没有任何元素用它）。
+   它排在上面那条新 `.topbar` 之后 ⇒ 我一加顶栏，这条死规则**当场复活并覆盖**了
+   我的 padding / justify-content。删掉。
+   —— 这就是"同名重定义会静默继承"那一类：写的人以为自己在控制，真正生效的是后面那条。
+   同时删掉 `.brand` / `.brand span`：字标已搬进顶栏，它们跟着失效。 */
 .who { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-align: right; }
 .who b { color: var(--text); font-weight: 600; }
 
@@ -193,11 +209,18 @@ details.raw summary { padding: 8px 12px; cursor: pointer; font-size: 12.5px; col
 details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family: var(--mono); font-size: 12px; }
 
 /* ═══════════ A7 外壳：左导航 + 主区 ═══════════ */
-.app { display: grid; grid-template-columns: 208px 1fr; align-items: start; min-height: calc(100vh - 40px); }
-@media (max-width: 860px) { .app { grid-template-columns: 1fr; } .sidenav { position: static !important; height: auto !important; } }
+/* 内容区吃掉剩余高度；min-height:0 是必须的 —— 没有它，flex 子项不肯缩到内容以下，
+   于是两个面板不会出现内部滚动条，整页反而被撑长。 */
+.app { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 208px 1fr; }
+@media (max-width: 860px) {
+  /* 窄屏回到「整页滚动」：把侧栏和正文摞起来，各自的内部滚动就没意义了。 */
+  .app { grid-template-columns: 1fr; overflow-y: auto; }
+  .sidenav, .main { overflow: visible !important; height: auto !important; }
+}
 
 .sidenav {
-  position: sticky; top: 40px; height: calc(100vh - 40px); overflow-y: auto;
+  /* 自己滚，不再 sticky —— 页面已经不滚了 */
+  height: 100%; overflow-y: auto;
   background: var(--surface); border-right: 1px solid var(--line); padding: 14px 10px 10px;
   display: flex; flex-direction: column; gap: 1px;
 }
@@ -227,7 +250,9 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 .nav-foot { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--muted); word-break: break-all; }
 .nav-foot b { color: var(--text); font-weight: 600; }
 
-.main { padding: 18px 22px 40px; min-width: 0; }
+/* 正文区是**真正的滚动容器**（页面不滚）。里面那些 sticky 的 top 因此
+   相对的是这个盒子的顶边，不是视口 ⇒ 它们的偏移都归 0 起算，见下面 .editbar。 */
+.main { padding: 18px 22px 40px; min-width: 0; height: 100%; overflow-y: auto; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
 .page-head h1 { margin: 0; font-size: 19px; }
 
@@ -343,11 +368,11 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* 宽屏双栏：左边填字段、右边图片，减少纵向滚动 */
 .edit-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 14px; align-items: start; }
 @media (max-width: 1100px) { .edit-grid { grid-template-columns: 1fr; } }
-.edit-col-side { position: sticky; top: 112px; }
+.edit-col-side { position: sticky; top: 72px; }
 @media (max-width: 1100px) { .edit-col-side { position: static; } }
 
 /* sticky 保存条：改动计数 + 提交入口常驻，不用滚到底才找得到 */
-.editbar { position: sticky; top: 40px; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+.editbar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
   padding: 10px 14px; margin: 0 0 14px; background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: 0 2px 6px rgba(0,0,0,.06); }
 .editbar .dirty { font-size: 12.5px; color: var(--muted); }
