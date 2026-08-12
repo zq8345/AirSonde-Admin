@@ -37,7 +37,11 @@ export function retarget(jsonPath: string, dir: string): string {
 
 /** 上传时用的文件名：slug 派生，gallery 依次编号。⚠️ 一律小写 .webp。 */
 export function uploadName(slug: string, slot: "main" | number): string {
-  return slot === "main" ? `${slug}.webp` : `${slug}-${slot + 1}.webp`;
+  // ⚠️ gallery 从 **-2** 开始编号，不是 -1：**主图算第 1 张**。
+  //    真实数据里第一张 gallery 就是 `desktop-16in1-monitor-2.webp`（实测 23 个产品的约定）。
+  //    写成 slot+1 的话，新传的图叫 `-1.webp`，与既有 23 个产品的命名分叉 ——
+  //    而这种分叉不会报错，只会让仓里同时存在两套命名，越积越乱。
+  return slot === "main" ? `${slug}.webp` : `${slug}-${slot + 2}.webp`;
 }
 
 export interface Upload {

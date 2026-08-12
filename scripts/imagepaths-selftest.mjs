@@ -86,8 +86,8 @@ let afterToDraft;
 {
   const cur = { main: "products/test-widget.webp", gallery: ["products/a.webp"] };
   const r = planImages(SLUG, "published", cur, cur, [{ slot: 1, base64: "CCCC" }], []);
-  ck("⑥ 新增 gallery：追加到末尾，文件名按 slug 编号",
-    r.images.gallery.length === 2 && r.images.gallery[1] === "products/test-widget-2.webp", JSON.stringify(r.images));
+  ck("⑥ 新增 gallery：追加到末尾，文件名按 slug 编号（gallery 从 -2 起，主图算第 1 张）",
+    r.images.gallery.length === 2 && r.images.gallery[1] === "products/test-widget-3.webp", JSON.stringify(r.images));
 }
 {
   const cur = { main: "products/test-widget.webp", gallery: ["products/a.webp"] };
@@ -116,4 +116,5 @@ let afterToDraft;
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+
 
