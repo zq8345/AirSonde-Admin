@@ -1,0 +1,13 @@
+{
+  "slug": "batchcat-selftest-b",
+  "name": "Batchcat Selftest B",
+  "model": "AS-T98",
+  "category": "other",
+  "sensors": [
+    "CO2"
+  ],
+  "images": {
+    "main": "products/batchcat-selftest-b.webp"
+  },
+  "status": "published"
+}
