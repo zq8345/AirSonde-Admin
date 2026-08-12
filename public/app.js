@@ -21,6 +21,8 @@ const state = {
   write: null,      // { enabled, gateOpen, tokenConfigured }
   lastPreview: null,
   repo: null, branch: null,
+  /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
+  cacheBust: null,
   // 待上传/待删除的图 —— 只存在于内存，**保存之前一个字节都不会进仓**
   pending: { main: null, gallery: [], removed: new Set() },
 };
@@ -343,9 +345,17 @@ const blobToBase64 = (blob) =>
     fr.readAsDataURL(blob);
   });
 
-/** 仓内图片的可显示 URL（公开仓，raw 直连）。⚠️ 只用于预览，不是产物里的路径。 */
+/**
+ * 仓内图片的可显示 URL（公开仓，raw 直连）。⚠️ 只用于预览，不是产物里的路径。
+ *
+ * 🔴 必须带 cache-bust：`raw.githubusercontent.com` 有 ≈300s 的 CDN 缓存。
+ *    换了主图、保存成功、界面重新读一遍 —— **路径没变，于是缩略图还是旧图**。
+ *    人看到旧图会以为上传没成功，**再传一次** —— 而那一次是真的会再产生一个 commit。
+ *    ⇒ 每次成功保存后把 `cacheBust` 换成新的 commit sha，URL 就变了，强制重取。
+ */
 const rawUrl = (jsonPath) =>
-  `https://raw.githubusercontent.com/${state.repo || "zq8345/AirSonde-Web"}/${state.branch || "main"}/src/assets/${jsonPath}`;
+  `https://raw.githubusercontent.com/${state.repo || "zq8345/AirSonde-Web"}/${state.branch || "main"}/src/assets/${jsonPath}`
+  + (state.cacheBust ? `?v=${state.cacheBust}` : "");
 
 function setThumb(node, src, alt) {
   node.innerHTML = "";
@@ -641,6 +651,7 @@ async function doCommit(prev, btn) {
       // 🔴 待上传清单必须清空：不清的话，下一次保存会把同一批图**再传一遍**，
       //    而且如果这时切到别的产品，这批图会落到那个产品名下。
       resetPending();
+      state.cacheBust = b.commitSha;   // ← 换掉图片 URL 的指纹，打穿 raw 的 CDN 缓存
       // 重新读一次：拿到新的 blob sha 与归一化后的图片路径，否则下一次编辑带着过期状态提交。
       await loadList();
       await select(slug);

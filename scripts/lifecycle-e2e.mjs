@@ -28,15 +28,36 @@ const req = async (path, init) => {
 const put = (slug, env) => req(`/api/products/${slug}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(env) });
 const del = (slug) => req(`/api/products/${slug}`, { method: "DELETE" });
 
-/** 仓内真实文件树（真读远端，不看接口返回）。 */
+/**
+ * 仓内真实文件树（真读远端，不看接口返回）。返回 path → blob sha。
+ * ⚠️ 带上 sha 不是顺手：下面读文件内容要靠它，见 readJsonAt 的理由。
+ */
 async function repoTree() {
   const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1`, { headers: GH });
   if (!r.ok) throw new Error(`读靶子仓 tree 失败 ${r.status}`);
   const j = await r.json();
   if (j.truncated) throw new Error("tree 被截断，拒绝在不完整基线上判断");
-  return new Set(j.tree.filter((t) => t.type === "blob").map((t) => t.path));
+  return new Map(j.tree.filter((t) => t.type === "blob").map((t) => [t.path, t.sha]));
 }
 const has = (tree, p) => tree.has(p);
+
+/**
+ * 按 **blob sha** 读文件内容。
+ *
+ * 🔴 不要用 `raw.githubusercontent.com`：它有 ≈300s 的 CDN 缓存，
+ *    commit 刚落就去读，可能拿到**上一版**甚至 404 —— 于是会出现
+ *    「tree 断言绿、JSON 断言红」这种组合，而被测对象其实完全正常。
+ *    那是一次纯粹的误诊，且方向指向代码。
+ * ⇒ blob sha 是**内容的哈希**，按 sha 取到的对象**不可变、永不陈旧**，闭环。
+ */
+async function readJsonAt(tree, path) {
+  const sha = tree.get(path);
+  if (!sha) throw new Error(`${path} 不在树里，读不了`);
+  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/blobs/${sha}`, { headers: GH });
+  if (!r.ok) throw new Error(`读 blob ${sha.slice(0, 7)} 失败 ${r.status}`);
+  const j = await r.json();
+  return JSON.parse(Buffer.from(j.content.replace(/\n/g, ""), "base64").toString("utf8"));
+}
 
 // ══════════ ⓪ 仪器自检：先证明我在跟谁说话、以及这次真的能写 ══════════
 // ⚠️ 这一段自己必须先健壮：dev 没起时 fetch 会**抛**，不是回一个状态码。
@@ -106,7 +127,7 @@ try {
   const t2 = await repoTree();
   ck("② 图搬到 products/，且 _draft/ 里的已删除",
     has(t2, P_PUB) && !has(t2, P_DRAFT), `products=${has(t2, P_PUB)} _draft=${has(t2, P_DRAFT)}`);
-  const j2 = await (await fetch(`https://raw.githubusercontent.com/${TARGET_REPO}/main/${P_JSON}`)).json();
+  const j2 = await readJsonAt(t2, P_JSON);
   ck("② JSON 里的路径也跟着改了（文件搬了而 JSON 没改 = 官网当场缺图）",
     j2.images.main === `products/${SLUG}.webp`, JSON.stringify(j2.images));
 
@@ -116,7 +137,7 @@ try {
   const t3 = await repoTree();
   ck("③ 反方向：图回到 _draft/，products/ 里的已删除",
     has(t3, P_DRAFT) && !has(t3, P_PUB), `_draft=${has(t3, P_DRAFT)} products=${has(t3, P_PUB)}`);
-  const j3 = await (await fetch(`https://raw.githubusercontent.com/${TARGET_REPO}/main/${P_JSON}`)).json();
+  const j3 = await readJsonAt(t3, P_JSON);
   ck("③ 往返闭合：JSON 路径回到起点", j3.images.main === `products/_draft/${SLUG}.webp`, JSON.stringify(j3.images));
 
   // ══════════ ④ 契约闸不回归：坏数据必须 422 且**零 commit** ══════════
