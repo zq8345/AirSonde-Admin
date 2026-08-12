@@ -23,10 +23,10 @@
   },
   "moq": 1000,
   "images": {
-    "main": "products/_draft/fixture-desktop-16in1.webp",
+    "main": "products/fixture-desktop-16in1.webp",
     "gallery": [
-      "products/_draft/fixture-desktop-16in1-1.webp"
+      "products/fixture-desktop-16in1-1.webp"
     ]
   },
-  "status": "draft"
+  "status": "published"
 }
