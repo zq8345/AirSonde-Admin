@@ -2,7 +2,7 @@
   "slug": "batchcat-selftest-a",
   "name": "Batchcat Selftest A",
   "model": "AS-T98",
-  "category": "other",
+  "category": "portable",
   "sensors": [
     "CO2"
   ],
