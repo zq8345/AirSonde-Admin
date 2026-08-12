@@ -1,0 +1,63 @@
+{
+  "_readme": [
+    "靶子仓的 site-content fixture —— 只给 scripts/sitecontent-e2e.mjs 打靶用。",
+    "⚠️ 官网仓那份才是真的；这一份改坏了不影响任何线上内容。"
+  ],
+  "seo": {
+    "defaultTitle": "AirSonde — OEM / ODM Indoor Air Quality Monitors",
+    "defaultDescription": "AirSonde manufactures white-label indoor air quality monitors for brands and importers. OEM and ODM production for CO2, PM2.5, PM10, HCHO and TVOC sensing.",
+    "organisationDescription": "AirSonde is an OEM and ODM manufacturer of indoor air quality monitors, producing desktop and portable CO2, particulate, formaldehyde and TVOC monitors under its customers’ own brands.",
+    "pages": {
+      "home": {
+        "title": "AirSonde — OEM / ODM Indoor Air Quality Monitors",
+        "description": ""
+      },
+      "products": {
+        "title": "Products — OEM / ODM Indoor Air Quality Monitors | AirSonde",
+        "description": "Desktop, portable and handheld indoor air quality monitors available for OEM and ODM production: CO2, CO, PM1.0, PM2.5, PM10, HCHO and TVOC sensing, built under your brand."
+      },
+      "contact": {
+        "title": "Contact — Start an OEM / ODM Programme | AirSonde",
+        "description": "Contact AirSonde about OEM and ODM production of white-label indoor air quality monitors. Tell us the market, the sensing set and the volumes."
+      },
+      "notFound": {
+        "title": "Page not found — AirSonde",
+        "description": "That page does not exist on this site."
+      }
+    }
+  },
+  "contact": {
+    "email": "sales@airsonde.com",
+    "phone": "+86 186 8116 0111",
+    "wechatId": "18681160111",
+    "address": "No. 62, Baotian 1st Road, Xixiang Street, Bao'an District, Shenzhen, Guangdong, China",
+    "hours": "Mon–Fri 9:00–18:00 (GMT+8)",
+    "response": "Within 1 business day"
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Independent manufacturer · OEM / ODM",
+      "headline": "Indoor Air Quality Monitors, Built for Your Brand",
+      "body": "IAQ monitors shipped under your name — housing, firmware, packaging.",
+      "primaryCtaLabel": "Request a quote",
+      "secondaryCtaLabel": "Browse products"
+    },
+    "sections": {
+      "capabilitiesIntro": "Every unit is specified with you up front."
+    },
+    "valueProps": [
+      {
+        "title": "White-label ready",
+        "body": "Your brand on the housing, display, app and box. Nothing points back to us."
+      },
+      {
+        "title": "OEM and ODM",
+        "body": "Bring a finished spec (OEM), or adapt one of our reference designs (ODM)."
+      }
+    ],
+    "contactBlock": {
+      "title": "Tell us what you want to put your name on",
+      "body": "Send the market, the sensing set and the volumes. We come back with a build path and lead times."
+    }
+  }
+}

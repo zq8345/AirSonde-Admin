@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "_comment_dev": "🔴 不能直接 `wrangler dev`：wrangler.jsonc 里有 routes[custom_domain]，wrangler dev 会拿第一条路由去合成请求 host，于是本机也被当成 admin.airsonde.com，开发旁路的 host 检查会 500 停服。scripts/dev.mjs 从 wrangler.jsonc 派生一份去掉 routes 的本地配置。",
-    "typecheck": "node scripts/no-abs-paths.mjs && node --check public/app.js && tsc --noEmit && node scripts/contract-selftest.mjs && node scripts/egress-selftest.mjs && node scripts/imagepaths-selftest.mjs && node scripts/media-selftest.mjs && node scripts/audit-selftest.mjs && node scripts/catlabels-selftest.mjs",
+    "typecheck": "node scripts/no-abs-paths.mjs && node --check public/app.js && tsc --noEmit && node scripts/contract-selftest.mjs && node scripts/egress-selftest.mjs && node scripts/imagepaths-selftest.mjs && node scripts/media-selftest.mjs && node scripts/audit-selftest.mjs && node scripts/catlabels-selftest.mjs && node scripts/sitecontent-selftest.mjs",
     "_comment_app_js_check": "🔴 public/app.js 没有构建步骤，tsc 根本看不到它 —— 一个语法错就是整个后台白屏（脚本整份不执行，连列表都不出）。2026-08-12 的分类批次真撞上一次：中文串里用了 ASCII 引号，页面上的症状是「两个下拉都是空的」，看起来像数据没加载。`node --check` 是纯语法闸，不代替真打开页面看一眼。",
     "_comment_typecheck": "契约自检并进 typecheck：校验器是写入路径上唯一的闸，它坏了不会有任何症状——直到脏数据进了官网仓。所以它必须和类型检查一样是每次都跑的东西，不是「想起来才跑」的脚本。",
     "guard:contract": "node scripts/contract-selftest.mjs",

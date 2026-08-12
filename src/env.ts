@@ -17,6 +17,13 @@ export interface Env {
   GITHUB_REPO?: string;
   GITHUB_BRANCH?: string;
   PRODUCTS_DIR?: string;
+  /**
+   * 站点内容（联系方式/首页文案/站级 SEO）那**一个** JSON 的路径。
+   * ⚠️ 后台在官网仓能写的东西 = `PRODUCTS_DIR/*.json` + **这一个文件**，没有别的。
+   *    做成变量只是为了自检能打靶子仓；它**不是**"想写哪个文件写哪个"的开关 ——
+   *    端点里写死了只认这一个路径，不接受调用方传路径。
+   */
+  SITE_CONTENT_PATH?: string;
   /** 逗号分隔。**空 = 拒绝全部**，不是"不限制"。 */
   ALLOWED_EMAILS?: string;
 

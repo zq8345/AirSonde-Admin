@@ -32,6 +32,10 @@
     "GITHUB_REPO": "zq8345/AirSonde-Web",
     "GITHUB_BRANCH": "main",
     "PRODUCTS_DIR": "src/content/products",
+    // 站点内容（联系方式 / 首页文案 / 站级 SEO）。官网 src/data/site.ts 从它读。
+    // ⚠️ 后台在官网仓能写的**全部**就是：PRODUCTS_DIR/*.json + 这一个文件。
+    //    端点里写死只认这一个路径，不接受调用方传路径。
+    "SITE_CONTENT_PATH": "src/data/site-content.json",
 
     // 🔴 允许进入本后台的邮箱（逗号分隔）。**空 = 拒绝全部**，不是"不限制"。
     // ⚠️ 放在 vars 而不是 secret，是为了**和代码同一次部署**：否则会有一段

@@ -27,6 +27,11 @@ const state = {
   audit: null,
   cats: null,       // /api/categories：枚举 + 官网显示名（计数不在里面，见 renderCats）
   who: null,        // /api/_whoami 的完整响应 —— 设置页整页由它渲染
+  // 站点内容：首页/联系方式/SEO 三个视图共用**同一个 JSON**
+  site: null,       // 服务端那一版（含 sha —— 保存时当乐观锁）
+  siteDraft: null,  // 编辑中的那一份
+  siteBase: null,   // 打开时的那一份：改动计数比的是它，不是"敲过几下键盘"
+  siteSection: "home",
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -917,6 +922,222 @@ function renderMedia() {
   if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
 }
 
+// ═══════════════ 站点内容：首页 / 联系方式 / SEO ═══════════════
+//
+// 三个视图编辑**同一个 JSON**，每次只提交自己那一节（section）。
+// 🔴 只提交自己那一节 ⇒ 服务端的合并必须把"没收到的字段"当成"不动"。
+//    当成"清空"的话，保存联系方式就会把首页文案抹掉，而两边都显示保存成功。
+// ⚠️ 字段清单不是我照着源码列的，是**照产出页实测过**的：每一条都在构建产物里
+//    渲染得出来。渲染不出来的（那两个 heading、整个 CAPABILITIES）**故意没放进来**。
+const SITE_SECTIONS = {
+  home: { title: "首页文案", key: "home" },
+  contact: { title: "联系方式", key: "contact" },
+  seo: { title: "站级 SEO", key: "seo" },
+};
+
+async function loadSite(which) {
+  state.siteSection = which;
+  $("#siteTitle").textContent = SITE_SECTIONS[which].title;
+  $("#siteNotes").innerHTML = '<div class="notice notice-warn">读取中…</div>';
+  $("#siteForm").innerHTML = "";
+  try {
+    const { status, body } = await api("/api/site-content");
+    if (status === 404 || status === 422) {
+      state.site = null;
+      $("#siteNotes").innerHTML = "";
+      $("#siteNotes").append(mkNotice("bad", `读不到站点内容：${body.hint || body.error || status}`));
+      return;
+    }
+    state.site = body;
+    renderSite();
+  } catch (e) {
+    $("#siteNotes").innerHTML = "";
+    $("#siteNotes").append(mkNotice("bad", "读取失败：" + e.message));
+  }
+}
+
+/** 表单控件：一行 label + input/textarea，带说明。值写回 state.siteDraft。 */
+function siteField(parent, path, label, hint, opts = {}) {
+  const wrap = el("div", "field");
+  const id = "sf_" + path.replace(/\W/g, "_");
+  const lab = el("label", null, label); lab.htmlFor = id;
+  wrap.append(lab);
+  const cur = path.split(".").reduce((o, k) => (o == null ? o : o[k]), state.siteDraft) ?? "";
+  const input = el(opts.multiline ? "textarea" : "input");
+  input.id = id; input.value = cur;
+  if (opts.multiline) input.rows = opts.rows || 3;
+  input.oninput = () => {
+    // 写回草稿：一路建出中间对象，缺哪层补哪层
+    const parts = path.split("."); let o = state.siteDraft;
+    for (let i = 0; i < parts.length - 1; i++) o = (o[parts[i]] ??= {});
+    o[parts[parts.length - 1]] = input.value;
+    updateSiteDirty();
+  };
+  wrap.append(input);
+  if (opts.counter) {
+    const cnt = el("div", "shint");
+    const paint = () => {
+      const n = input.value.trim().length;
+      cnt.textContent = `${n} / ${opts.counter} 字符${n > opts.counter ? "（超出会在搜索结果里被截断）" : ""}`;
+      cnt.style.color = n > opts.counter ? "var(--warn)" : "";
+    };
+    input.addEventListener("input", paint); paint();
+    wrap.append(cnt);
+  }
+  if (hint) wrap.append(appendMd(el("p", "hint"), hint));
+  parent.append(wrap);
+}
+
+function siteCard(title, sub) {
+  const s = el("section", "card");
+  const h = el("h3", null, title);
+  if (sub) h.append(el("span", "h3sub", " " + sub));
+  s.append(h);
+  return s;
+}
+
+/**
+ * @param keepDraft true = 重画界面但**保留当前草稿**（增删卖点卡时用）。
+ *   ⚠️ 默认 false：每次进视图都从服务端那份重新拷一份草稿 ——
+ *      留着上次的草稿会让人在**旧数据**上继续编辑，然后把旧值存回去。
+ */
+function renderSite(keepDraft = false) {
+  const b = state.site; if (!b) return;
+  if (!keepDraft) {
+    state.siteDraft = JSON.parse(JSON.stringify(b.content));
+    state.siteBase = JSON.parse(JSON.stringify(b.content));
+  }
+
+  const notes = $("#siteNotes"); notes.innerHTML = "";
+  if (!state.write?.enabled) notes.append(mkNotice("warn", "当前**不能保存**（写入闸或 token 未就绪）——改动不会提交。"));
+  notes.append(mkNotice("ok",
+    `真源：官网仓 ${b.path}。保存 = 一次 commit ⇒ Cloudflare Pages 重建 ⇒ **约 1 分钟后**站上可见。` +
+    `**保存成功不等于站上已经变了**，中间隔着一次构建。`));
+
+  const form = $("#siteForm"); form.innerHTML = "";
+  const sec = state.siteSection;
+
+  if (sec === "contact") {
+    const c = siteCard("联系数据", "站上的链接由它们派生");
+    siteField(c, "contact.email", "邮箱", "页面上的 **mailto:** 链接由它拼出来。写错 = 死链接，而页面看不出异常。");
+    siteField(c, "contact.phone", "电话", "🔴 **WhatsApp 与拨号链接都由这一个号码派生**（wa.me / tel:）。所以号码只存这一处，不可能出现「号码改了链接没改」。建议以 + 和国家码开头。");
+    siteField(c, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
+    siteField(c, "contact.address", "地址", "⭐ Google 地图链接**由地址算出来**，不单独存 —— 改了地址，地图自动跟着走。");
+    siteField(c, "contact.hours", "营业时间");
+    siteField(c, "contact.response", "响应时间");
+    form.append(c);
+  } else if (sec === "home") {
+    const h = siteCard("Hero", "首页第一屏");
+    siteField(h, "home.hero.eyebrow", "小标（eyebrow）");
+    siteField(h, "home.hero.headline", "大标题（H1）", "⚠️ 这是首页的 H1，搜索引擎最看重的一行。");
+    siteField(h, "home.hero.body", "副文案", null, { multiline: true, rows: 2 });
+    siteField(h, "home.hero.primaryCtaLabel", "主按钮文字", "⚠️ 只能改**文字**。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
+    siteField(h, "home.hero.secondaryCtaLabel", "次按钮文字");
+    form.append(h);
+
+    const v = siteCard("卖点卡", "首页那几张小卡");
+    const box = el("div", "repeat");
+    (state.siteDraft.home.valueProps || []).forEach((_, i) => {
+      const row = el("div", "card");
+      siteField(row, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
+      siteField(row, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+      const del = el("button", "linkish", "删掉这张"); del.type = "button";
+      del.onclick = () => {
+        // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
+        state.siteDraft.home.valueProps.splice(i, 1);
+        if (!state.siteDraft.home.valueProps.length) { alert("至少要留一张 —— 全删掉首页那一段会整块空掉。"); state.siteDraft.home.valueProps = state.siteBase.home.valueProps.slice(0, 1); }
+        renderSite(true);
+      };
+      row.append(del);
+      box.append(row);
+    });
+    v.append(box);
+    const add = el("button", "add", "+ 加一张"); add.type = "button";
+    add.onclick = () => { state.siteDraft.home.valueProps.push({ title: "", body: "" }); renderSite(true); };
+    v.append(add);
+    form.append(v);
+
+    const o = siteCard("其它段落");
+    siteField(o, "home.sections.capabilitiesIntro", "能力段小字");
+    siteField(o, "home.contactBlock.title", "首页联系区块 · 标题");
+    siteField(o, "home.contactBlock.body", "首页联系区块 · 正文", null, { multiline: true, rows: 2 });
+    form.append(o);
+  } else {
+    const lim = b.limits || { title: 60, description: 160 };
+    const d = siteCard("站点默认", "没有单独设置时用这些");
+    siteField(d, "seo.defaultTitle", "默认标题", null, { counter: lim.title });
+    siteField(d, "seo.defaultDescription", "默认描述", null, { multiline: true, counter: lim.description });
+    siteField(d, "seo.organisationDescription", "组织描述", "进 JSON-LD 的 Organization —— AI 与搜索引擎读的是这一条。", { multiline: true });
+    form.append(d);
+
+    const p = siteCard("各页", "title 必须互不相同");
+    p.append(appendMd(el("p", "hint"),
+      "🔴 **两页 title 相同会让官网构建直接失败**（构建时会数唯一 title 数）—— 也就是这次改动根本上不了线。后台会先拦住。" +
+      "描述**留空**表示「用站点默认描述」，不是「没有描述」。"));
+    Object.entries(b.pages || {}).forEach(([key, url]) => {
+      const box = el("div", "card");
+      box.append(el("div", "li-sub", url));
+      siteField(box, `seo.pages.${key}.title`, `${key} · 标题`, null, { counter: lim.title });
+      siteField(box, `seo.pages.${key}.description`, `${key} · 描述`, null, { multiline: true, counter: lim.description });
+      p.append(box);
+    });
+    form.append(p);
+  }
+  updateSiteDirty();
+}
+
+function updateSiteDirty() {
+  const changed = siteChangedPaths();
+  const btn = $("#siteSave");
+  btn.disabled = !changed.length || !state.write?.enabled;
+  btn.textContent = changed.length ? `保存（${changed.length} 处改动）` : "保存";
+}
+
+/** 与服务端那一版的实际差异 —— 不是"你敲过几下键盘"。 */
+function siteChangedPaths() {
+  const out = [];
+  const walk = (a, b, path) => {
+    if (JSON.stringify(a) === JSON.stringify(b)) return;
+    if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a) && !Array.isArray(b)) {
+      for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) walk(a[k], b[k], path ? `${path}.${k}` : k);
+      return;
+    }
+    if (path) out.push(path);
+  };
+  const sec = SITE_SECTIONS[state.siteSection]?.key;
+  if (!state.siteDraft || !state.siteBase || !sec) return out;
+  walk(state.siteBase[sec], state.siteDraft[sec], sec);
+  return out;
+}
+
+$("#siteSave").onclick = async () => {
+  const sec = SITE_SECTIONS[state.siteSection].key;
+  const changed = siteChangedPaths();
+  if (!changed.length) return;
+  if (!confirm(`确认保存 ${changed.length} 处改动？\n\n${changed.join("\n")}\n\n会产生一次 commit 并触发官网重建。`)) return;
+  const btn = $("#siteSave"); btn.disabled = true; btn.textContent = "提交中…";
+  try {
+    const r = await fetch("/api/site-content", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      // ⚠️ 只提交自己这一节 + 基线 sha（乐观锁）
+      body: JSON.stringify({ patch: { [sec]: state.siteDraft[sec] }, expectedSha: state.site.sha, section: sec }),
+    });
+    const b = await r.json().catch(() => null);
+    if (b?.wrote === true) {
+      alert(`已提交。commit ${String(b.commitSha).slice(0, 7)}\n改了：${(b.changedFields || []).join(", ")}\n\n${b.note || ""}`);
+      await loadSite(state.siteSection);
+    } else if (b?.validation && !b.validation.ok) {
+      // 🔴 校验不过 = **零 commit**，要说清楚，别让人以为"存了一半"
+      alert("未写入任何东西（没有产生 commit）。以下没通过校验：\n\n" +
+        b.validation.errors.map((e) => `· ${e.field}：${e.message}`).join("\n"));
+    } else {
+      alert(`未写入：${b?.detail || b?.reason || b?.error || r.status}`);
+    }
+  } catch (e) {
+    alert("提交失败：" + e.message);
+  } finally { updateSiteDirty(); }
+};
+
 // ═══════════════ 设置（只读运行口径）═══════════════
 //
 // ⛔ **一个可写的控件都没有**，这是有意的：这里的每一项都是部署命脉
@@ -1203,6 +1424,7 @@ function showNav(which) {
   $("#auditView").hidden = which !== "audit";
   $("#catsView").hidden = which !== "cats";
   $("#settingsView").hidden = which !== "settings";
+  $("#siteView").hidden = !SITE_SECTIONS[which];
   $("#detailView").hidden = true;
   document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
   if (which === "media" && !state.media) loadMedia();
@@ -1210,6 +1432,9 @@ function showNav(which) {
   // ⚠️ 分类页的计数每次都要重算（列表可能刚被批量改过），但接口只在第一次拉。
   if (which === "cats") { if (state.cats) renderCats(); else loadCats(); }
   if (which === "settings") renderSettings();   // 起步时已经拉过 _whoami，不重复请求
+  // ⚠️ 站点内容每次进都**重新拉**：三个视图共用一个文件，别人（或我自己在另一个视图里）
+  //    刚存过的话，拿旧的 sha 去保存会撞乐观锁；更糟的是在旧值上编辑。
+  if (SITE_SECTIONS[which]) loadSite(which);
 }
 document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
 

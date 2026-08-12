@@ -33,12 +33,13 @@
 
     <div class="nav-sec">内容</div>
     <button class="nav-item" data-nav="media">图片<span class="cnt" id="navMediaCount"></span></button>
-    <div class="nav-item soon" title="首页模块编辑">首页 <span class="soon-tag">SOON</span></div>
-    <div class="nav-item soon" title="联系方式">联系方式 <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="home" title="首页文案：hero、卖点卡、联系区块">首页</button>
+    <button class="nav-item" data-nav="contact" title="联系方式：邮箱/电话/微信/地址（链接由它们派生）">联系方式</button>
 
     <div class="nav-sec">增长</div>
+    <!-- ⛔ 仍是 SOON：GSC 没接，站也年轻。挂个点不动的链接比没有更糟。 -->
     <div class="nav-item soon" title="Search Console 接入">搜索表现 <span class="soon-tag">SOON</span></div>
-    <div class="nav-item soon" title="SEO 元数据">SEO <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="seo" title="站级 SEO：各页 title / description">SEO</button>
 
     <div class="nav-sec">系统</div>
     <button class="nav-item" data-nav="audit">审计日志</button>
@@ -131,6 +132,21 @@
           <tbody id="auditRows"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- ══════ 站点内容：首页 / 联系方式 / SEO ══════
+         三个视图**编辑同一个 JSON 文件**（官网仓 src/data/site-content.json），
+         每次只提交自己那一节。⚠️ 所以合并规则必须是"我没收到的字段=不动"，
+         否则保存联系方式会把首页文案顺手抹掉，而接口还回 ok。
+         🔴 这里只放**改了真会变**的字段：实测过每一条都在产出页里渲染得出来。
+            死字段接上去 = 让人改一段改了不会变的字，比没有这个输入框更糟。 -->
+    <section id="siteView" hidden>
+      <div class="page-head">
+        <h1 id="siteTitle">—</h1>
+        <button type="button" class="primary" id="siteSave">保存</button>
+      </div>
+      <div id="siteNotes"></div>
+      <div id="siteForm"></div>
     </section>
 
     <!-- ══════ 设置（只读运行口径）══════

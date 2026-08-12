@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Env } from "./env";
 import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 import { parseCategoryLabels } from "./catlabels";
+import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_PAGES, SEO_LIMITS } from "./sitecontent";
 import { crossReference } from "./media";
 import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
@@ -756,6 +757,103 @@ app.delete("/api/products/:slug", async (c) => {
     if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
     console.error(JSON.stringify({ evt: "delete_failed", slug, operator, msg: String(e) }));
     return c.json({ wrote: false, error: "删除失败", detail: String(e) }, 502);
+  }
+});
+
+// ═══════════ 站点内容：联系方式 / 首页文案 / 站级 SEO ═══════════
+//
+// 真源是官网仓的**一个** JSON（SITE_CONTENT_PATH），官网 src/data/site.ts 从它读。
+//
+// 🔴 后台只写 JSON，**永远不写 .ts**。重写 TS 的出错方式是产出一个语法合法
+//    但语义变了的文件 —— 契约闸看不出来，tsc 也可能看不出来，而它会直接上线。
+// 🔴 路径**写死在服务端**，不接受调用方传。做成参数的话，这个端点就成了
+//    "往官网仓任意位置写文件"，而那正是整套出站闸在防的事。
+const siteContentPath = (env: Env): string => env.SITE_CONTENT_PATH || "src/data/site-content.json";
+
+app.get("/api/site-content", async (c) => {
+  const path = siteContentPath(c.env);
+  try {
+    const f = await readRepoFile(c.env, path);
+    if (!f.exists) {
+      return c.json({ path, exists: false, sha: null, content: null,
+        hint: "官网仓里还没有这个文件。它由官网仓维护（src/data/site.ts 从它读），本后台不会自己创建它。" }, 404);
+    }
+    let content: unknown = null, parseError: string | null = null;
+    try { content = JSON.parse(f.text!); } catch (e) { parseError = String(e); }
+    // 🔴 解析失败绝不返回 {} —— 那会让前端的表单显示成"所有字段都是空的"，
+    //    而一旦有人在那个状态下按保存，就是把整份内容清空。
+    if (parseError) {
+      return c.json({ path, exists: true, sha: f.sha, content: null, parseError,
+        hint: "文件不是合法 JSON。**本后台拒绝在它上面做任何修改** —— 在坏文件上做合并，结果是不可预料的。" }, 422);
+    }
+    // ⚠️ 页面清单与长度阈值一并发给界面：前端**不抄第二份** ——
+    //    抄一份的话，这里改了阈值而界面还按旧的提示，两边说的话就不一样了。
+    return c.json({ path, exists: true, sha: f.sha, content,
+      pages: SEO_PAGES, limits: SEO_LIMITS,
+      validation: validateSiteContent(content) });
+  } catch (e) {
+    return c.json({ path, error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+app.put("/api/site-content", async (c) => {
+  const operator = c.req.header("cf-access-authenticated-user-email")
+    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
+
+  const path = siteContentPath(c.env);
+  let body: { patch?: unknown; expectedSha?: string | null; section?: string };
+  try { body = await c.req.json(); } catch (e) { return c.json({ wrote: false, error: "请求体不合法", detail: String(e) }, 400); }
+  if (!body.patch || typeof body.patch !== "object" || Array.isArray(body.patch)) {
+    return c.json({ wrote: false, error: "patch 必须是一个对象" }, 400);
+  }
+
+  try {
+    const f = await readRepoFile(c.env, path);
+    if (!f.exists) return c.json({ wrote: false, error: `官网仓里没有 ${path}，本后台不会创建它` }, 404);
+
+    let existing: any;
+    try { existing = JSON.parse(f.text!); }
+    catch { return c.json({ wrote: false, error: "现有文件不是合法 JSON，拒绝在它上面改" }, 422); }
+
+    // ⚠️ 乐观锁：expectedSha 是"这次编辑所基于的那一版"。不带的话，两个人先后保存，
+    //    后一个会**静默覆盖**前一个 —— 而两边都看到"保存成功"。
+    if (body.expectedSha && body.expectedSha !== f.sha) {
+      return c.json({ wrote: false, error: "并发冲突",
+        detail: `文件在你打开它之后被改过了（你基于 ${String(body.expectedSha).slice(0, 7)}，现在是 ${String(f.sha).slice(0, 7)}）。请重新读一次再改 —— 直接覆盖会把别人的改动弄丢。` }, 409);
+    }
+
+    const merged = mergeSiteContent(existing, body.patch);
+    const v = validateSiteContent(merged);
+    if (!v.ok) {
+      return c.json({ wrote: false, reason: "未通过站点内容校验，**没有产生任何 commit**", validation: v }, 422);
+    }
+
+    const text = serializeSiteContent(merged);
+    if (text === f.text) {
+      // 空 commit 会让审计日志里多一条"改过"，而实际上什么都没变
+      return c.json({ wrote: false, reason: "内容与仓里的完全相同，无需写入", validation: v });
+    }
+
+    const fields = changedFields(existing, merged);
+    const label = body.section === "contact" ? "联系方式" : body.section === "home" ? "首页" : body.section === "seo" ? "SEO" : "站点内容";
+    const r = await commitFiles(c.env, {
+      message:
+        `admin: site ${label} (${operator})\n\n` +
+        `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}\n` +
+        `来源：admin.airsonde.com`,
+      files: [{ path, text }],
+      expectedHeadSha: undefined,
+    });
+    console.log(JSON.stringify({ evt: "site_content_ok", operator, section: body.section, fields, commit: r.commitSha }));
+    return c.json({ wrote: true, ...r, changedFields: fields, validation: v,
+      note: "已提交。官网由 Cloudflare Pages 重建，约 1 分钟后站上可见。" });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
+    console.error(JSON.stringify({ evt: "site_content_failed", operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "写入失败", detail: String(e) }, 502);
   }
 });
 
