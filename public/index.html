@@ -29,8 +29,7 @@
 
     <div class="nav-sec">目录</div>
     <button class="nav-item is-on" data-nav="products">产品<span class="cnt" id="navCount"></span></button>
-    <!-- ⛔ 未做的功能挂 SOON 占位，**绝不挂假链接**：点了没反应比没有更糟 -->
-    <div class="nav-item soon" title="分类/机型轴管理，后续批次">分类 <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="cats" title="机型轴：契约冻结，此处只看实况与批量改归属">分类</button>
 
     <div class="nav-sec">内容</div>
     <button class="nav-item" data-nav="media">图片<span class="cnt" id="navMediaCount"></span></button>
@@ -71,6 +70,9 @@
         <span id="batchCount"></span>
         <button type="button" data-bulk="published">批量上架</button>
         <button type="button" data-bulk="draft">批量下架</button>
+        <!-- 机型是产品的**归属**，不是轴本身 —— 改归属在我们的写入范围内（产品 JSON），
+             改轴（增删/改名）不在（那是两个仓的源码）。见分类页的说明。 -->
+        <select id="bulkCat"><option value="">批量改机型…</option></select>
         <button type="button" class="linkish" id="batchClear">取消选择</button>
         <span class="batch-note">一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
       </div>
@@ -89,6 +91,28 @@
         </table>
       </div>
       <div class="empty" id="listEmpty" hidden></div>
+    </section>
+
+    <!-- ══════ 分类（机型轴）══════
+         ⚠️ 与 admin.wanew.com 的分类页不是同一件事：那边机型是官网仓里的一份数据，可改名/排序/增删；
+            这边 category 是契约冻结的枚举，写在两个仓的源码里。⇒ 这一页**没有**"加分类/改名"按钮，
+            而且必须把"为什么没有"写在页面上 —— 否则人会一直找那个按钮。 -->
+    <section id="catsView" hidden>
+      <div class="page-head"><h1>分类 <span class="h3sub">机型轴 · category</span></h1></div>
+      <div id="catsSummary"></div>
+      <div class="table-wrap">
+        <table class="ptable">
+          <thead><tr>
+            <th>机型</th>
+            <th class="col-st">已上架</th>
+            <th class="col-st">草稿</th>
+            <th class="col-cat">官网筛选栏</th>
+            <th class="col-act"></th>
+          </tr></thead>
+          <tbody id="catsRows"></tbody>
+        </table>
+      </div>
+      <div id="catsNote"></div>
     </section>
 
     <!-- ══════ 审计日志 ══════ -->

@@ -5,7 +5,8 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { parseCategoryLabels } from "./catlabels";
 import { crossReference } from "./media";
 import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
@@ -298,9 +299,18 @@ app.post("/api/products/batch", async (c) => {
   try { body = await c.req.json(); } catch (e) { return c.json({ error: "请求体不合法", detail: String(e) }, 400); }
   const slugs = [...new Set(body.slugs || [])];
   if (!slugs.length) return c.json({ wrote: false, error: "没有选中任何产品" }, 400);
-  if (body.op !== "status") return c.json({ wrote: false, error: `未知批量操作：${body.op}` }, 400);
-  if (!(STATUSES as readonly string[]).includes(String(body.value))) {
-    return c.json({ wrote: false, error: `status 非法：${body.value}` }, 400);
+
+  // ⭐ 允许批改的字段是**白名单**，不是"body 里给什么就改什么"。
+  //    后者等于把整个产品结构暴露成批量接口：哪天有人传 op:"supplierRef"，
+  //    一次就能把 23 个产品的内部字段全改掉，而契约闸拦不住（那是合法字段）。
+  const OPS: Record<string, readonly string[]> = { status: STATUSES, category: CATEGORIES };
+  const op = String(body.op || "");
+  const allowed = OPS[op];
+  if (!allowed) {
+    return c.json({ wrote: false, error: `未知批量操作：${body.op}（只支持 ${Object.keys(OPS).join(" / ")}）` }, 400);
+  }
+  if (!allowed.includes(String(body.value))) {
+    return c.json({ wrote: false, error: `${op} 非法：${body.value}（只能是 ${allowed.join(" | ")}）` }, 400);
   }
   const value = String(body.value);
 
@@ -318,10 +328,14 @@ app.post("/api/products/batch", async (c) => {
       try { existing = JSON.parse(f.text!); }
       catch { skipped.push({ slug, why: "不是合法 JSON，拒绝在它上面改" }); continue; }
 
-      if (existing.status === value) { skipped.push({ slug, why: `已经是 ${value}` }); continue; }
+      if (existing[op] === value) { skipped.push({ slug, why: `已经是 ${value}` }); continue; }
 
-      const { merged } = mergeProduct(existing, { status: value });
-      const plan = planImages(slug, value, existing.images ?? null, (merged as any).images ?? null, [], []);
+      const { merged } = mergeProduct(existing, { [op]: value });
+      // ⚠️ 图片的落点只由 **status** 决定（published→products/，其余→products/_draft/）。
+      //    批改 category 时这里传的是**没变的** status ⇒ planImages 算出 0 项搬迁，
+      //    而不是"category 分支不调用 planImages"。一条路径，行为不可能分叉。
+      const nextStatus = String((merged as any).status ?? existing.status ?? "");
+      const plan = planImages(slug, nextStatus, existing.images ?? null, (merged as any).images ?? null, [], []);
       (merged as any).images = plan.images;
 
       const v = validateProduct(merged);
@@ -353,13 +367,13 @@ app.post("/api/products/batch", async (c) => {
 
     const r = await commitFiles(c.env, {
       message:
-        `admin: bulk status=${value} · ${changed.length} 个产品 (${operator})\n\n` +
+        `admin: bulk ${op}=${value} · ${changed.length} 个产品 (${operator})\n\n` +
         changed.map((s) => `- ${s}`).join("\n") +
         (imageOps ? `\n\n图片 ${imageOps} 项改动（随状态搬家）` : "") +
         `\n来源：admin.airsonde.com`,
       files,
     });
-    console.log(JSON.stringify({ evt: "bulk_ok", operator, op: body.op, value, count: changed.length, commit: r.commitSha }));
+    console.log(JSON.stringify({ evt: "bulk_ok", operator, op, value, count: changed.length, commit: r.commitSha }));
 
     return c.json({ wrote: true, ...r, changed, skipped, imageOps,
       note: `已在**一个 commit** 里改了 ${changed.length} 个产品${skipped.length ? `，跳过 ${skipped.length} 个` : ""}。` });
@@ -714,6 +728,50 @@ app.delete("/api/products/:slug", async (c) => {
     console.error(JSON.stringify({ evt: "delete_failed", slug, operator, msg: String(e) }));
     return c.json({ wrote: false, error: "删除失败", detail: String(e) }, 502);
   }
+});
+
+// ───────────────────── 分类：这一轴是**冻结的**，这里只解释它 ─────────────────────
+//
+// 🔴 与 admin.wanew.com 的分类页**不是同一件事**，照搬会搬错：
+//    wanew 的机型/品类是官网仓里的一份**数据**（categories.json / forms.json），
+//    所以那边的后台可以改名、排序、增删。
+//    AirSonde 的 category 是**契约 C1 冻结的枚举**，而且它同时写在两个仓的**源码**里：
+//      · admin  src/contract.ts       CATEGORIES
+//      · 官网   src/content.config.ts CATEGORIES（Astro schema，构建时校验）
+//    ⇒ 改这一轴 = 改两个仓的代码 + 改契约，不是后台点一下的事。**这里绝不提供那个按钮。**
+//    ⚠️ 界面上必须把这条**写出来**：一个找了半天"加分类"按钮的人，
+//       最后会以为是自己没找到，而不是它按设计不存在。
+//
+// 显示名从官网源码**读**、不抄（见 catlabels.ts）。读不到就说读不到。
+app.get("/api/categories", async (c) => {
+  const LABELS_PATH = "src/lib/products.ts";
+  let source: string | null = null;
+  let readError: string | null = null;
+  try {
+    const f = await readRepoFile(c.env, LABELS_PATH);
+    source = f.exists ? f.text : null;
+    if (!f.exists) readError = `官网仓里没有 ${LABELS_PATH}`;
+  } catch (e) {
+    readError = String(e);
+  }
+  const parsed = parseCategoryLabels(source, CATEGORIES);
+
+  return c.json({
+    frozen: true,
+    categories: CATEGORIES.map((slug) => ({ slug, label: parsed.labels?.[slug] ?? null })),
+    labels: {
+      ok: parsed.ok,
+      path: LABELS_PATH,
+      why: parsed.ok ? "" : (readError ? `${readError}。` : "") + parsed.why,
+      note: `显示名的真源是官网仓 ${LABELS_PATH} 的 CATEGORY_LABELS，本后台**只读不写**。`,
+    },
+    // 官网 /products/ 的筛选栏只列**有已上架产品**的分类（lib/products.ts 的 categoriesOf）。
+    // ⇒ 一个 0 个已上架产品的分类，在站上是**看不见的**。界面拿这条当判据，不是我猜的规则。
+    onSiteRule: "published > 0",
+    whyFrozen:
+      "category 是契约 C1 冻结的枚举，同时写在 admin 的 src/contract.ts 与官网的 src/content.config.ts。" +
+      "增删或改名要改两个仓的源码并改契约 —— 走总工，不在后台做。",
+  });
 });
 
 // 契约的机器可读形态：界面用它渲染下拉框/多选框，避免枚举在前端被抄第二份。

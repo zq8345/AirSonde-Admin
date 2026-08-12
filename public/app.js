@@ -25,6 +25,7 @@ const state = {
   nav: "products",            // 左导航当前视图：products | media
   media: null, mediaTab: "all",
   audit: null,
+  cats: null,       // /api/categories：枚举 + 官网显示名（计数不在里面，见 renderCats）
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -253,23 +254,33 @@ function renderBatch() {
   const n = state.selected.size;
   $("#batchBar").hidden = n === 0 || !state.write?.enabled;
   $("#batchCount").textContent = `已选 ${n} 个`;
+
+  // 批量改机型的选项来自**契约**（/api/contract），不是从现有数据里长出来的：
+  // ⚠️ 从数据里长的话，一个还没有任何产品的分类就永远选不到 —— 而"把第一个产品挪进空分类"
+  //    恰恰是这个下拉唯一能做、别处做不了的事。
+  const sel = $("#bulkCat");
+  if (sel && !sel.dataset.filled && state.contract?.categories?.length) {
+    state.contract.categories.forEach((k) => sel.append(new Option(k, k)));
+    sel.dataset.filled = "1";
+  }
 }
 
-/** 批量改状态。单行的"上架/下架"也走这里 —— 一条路径，行为不可能分叉。 */
-async function bulk(slugs, value) {
+/** 批量改字段。单行的"上架/下架"也走这里 —— 一条路径，行为不可能分叉。 */
+async function bulk(slugs, value, op = "status") {
   if (!slugs.length) return;
-  const verb = value === "published" ? "上架" : "下架";
-  if (!confirm(`确认${verb} ${slugs.length} 个产品？\n\n会产生一次 commit 并触发官网重建。`)) return;
+  const verb = op === "category" ? `改机型为 ${value}` : (value === "published" ? "上架" : "下架");
+  if (!confirm(`确认把 ${slugs.length} 个产品${verb}？\n\n会产生一次 commit 并触发官网重建。`)) return;
   try {
     const r = await fetch("/api/products/batch", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slugs, op: "status", value }),
+      body: JSON.stringify({ slugs, op, value }),
     });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
       state.cacheBust = b.commitSha;
       state.selected.clear();
       await loadList();
+      if (state.cats) renderCats();          // 分类页的计数与列表同源，改完要一起变
       alert(`已${verb} ${b.changed.length} 个。commit ${String(b.commitSha).slice(0, 7)}\n` +
         (b.skipped?.length ? `跳过 ${b.skipped.length} 个：${b.skipped.map((s) => s.slug + "(" + s.why + ")").join("、")}` : ""));
     } else if (b?.rejected?.length) {
@@ -812,6 +823,11 @@ $("#batchClear").onclick = () => { state.selected.clear(); renderList(); };
 document.querySelectorAll("[data-bulk]").forEach((b) => {
   b.onclick = () => bulk([...state.selected], b.dataset.bulk);
 });
+// ⚠️ 选完立刻回到占位项：不回的话，下拉停在刚用过的值上，看起来像"当前筛选是它"。
+$("#bulkCat").onchange = (e) => {
+  const v = e.target.value; e.target.value = "";
+  if (v) bulk([...state.selected], v, "category");
+};
 $("#editPane").onsubmit = doPreview;
 $("#resetBtn").onclick = () => { resetPending(); if (state.draft) fillForm(state.draft); $("#preview").hidden = true; };
 document.querySelectorAll(".add[data-add]").forEach((b) => {
@@ -899,6 +915,103 @@ function renderMedia() {
   if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
 }
 
+// ═══════════════ 分类（机型轴）═══════════════
+//
+// 这一页做三件事，**没有第四件**：
+//   ① 每个分类的实况（已上架/草稿/**官网筛选栏上是否出现**）
+//   ② 点一行 → 回列表并套上这个分类的筛选（计数与筛选结果**同源**：都出自 state.list）
+//   ③ 说清楚为什么这里不能加分类/改名
+// ⛔ 不提供"改名/增删分类"：那不是数据，是两个仓的源码 + 契约。放个会报错的按钮比没有更糟。
+async function loadCats() {
+  $("#catsSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
+  try {
+    const { body } = await api("/api/categories");
+    state.cats = body;
+    renderCats();
+  } catch (e) {
+    $("#catsSummary").innerHTML = "";
+    $("#catsSummary").append(mkNotice("bad", "读取失败：" + e.message));
+  }
+}
+
+function renderCats() {
+  const c = state.cats; if (!c) return;
+  const sum = $("#catsSummary"); sum.innerHTML = "";
+
+  // 🔴 显示名读不到 ⇒ 明说读不到，**不回退到后台自己抄的一份**。
+  //    抄一份的话官网改了名这里永远显示旧的，而且没有任何症状。
+  if (!c.labels.ok) {
+    sum.append(mkNotice("warn",
+      `⚠️ 读不到官网的分类显示名（真源：\`${c.labels.path}\`），下表只能显示 slug。原因：${c.labels.why}`));
+  }
+
+  // ⭐ 对账：逐分类计数之和必须等于产品总数。
+  //    不等 ⇒ 有产品的 category 不在契约枚举里，而那种产品在这张表上**根本不出现**——
+  //    一张"看起来完整"的表把它藏掉了。宁可红着说，也不要静默漏。
+  const known = new Set(c.categories.map((x) => x.slug));
+  const good = state.list.filter((p) => !p.error);
+  const strays = good.filter((p) => !known.has(p.category));
+  if (strays.length) {
+    sum.append(mkNotice("bad",
+      `🔴 有 **${strays.length}** 个产品的 category 不在契约枚举里，下表统计不到它们：` +
+      strays.map((p) => `${p.slug}(${p.category || "空"})`).join("、")));
+  } else {
+    // ⚠️ 对账成立时也要**出一行**。什么都不显示的话，"查过了，没问题"和"这个检查根本没跑"
+    //    在界面上长得一模一样 —— 而那正是一道闸失效之后最不容易被发现的样子。
+    const onSite = c.categories.filter((cat) => good.some((p) => p.category === cat.slug && p.status === "published")).length;
+    sum.append(mkNotice("ok",
+      `${good.length} 个产品全部落在契约的 ${c.categories.length} 个机型里（对账成立）· ` +
+      `官网筛选栏上会出现 **${onSite}** 个机型`));
+  }
+
+  const tb = $("#catsRows"); tb.innerHTML = "";
+  c.categories.forEach((cat) => {
+    const mine = state.list.filter((p) => !p.error && p.category === cat.slug);
+    const pub = mine.filter((p) => p.status === "published").length;
+    const draft = mine.filter((p) => p.status === "draft").length;
+
+    const tr = el("tr");
+    const tdName = el("td");
+    tdName.append(el("div", "li-name", cat.label || cat.slug));
+    tdName.append(el("div", "li-sub", cat.label ? cat.slug : "（官网显示名未知）"));
+    tr.append(tdName);
+
+    tr.append(el("td", "col-st", String(pub)));
+    tr.append(el("td", "col-st li-sub", String(draft)));
+
+    // 🔴 判据取自官网自己的规则（lib/products.ts 的 categoriesOf 只收有已上架产品的分类），
+    //    不是我按"看起来应该"编的。⇒ 0 个已上架 = 站上根本没有这个筛选按钮。
+    const tdOn = el("td", "col-cat");
+    if (pub > 0) tdOn.append(el("span", "badge badge-published", "显示"));
+    else {
+      tdOn.append(el("span", "badge badge-unknown", "不显示"));
+      tdOn.append(el("div", "li-sub", "没有已上架产品"));
+    }
+    tr.append(tdOn);
+
+    const tdAct = el("td", "col-act");
+    if (mine.length) {
+      const b = el("button", "linkish", `查看 ${mine.length} 个`); b.type = "button";
+      b.onclick = () => { showNav("products"); $("#catFilter").value = cat.slug; state.tab = "all"; renderList(); };
+      tdAct.append(b);
+    } else tdAct.append(el("span", "li-sub", "空"));
+    tr.append(tdAct);
+    tb.append(tr);
+  });
+
+  // ⚠️ 这一段回答的是"加分类的按钮在哪" —— 不写的话，人会以为是自己没找到，
+  //    而不是它按设计不存在。⇒ 它必须在页面上，不是只在文档里。
+  const note = $("#catsNote"); note.innerHTML = "";
+  note.append(mkNotice("warn", `**这一轴是冻结的：这里不能加分类、改名或删分类。** ${c.whyFrozen}`));
+  const ul = el("ul", "catnote");
+  [
+    "**改某个产品的归属**（把它从一个机型挪到另一个）：可以 —— 列表里勾选后用「批量改机型」，或在产品编辑页改 category。",
+    "**官网筛选栏**只列有已上架产品的分类。一个 0 个已上架的分类，在站上是看不见的。",
+    `显示名的真源是官网仓 ${c.labels.path} 的 CATEGORY_LABELS，本后台**只读不写**（所以这里不会与官网漂移）。`,
+  ].forEach((t) => ul.append(appendMd(el("li"), t)));
+  note.append(ul);
+}
+
 // ═══════════════ 审计日志 ═══════════════
 async function loadAudit() {
   $("#auditSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
@@ -958,10 +1071,13 @@ function showNav(which) {
   $("#listView").hidden = which !== "products";
   $("#mediaView").hidden = which !== "media";
   $("#auditView").hidden = which !== "audit";
+  $("#catsView").hidden = which !== "cats";
   $("#detailView").hidden = true;
   document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
   if (which === "media" && !state.media) loadMedia();
   if (which === "audit" && !state.audit) loadAudit();
+  // ⚠️ 分类页的计数每次都要重算（列表可能刚被批量改过），但接口只在第一次拉。
+  if (which === "cats") { if (state.cats) renderCats(); else loadCats(); }
 }
 document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
 

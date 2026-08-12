@@ -258,10 +258,22 @@ export interface ReadResult {
  *    而真写进去会产生一次全文件改动。
  */
 export async function readProductFile(env: Env, slug: string): Promise<ReadResult> {
-  const repo = env.GITHUB_REPO, ref = env.GITHUB_BRANCH, dir = env.PRODUCTS_DIR;
-  if (!repo || !ref || !dir) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH/PRODUCTS_DIR 必须全部配置。");
+  const dir = env.PRODUCTS_DIR;
+  if (!dir) throw new Error("配置缺失：PRODUCTS_DIR 必须配置。");
+  return readRepoFile(env, `${dir}/${slug}.json`);
+}
 
-  const path = `${dir}/${slug}.json`;
+/**
+ * 读官网仓里**任意一个**文件的原文。
+ *
+ * ⚠️ **只读**。后台在官网仓的写入范围仍然只有 `PRODUCTS_DIR`；这个函数不改变那件事
+ *    （写走的是 gitcommit.ts，而出站闸在 ghFetch 里，与这里无关）。
+ *    加它是为了能读官网源码里的显示名，从而**不用在后台再抄一份**（见 catlabels.ts）。
+ */
+export async function readRepoFile(env: Env, path: string): Promise<ReadResult> {
+  const repo = env.GITHUB_REPO, ref = env.GITHUB_BRANCH;
+  if (!repo || !ref) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH 必须全部配置。");
+
   const res = await ghFetch(env, `/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`);
 
   if (res.status === 404) return { path, exists: false, sha: null, text: null };

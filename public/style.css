@@ -299,6 +299,12 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .notice-warn { background: var(--warn-soft); color: var(--warn); }
 .notice-bad { background: var(--danger-soft); color: var(--danger); }
 
+/* 分类页脚注：回答"加分类的按钮为什么不存在"。列表比一整段话读得快。 */
+.catnote { margin: 10px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+.catnote b { color: var(--text); }
+/* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
+#bulkCat { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+
 
 
 /* ═══ A9 编辑页：卡片分组 + sticky 保存条 + 宽屏双栏 ═══
