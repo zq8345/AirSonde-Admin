@@ -13,7 +13,7 @@ const check = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}`); } else 
 
 const get = async (p) => { const r = await fetch(B + p); return { status: r.status, body: await r.json().catch(() => null) }; };
 const post = async (p, b) => {
-  const r = await fetch(B + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+  const r = await fetch(B + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ patch: b }) });
   return { status: r.status, body: await r.json().catch(() => null) };
 };
 
@@ -143,4 +143,5 @@ check("⓪ 数据源确实指向 fixtures（否则下面全部量的是别的东
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+
 

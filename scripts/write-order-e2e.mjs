@@ -18,7 +18,7 @@ const ck = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}\n     ${d}`);
 
 const put = async (slug, body) => {
   const r = await fetch(`${B}/api/products/${slug}`, {
-    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ patch: body }),
   });
   return { status: r.status, body: await r.json().catch(() => null) };
 };
@@ -89,4 +89,5 @@ const GOOD = {
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+
 

@@ -1,65 +1,84 @@
-// 出站写闸自检 —— 用**无害输入**把两道闸的组合量一遍。
+// 出站写闸自检 —— 用**无害输入**把三个维度（方法 × 环境 × 目标仓）的组合量一遍。
 //
 // 🔴 为什么这个测试值得单独存在：这道闸防的是"误改官网数据仓"。
 //    而一个需要**真发一次写请求**才能验证的防写测试，本身就是它要防的那件事。
-//    所以闸被抽成纯函数 assertEgressAllowed(env, method)，用假 env 量，零副作用。
+//    所以闸被抽成纯函数 assertEgressAllowed(env, method, repo)，用假 env 量，零副作用。
 //
-// ⚠️ 判据纪律：正对照必须在。只测"被拒"的话，一个 `throw` 恒真的空壳也全绿 ——
-//    那种闸的表现是"谁也别想读 GitHub"，而症状会是"列表一直是空的"。
-import { assertEgressAllowed } from "../src/github.ts";
+// ⚠️ 判据纪律：正对照必须在。只测"被拒"的话，一个恒 throw 的空壳也全绿 ——
+//    那种闸的表现是"谁也别想读/写"，而症状会是"列表一直空的"或"生产存不了东西"。
+import { pathToFileURL } from "url";
+const { assertEgressAllowed } = await import(pathToFileURL("C:/开发/airsonde/airsonde-admin/src/github.ts").href);
 
-let pass = 0, fail = 0;
-const out = [];
-const check = (name, cond, detail = "") => {
+let pass = 0, fail = 0; const out = [];
+const ck = (name, cond, detail = "") => {
   if (cond) { pass++; out.push(`✅ ${name}`); }
   else { fail++; out.push(`🔴 ${name}${detail ? "\n     " + detail : ""}`); }
 };
 
 /** 返回 null 表示放行，返回错误消息表示拒绝。 */
-const attempt = (env, method) => {
-  try { assertEgressAllowed(env, method); return null; }
+const attempt = (env, method, repo) => {
+  try { assertEgressAllowed(env, method, repo); return null; }
   catch (e) { return e.message; }
 };
 
-const PROD_NOW = {};                                        // A2 现状：写能力未开
-const PROD_WRITE_ON = { ALLOW_GITHUB_WRITE: "1" };           // M2 放行后的生产
-const DEV_NOW = { DEV_BYPASS_AUTH: "1" };                    // A2 现状：本地
-const DEV_WRITE_ON = { DEV_BYPASS_AUTH: "1", ALLOW_GITHUB_WRITE: "1" }; // 有人在本地把开关也打开了
+const WEB = "zq8345/AirSonde-Web";       // 官网数据仓 —— 本机永远不许写
+const ADMIN = "zq8345/AirSonde-Admin";   // 自检靶子仓 —— 本机允许写
+const OTHER = "zq8345/SomethingElse";
 
-// ── 正对照：读必须永远畅通（否则这道闸是"谁也别想读"）──
-for (const [label, env] of [["生产(现状)", PROD_NOW], ["生产(写已开)", PROD_WRITE_ON], ["本地(现状)", DEV_NOW], ["本地(写已开)", DEV_WRITE_ON]]) {
-  check(`① 正对照：${label} 的 GET 必须放行`, attempt(env, "GET") === null, attempt(env, "GET") || "");
-  check(`① 正对照：${label} 的 HEAD 必须放行`, attempt(env, "HEAD") === null, attempt(env, "HEAD") || "");
-}
+const PROD = { ALLOW_GITHUB_WRITE: "1" };                                  // 生产（写已开）
+const PROD_OFF = {};                                                       // 生产（写未开）
+const DEV = { DEV_BYPASS_AUTH: "1", ALLOW_GITHUB_WRITE: "1" };             // 本地（写已开）
+const DEV_OFF = { DEV_BYPASS_AUTH: "1" };                                  // 本地（写未开）
 
-// ── 闸①：写能力总开关 ──
-for (const m of ["PUT", "POST", "PATCH", "DELETE"]) {
-  const r = attempt(PROD_NOW, m);
-  check(`② A2 现状：生产的 ${m} 必须被拒（写能力未开）`, r !== null && r.includes("写能力未开启"), String(r));
-}
-{
-  const r = attempt(PROD_WRITE_ON, "PUT");
-  check("② 反向自证：显式开启 ALLOW_GITHUB_WRITE=1 后，生产的 PUT 必须放行（闸不是恒拒）", r === null, String(r));
+// ── ① 正对照：读永远畅通（否则这道闸是"谁也别想读"）──
+for (const [label, env] of [["生产", PROD], ["生产(写未开)", PROD_OFF], ["本地", DEV], ["本地(写未开)", DEV_OFF]]) {
+  for (const repo of [WEB, ADMIN]) {
+    ck(`① 正对照：${label} 读 ${repo.split("/")[1]} 必须放行`, attempt(env, "GET", repo) === null, attempt(env, "GET", repo) || "");
+  }
 }
 
-// ── 闸②：本地永不写生产，且**不以闸①为前提** ──
-{
-  const r = attempt(DEV_NOW, "PUT");
-  check("③ 本地(现状) 的 PUT 必须被拒", r !== null, String(r));
-}
-{
-  // 🔴 关键用例：把写开关打开后，本地**仍然**必须被拒。
-  //    两道闸各挡一种失效、互不为前提 —— 只要有一道是另一道的前提，
-  //    那就不是两道闸，是一道闸加一句注释。
-  const r = attempt(DEV_WRITE_ON, "PUT");
-  check("③ 关键：本地即使 ALLOW_GITHUB_WRITE=1 也必须被拒（两道闸互不为前提）",
-    r !== null && r.includes("本地开发禁止"), String(r));
+// ── ② 闸一：写能力总开关（与环境、目标都无关）──
+for (const [label, env] of [["生产", PROD_OFF], ["本地", DEV_OFF]]) {
+  for (const repo of [WEB, ADMIN]) {
+    const r = attempt(env, "PUT", repo);
+    ck(`② ${label}未开写能力 ⇒ 写 ${repo.split("/")[1]} 必须被拒`, r !== null && r.includes("写能力未开启"), String(r));
+  }
 }
 
-// ── 大小写不该成为绕过方式 ──
+// ── ③ 生产：开了写就应当能写官网数据仓（这是它存在的意义）──
 {
-  const r = attempt(PROD_NOW, "post");
-  check("④ 小写方法名照样被拒（大小写不是绕过方式）", r !== null, String(r));
+  ck("③ 正对照：生产写官网数据仓必须放行（闸不是恒拒）", attempt(PROD, "PUT", WEB) === null, String(attempt(PROD, "PUT", WEB)));
+  ck("③ 正对照：生产写靶子仓也放行", attempt(PROD, "PUT", ADMIN) === null, String(attempt(PROD, "PUT", ADMIN)));
+}
+
+// ── ④ 闸二：本机的目标仓白名单 —— 本批新增，最要紧 ──
+{
+  // 🔴 关键用例：本机 + 写能力已开 + 目标是官网数据仓 ⇒ **必须硬拒**
+  const r = attempt(DEV, "PUT", WEB);
+  ck("④ 关键：本机即使写能力已开，写官网数据仓也必须被硬拒",
+    r !== null && r.includes("永远不允许"), String(r));
+}
+{
+  const r = attempt(DEV, "PUT", ADMIN);
+  ck("④ 反向自证：本机写自检靶子仓必须放行（否则白名单是摆设，(c) 方案跑不了）", r === null, String(r));
+}
+{
+  const r = attempt(DEV, "PUT", OTHER);
+  ck("④ 本机写名单外的仓必须被拒（白名单不是「除了 Web 都行」）",
+    r !== null && r.includes("只允许写自检靶子仓"), String(r));
+}
+{
+  // 目标未知时不能放行 —— "不知道打给谁"不该等于"随便打"
+  const r = attempt(DEV, "PUT", undefined);
+  ck("④ 目标仓未知时必须被拒", r !== null, String(r));
+}
+
+// ── ⑤ 方法大小写不该成为绕过方式 ──
+{
+  ck("⑤ 小写 put 照样受同一套判据", attempt(DEV, "put", WEB) !== null, String(attempt(DEV, "put", WEB)));
+  for (const m of ["POST", "PATCH", "DELETE"]) {
+    ck(`⑤ 本机 ${m} 官网数据仓必须被拒`, attempt(DEV, m, WEB) !== null, String(attempt(DEV, m, WEB)));
+  }
 }
 
 console.log(out.join("\n"));

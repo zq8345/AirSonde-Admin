@@ -35,26 +35,65 @@ export class EgressDenied extends Error {}
 //    藏在 ghFetch 里的话，要验证它就得真发一次请求 —— 而"验证一道防写闸"的测试
 //    如果需要真发一次写请求，那这个测试本身就是它要防的那件事。
 //    纯函数版可以用无害的输入把两道闸的四种组合全部量一遍。
-export function assertEgressAllowed(env: Env, method: string): void {
+/**
+ * 🔴 本机允许写入的仓 —— **硬编码在源码里，不是环境变量。**
+ *    做成变量的话，它就是一个"开关"：谁都能把它设成 AirSonde-Web，那道闸当场作废。
+ *    硬编码 ⇒ 要放开另一个仓，必须改这一行、提交、被 review 看见。
+ * ⚠️ 官网数据仓 `zq8345/AirSonde-Web` **永远不在这个名单里**，无论开关怎么配。
+ */
+const DEV_WRITABLE_REPOS = new Set(["zq8345/AirSonde-Admin"]);
+/** 永不允许本机写的仓。与上面是**两条独立判据**：白名单写错了，这条仍然挡得住。 */
+const NEVER_DEV_WRITABLE = new Set(["zq8345/AirSonde-Web"]);
+
+export function assertEgressAllowed(env: Env, method: string, repo?: string): void {
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD") return;
 
   if (env.ALLOW_GITHUB_WRITE !== "1") {
     throw new EgressDenied(
-      `写能力未开启：本 worker 当前不允许对 GitHub 发起 ${m}（A2 阶段写入是 dry-run）。` +
+      `写能力未开启：本 worker 当前不允许对 GitHub 发起 ${m}。` +
       `要开启需显式配置 ALLOW_GITHUB_WRITE=1 并重新部署 —— 这是一次有意的动作，不该被某个端点顺带带出来。`,
     );
   }
+
   if (env.DEV_BYPASS_AUTH === "1") {
-    throw new EgressDenied(
-      `本地开发禁止对 GitHub 发起 ${m} —— 目标是生产数据仓 ${env.GITHUB_REPO}，本地没有 Access 门挡着。`,
-    );
+    const target = repo || env.GITHUB_REPO || "(未知)";
+    // ⚠️ 先判黑名单再判白名单：白名单哪天被改错了，这一条仍然挡得住官网数据仓。
+    if (NEVER_DEV_WRITABLE.has(target)) {
+      throw new EgressDenied(
+        `本机永远不允许写 ${target} —— 那是官网数据仓，本地没有 Access 门挡着，误点一下就是真提交。`,
+      );
+    }
+    if (!DEV_WRITABLE_REPOS.has(target)) {
+      throw new EgressDenied(
+        `本机只允许写自检靶子仓（${[...DEV_WRITABLE_REPOS].join(", ")}），当前目标是 ${target}。`,
+      );
+    }
+    // 落到这里 = 目标是靶子仓，放行。⚠️ 生产环境永远走不到这个分支（没有 DEV_BYPASS_AUTH）。
   }
 }
 
-async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
+/**
+ * 本次请求打的是哪个仓 —— **从真实请求路径解析，不靠调用方传参**。
+ * ⚠️ 传参迟早会有人忘记传，而忘了传的那次恰好就是绕过闸的那次；路径不会忘。
+ */
+function repoFromPath(path: string): string | undefined {
+  return (/^\/repos\/([^/]+\/[^/]+)/.exec(path) || [])[1];
+}
+
+/**
+ * 本次该用哪个 token。
+ * 🔴 dev 与生产**用不同的变量名**，且**互不回落**：
+ *    dev 回落到生产 token 的话，本机就握着一把能写官网数据仓的钥匙 ——
+ *    而那正是我们花了两道闸在防的事。宁可 dev 没 token 报错，也不要它"顺手能用"。
+ */
+function tokenFor(env: Env): string | undefined {
+  return env.DEV_BYPASS_AUTH === "1" ? env.GITHUB_TOKEN_SELFTEST : env.GITHUB_TOKEN;
+}
+
+export async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method || "GET").toUpperCase();
-  assertEgressAllowed(env, method);
+  assertEgressAllowed(env, method, repoFromPath(path));
 
   const headers: Record<string, string> = {
     "User-Agent": UA,
@@ -63,11 +102,15 @@ async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<
     ...((init.headers as Record<string, string>) || {}),
   };
   // 有 token 用 token（配额 5000/h）；没有就匿名（公开仓可读，配额 60/h）。
-  // ⚠️ token 只在这里进 header，绝不出现在任何响应体里 —— 见 index.ts 只报 `ghTokenConfigured` 布尔值。
-  if (env.GITHUB_TOKEN) headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
+  // ⚠️ token 只在这里进 header，绝不出现在任何响应体里 —— 见 index.ts 只报布尔值。
+  const tok = tokenFor(env);
+  if (tok) headers.Authorization = `Bearer ${tok}`;
 
   return fetch(`${GH}${path}`, { ...init, method, headers });
 }
+
+/** 只报有无，绝不报值。dev 与生产看的是不同的变量。 */
+export const hasWriteToken = (env: Env): boolean => !!tokenFor(env);
 
 export interface ListResult {
   repo: string;
@@ -167,13 +210,26 @@ function toHex(buf: ArrayBuffer): string {
   return s;
 }
 
-export async function gitBlobSha(text: string): Promise<string> {
-  const body = new TextEncoder().encode(text);
+/** 对**字节**算 git blob sha —— 图片走这一条（二进制没有"字符"可言）。 */
+export async function gitBlobShaBytes(body: Uint8Array): Promise<string> {
   const header = new TextEncoder().encode(`blob ${body.length}\0`); // ⚠️ 字节数
   const all = new Uint8Array(header.length + body.length);
   all.set(header, 0);
   all.set(body, header.length);
   return toHex(await crypto.subtle.digest("SHA-1", all));
+}
+
+/** 对**文本**算 git blob sha（先按 UTF-8 编码）。 */
+export async function gitBlobSha(text: string): Promise<string> {
+  return gitBlobShaBytes(new TextEncoder().encode(text));
+}
+
+/** base64 → 字节。⚠️ atob 出来的是 latin1 字符串，必须逐字符取码点还原成字节。 */
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64.replace(/\s+/g, ""));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /** UTF-8 → base64。⚠️ 不能直接 btoa(text)：btoa 只吃 latin1，非 ASCII 会抛或写坏。 */
@@ -264,13 +320,13 @@ export async function writeProductFile(
   //    而真正的原因是「本机永远不准写生产数据仓」。于是人会去配一个 token，
   //    配完再撞上出站闸，被同一件事挡两次、看到两个不同的理由。
   //    ⚠️ 这正是我们那张误判表要防的事：**报错报错了原因，比不报错更能把人带偏。**
-  assertEgressAllowed(env, "PUT");
-
   const repo = env.GITHUB_REPO, branch = env.GITHUB_BRANCH, dir = env.PRODUCTS_DIR;
+  assertEgressAllowed(env, "PUT", repo);
+
   if (!repo || !branch || !dir) throw new Error("配置缺失：GITHUB_REPO/GITHUB_BRANCH/PRODUCTS_DIR 必须全部配置。");
-  if (!env.GITHUB_TOKEN) {
+  if (!hasWriteToken(env)) {
     // fail-closed：没有 token 就明说，别让它退化成一次匿名请求然后回 401 —— 那个症状看起来像 token 错了。
-    throw new Error("GITHUB_TOKEN 未配置，拒绝写入（读可以匿名，写不行）。");
+    throw new Error("写入用的 token 未配置，拒绝写入（读可以匿名，写不行）。");
   }
 
   const path = `${dir}/${slug}.json`;

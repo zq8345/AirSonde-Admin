@@ -5,7 +5,9 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, writeProductFile, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, hasWriteToken, base64ToBytes, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { commitFiles, type CommitFile } from "./gitcommit";
+import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct,
   CATEGORIES, SENSORS, STATUSES,
@@ -127,11 +129,13 @@ app.get("/api/_whoami", (c) => {
       repo: c.env.GITHUB_REPO || null,
       branch: c.env.GITHUB_BRANCH || null,
       productsDir: c.env.PRODUCTS_DIR || null,
-      ghTokenConfigured: !!c.env.GITHUB_TOKEN, // 只报有无，绝不报值
+      // 只报有无，绝不报值。⚠️ dev 看的是 GITHUB_TOKEN_SELFTEST（靶子仓专用），
+      //    生产看的是 GITHUB_TOKEN —— 两者互不回落，见 github.ts 的 tokenFor()。
+      ghTokenConfigured: hasWriteToken(c.env),
       // ⭐ 界面的按钮文案和横幅**由这个字段决定**，不是各写各的。
       //    写死文案的话，闸的状态和界面说的话迟早不一致 —— 而那时界面说的是假话。
       //    ⚠️ 两个条件缺一不可：闸开着、且 token 在。少一个就写不成。
-      writeEnabled: c.env.ALLOW_GITHUB_WRITE === "1" && !!c.env.GITHUB_TOKEN,
+      writeEnabled: c.env.ALLOW_GITHUB_WRITE === "1" && hasWriteToken(c.env),
       writeGateOpen: c.env.ALLOW_GITHUB_WRITE === "1",
     },
     operator: c.req.header("cf-access-authenticated-user-email") || (isDev ? "dev-bypass" : null),
@@ -197,12 +201,19 @@ app.get("/api/products/:slug", async (c) => {
 app.post("/api/products/:slug/preview", async (c) => {
   const slug = c.req.param("slug");
   let patch: Record<string, unknown>;
+  let previewUploads: Upload[] = [];
+  let previewRemove: number[] = [];
   try {
     const body = await c.req.json();
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
-    patch = body as Record<string, unknown>;
+    // ⚠️ 与 PUT **同一个信封**。两个端点各收各的形状，就会出现"预览通过但保存被拒"，
+    //    而那种不一致一旦发生，人就不再相信预览了 —— 预览的全部价值是它可信。
+    if (!(body as any).patch || typeof (body as any).patch !== "object") throw new Error("缺少 patch 字段");
+    patch = (body as any).patch as Record<string, unknown>;
+    previewUploads = ((body as any).uploads || []) as Upload[];
+    previewRemove = ((body as any).removeGallery || []) as number[];
   } catch (e) {
-    return c.json({ error: "请求体不是合法 JSON 对象", detail: String(e) }, 400);
+    return c.json({ error: "请求体不合法", detail: String(e) }, 400);
   }
 
   try {
@@ -219,6 +230,14 @@ app.post("/api/products/:slug/preview", async (c) => {
     }
 
     const { merged, cleared, touched } = mergeProduct(existing, patch);
+    // 与 PUT 同一套图片规划 —— 预览必须显示"图片会被搬到哪里"，那是这次改动的一部分
+    const plan = planImages(
+      slug, String((merged as any).status || "draft"),
+      (existing as any)?.images ?? null, (merged as any).images ?? null,
+      previewUploads, previewRemove,
+    );
+    (merged as any).images = plan.images;
+
     const validation = validateProduct(merged);
     const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
     if (slugIssue) validation.errors.push(slugIssue);
@@ -245,6 +264,8 @@ app.post("/api/products/:slug/preview", async (c) => {
         removed: diff.removed,
       },
       diff: diff.lines,
+      // 图片会被怎么处理，预览里就要说清楚 —— 这是这次改动的一部分，不是"顺带发生的事"
+      imageOps: plan.ops.map((o) => ({ op: o.op, path: o.path, fromPath: o.fromPath, why: o.why })),
       wouldWrite: { bytes: new TextEncoder().encode(newText).length, text: newText },
     });
   } catch (e) {
@@ -264,23 +285,61 @@ app.post("/api/products/:slug/preview", async (c) => {
 //
 // ⚠️ 校验不通过 ⇒ **在发出任何写请求之前**返回，绝不产生 commit。
 //    这道闸的全部价值就是拦在**不可逆那一步之前**，"警告一下继续提交"等于没有它。
+// 图片：只收 webp。
+// 🔴 这不是偷懒，是让"文件名"和"文件内容"不可能不一致：`uploadName()` 一律产出 `.webp`，
+//    若同时收 png/jpg，就会出现内容是 PNG 而扩展名是 .webp 的文件 —— Astro 与浏览器
+//    多半仍能显示，于是这个错**不会有任何症状**，直到某天某个工具按扩展名去解析它。
+//    ⇒ 界面负责在 canvas 里转成 webp，服务端只认 webp，并且**按magic bytes 认，不按扩展名**。
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+function assertWebp(bytes: Uint8Array, label: string): void {
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    throw new Error(`${label} 有 ${(bytes.length / 1024 / 1024).toFixed(2)}MB，超过 2MB 上限。`);
+  }
+  // RIFF....WEBP
+  const isWebp = bytes.length > 12
+    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+  if (!isWebp) {
+    throw new Error(`${label} 不是 WebP（按文件头判断，不看扩展名）。界面应当先在浏览器里转成 WebP 再上传。`);
+  }
+}
+
+interface WriteEnvelope {
+  patch?: Record<string, unknown>;
+  uploads?: { slot: "main" | number; base64: string }[];
+  removeGallery?: number[];
+  /** 打开页面时读到的分支 HEAD —— 传了才有乐观锁。 */
+  baseHeadSha?: string;
+  /** true = 这是"新建"，若文件已存在则拒绝（slug 唯一性）。 */
+  mustCreate?: boolean;
+}
+
 app.put("/api/products/:slug", async (c) => {
   const slug = c.req.param("slug");
   const operator = c.req.header("cf-access-authenticated-user-email")
     || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
 
-  let patch: Record<string, unknown>;
+  let env0: WriteEnvelope;
   try {
     const body = await c.req.json();
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("请求体必须是 JSON 对象");
-    patch = body as Record<string, unknown>;
+    env0 = body as WriteEnvelope;
+    if (!env0.patch || typeof env0.patch !== "object") throw new Error("缺少 patch 字段");
   } catch (e) {
-    return c.json({ error: "请求体不是合法 JSON 对象", detail: String(e) }, 400);
+    return c.json({ error: "请求体不合法", detail: String(e) }, 400);
   }
+  const patch = env0.patch!;
+  const uploads: Upload[] = env0.uploads || [];
 
   try {
     const f = await readProductFile(c.env, slug);
+
+    // slug 唯一性：新建时文件已存在 ⇒ 拒绝。
+    // ⚠️ 不能"存在就当成更新" —— 那会让人在毫不知情的情况下覆盖掉另一个产品。
+    if (env0.mustCreate && f.exists) {
+      return c.json({ wrote: false, error: "slug 已被占用", detail: `${f.path} 已经存在。换一个 slug，或去编辑那个已有的产品。` }, 409);
+    }
 
     let existing: Record<string, unknown> | null = null;
     if (f.exists) {
@@ -290,7 +349,26 @@ app.put("/api/products/:slug", async (c) => {
       }
     }
 
+    // 图片先验，再谈别的 —— 坏图片就没必要往下走了
+    for (const u of uploads) {
+      try { assertWebp(base64ToBytes(u.base64), `图片(${u.slot === "main" ? "主图" : "gallery[" + u.slot + "]"})`); }
+      catch (e) { return c.json({ wrote: false, error: "图片不合格，未产生任何 commit", detail: String((e as Error).message) }, 422); }
+    }
+
     const { merged, cleared, touched } = mergeProduct(existing, patch);
+
+    // ⭐ 图片位置按 status 归一化 —— 纯函数算，这里只消费结果。
+    //    ⚠️ 必须在校验**之前**：校验器要看到最终的 images 值，否则它验的是一份不会被写入的东西。
+    const plan = planImages(
+      slug,
+      String((merged as any).status || "draft"),
+      (existing as any)?.images ?? null,
+      (merged as any).images ?? null,
+      uploads,
+      env0.removeGallery || [],
+    );
+    (merged as any).images = plan.images;
+
     const validation = validateProduct(merged);
     const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
     if (slugIssue) validation.errors.push(slugIssue);
@@ -303,24 +381,40 @@ app.put("/api/products/:slug", async (c) => {
 
     const newText = serializeProduct(merged);
     const diff = summarizeDiff(f.text ?? "", newText);
-    // 内容没变就不写。⚠️ 不然 git 里会堆一串空 commit，而每一个都会触发一次官网重建。
-    if (diff.identical) {
-      return c.json({ wrote: false, reason: "内容与现有文件逐字节相同，无需提交", change: { identical: true } });
+    // 内容没变**且没有文件要动**才算无需提交。
+    // ⚠️ 只看 JSON 是不够的：状态没变但换了一张图时 JSON 可能逐字节相同，而图必须写进去。
+    if (diff.identical && plan.ops.length === 0) {
+      return c.json({ wrote: false, reason: "内容与现有文件逐字节相同、且没有图片变动，无需提交", change: { identical: true } });
     }
 
-    const w = await writeProductFile(c.env, slug, newText, {
-      expectedSha: f.sha,
-      operator,
-      changedFields: [...touched, ...cleared.map((k) => `-${k}`)],
+    // ── 组装一次原子提交：产品 JSON + 所有图片动作 ──
+    const files: CommitFile[] = [{ path: f.path, text: newText }];
+    for (const op of plan.ops) {
+      if (op.op === "upsert") files.push({ path: op.path, base64: op.base64! });
+      else if (op.op === "copy") files.push({ path: op.path, fromPath: op.fromPath! });
+      else files.push({ path: op.path, remove: true });
+    }
+
+    const imgSummary = plan.ops.length ? `，图片 ${plan.ops.length} 项` : "";
+    const fields = [...touched, ...cleared.map((k) => `-${k}`)];
+    const result = await commitFiles(c.env, {
+      message:
+        `admin: ${f.exists ? "update" : "create"} ${slug} (${operator})\n\n` +
+        `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}${imgSummary}\n` +
+        `来源：admin.airsonde.com`,
+      files,
+      expectedHeadSha: env0.baseHeadSha,
     });
-    console.log(JSON.stringify({ evt: "write_ok", slug, operator, commit: w.commitSha, fields: touched }));
+    console.log(JSON.stringify({ evt: "write_ok", slug, operator, commit: result.commitSha, fields: touched, imageOps: plan.ops.length }));
 
     return c.json({
       wrote: true,
-      ...w,
+      ...result,
+      created: !f.exists,
       change: { touched, cleared, added: diff.added, removed: diff.removed },
+      imageOps: plan.ops.map((o) => ({ op: o.op, path: o.path, why: o.why })),
       validation,
-      note: "已提交到数据仓。CF Pages 会自动重建 airsonde.com —— 线上生效有延迟，不是没写成功。",
+      note: "已提交到数据仓（JSON 与图片在同一个 commit）。CF Pages 会自动重建 —— 线上生效有延迟，不是没写成功。",
     });
   } catch (e) {
     if (e instanceof EgressDenied) {
@@ -337,6 +431,56 @@ app.put("/api/products/:slug", async (c) => {
     }
     console.error(JSON.stringify({ evt: "write_failed", slug, operator, msg: String(e) }));
     return c.json({ wrote: false, error: "写入失败", detail: String(e) }, 502);
+  }
+});
+
+// ───────────────── 删除产品（JSON + 它的图，一个 commit）─────────────────
+//
+// ⚠️ 只删这个产品**自己引用**的文件。不做"扫描孤儿图然后清理"那种事 ——
+//    引用扫描漏掉任何一种写法，就会把别人还在用的图删掉，而那是不可逆的。
+app.delete("/api/products/:slug", async (c) => {
+  const slug = c.req.param("slug");
+  const operator = c.req.header("cf-access-authenticated-user-email")
+    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  if (!operator) return c.json({ error: "拿不到操作人身份，拒绝删除" }, 403);
+
+  try {
+    const f = await readProductFile(c.env, slug);
+    if (!f.exists) return c.json({ wrote: false, error: "产品不存在", path: f.path }, 404);
+
+    let existing: Record<string, unknown>;
+    try { existing = JSON.parse(f.text!); }
+    catch {
+      // 文件坏了仍然允许删 —— 但只删 JSON 本身，不去猜它引用了哪些图。
+      const r = await commitFiles(c.env, {
+        message: `admin: delete ${slug} (${operator})\n\n⚠️ 该文件不是合法 JSON，只删除了数据文件，未删任何图片。\n来源：admin.airsonde.com`,
+        files: [{ path: f.path, remove: true }],
+      });
+      return c.json({ wrote: true, ...r, warning: "文件不是合法 JSON，图片未删除，请人工确认 src/assets/products/ 下是否有残留。" });
+    }
+
+    const ops = planDelete(f.path, (existing as any).images ?? null);
+    const r = await commitFiles(c.env, {
+      message:
+        `admin: delete ${slug} (${operator})\n\n` +
+        `删除：${ops.map((o) => o.path.replace(/^src\//, "")).join("、")}\n` +
+        `来源：admin.airsonde.com`,
+      files: ops.map((o) => ({ path: o.path, remove: true as const })),
+    });
+    console.log(JSON.stringify({ evt: "delete_ok", slug, operator, commit: r.commitSha, files: ops.length }));
+
+    return c.json({
+      wrote: true, ...r,
+      // ⚠️ 基线里本来就没有的路径要报出来，不能静默跳过 —— 静默会掩盖"我以为删了"
+      note: r.skippedRemoves.length
+        ? `已删除。⚠️ 以下路径在仓里本来就不存在，未删：${r.skippedRemoves.join("、")}`
+        : "已删除（数据文件与它引用的图片在同一个 commit）。CF Pages 会自动重建。",
+    });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    console.error(JSON.stringify({ evt: "delete_failed", slug, operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "删除失败", detail: String(e) }, 502);
   }
 });
 

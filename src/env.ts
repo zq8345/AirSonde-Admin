@@ -36,8 +36,15 @@ export interface Env {
   CI_BRANCH?: string;
 
   // ---- secret（wrangler secret put）----
-  /** M1/A2 不需要（公开仓匿名可读）；真写入才配。 */
+  /** 生产写入用。Worker secret，只存在于生产。 */
   GITHUB_TOKEN?: string;
+
+  /**
+   * 🔴 **仅本地 `.dev.vars`**（gitignored）。权限仅 `zq8345/AirSonde-Admin`（自检靶子仓）。
+   * 与生产的 `GITHUB_TOKEN` **变量名不同、互不回落** —— dev 回落到生产 token 的话，
+   * 本机就握着一把能写官网数据仓的钥匙，那正是两道闸在防的事。
+   */
+  GITHUB_TOKEN_SELFTEST?: string;
 
   /**
    * 🔴 写能力总开关。**没有它 = 出站口拒绝一切非 GET。**
