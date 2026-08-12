@@ -1,4 +1,4 @@
-// A6 全链实跑：新建（含图）→ draft→published → published→draft → 删除。
+﻿// A6 全链实跑：新建（含图）→ draft→published → published→draft → 删除。
 //
 // 🔴 打的是**靶子仓** `zq8345/AirSonde-Admin` 的 `fixtures/products/`，**绝不碰官网数据仓**。
 //    这不是靠自觉：src/github.ts 的出站闸把 `zq8345/AirSonde-Web` 写死在黑名单里，
@@ -15,10 +15,42 @@ const B = "http://localhost:8788";
 const SLUG = "a6-selftest-widget";
 const TARGET_REPO = "zq8345/AirSonde-Admin";
 const DIR = "fixtures/products";
-const GH = { "User-Agent": "a6-lifecycle", Accept: "application/vnd.github+json" };
+// 🔴 校验用的 GitHub 读也必须**带 token**。
+//    匿名配额只有 60/h，而这个脚本一轮要读好几次 tree/commit/blob ——
+//    配额耗尽时返回 403，那和"文件真的不在"是完全不同的两件事，
+//    但如果不区分，它们都会让判据变红，而查的方向完全错。
+//    ⚠️ token 从 .dev.vars 读进来**只用于 header**，绝不打印、绝不进任何输出。
+import fs from "fs";
+const DEV_VARS = "C:/开发/airsonde/airsonde-admin/.dev.vars";
+const TOKEN = (() => {
+  try {
+    const m = /^\s*GITHUB_TOKEN_SELFTEST\s*=\s*([^\s#]+)/m.exec(fs.readFileSync(DEV_VARS, "utf8"));
+    return m ? m[1] : null;
+  } catch { return null; }
+})();
+const GH = {
+  "User-Agent": "a6-lifecycle",
+  Accept: "application/vnd.github+json",
+  ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+};
+
+/** 限流是**仪器问题**，不是判据没过 —— 必须单独识别并 exit 2。 */
+function assertNotRateLimited(res, bodyText) {
+  if (res.status === 403 && /rate limit/i.test(bodyText || "")) {
+    console.log("🔴 GitHub API 限流（仪器问题，不是被测对象的问题）—— 本次不出任何验收结论。");
+    console.log(`   x-ratelimit-remaining=${res.headers.get("x-ratelimit-remaining")} reset=${res.headers.get("x-ratelimit-reset")}`);
+    process.exit(2);
+  }
+}
 
 let pass = 0, fail = 0; const out = [];
-const ck = (n, ok, d = "") => { if (ok) pass++; else fail++; out.push(`${ok ? "✅" : "🔴"} ${n}${d ? "\n     " + d : ""}`); };
+// 🔴 **边跑边打印**，不要攒到最后。中途抛异常时攒着的结果会被整包吞掉 ——
+//    于是"跑挂了"和"从第一条就红"长得一模一样，而这两种要查的地方完全不同。
+const ck = (n, ok, d = "") => {
+  if (ok) pass++; else fail++;
+  const line = `${ok ? "✅" : "🔴"} ${n}${d ? "\n     " + d : ""}`;
+  console.log(line); out.push(line);
+};
 const say = (s) => { console.log(s); out.push(s); };
 
 const req = async (path, init) => {
@@ -33,8 +65,9 @@ const del = (slug) => req(`/api/products/${slug}`, { method: "DELETE" });
  * ⚠️ 带上 sha 不是顺手：下面读文件内容要靠它，见 readJsonAt 的理由。
  */
 async function repoTree() {
-  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1`, { headers: GH });
-  if (!r.ok) throw new Error(`读靶子仓 tree 失败 ${r.status}`);
+  // ⚠️ 加 cache-bust：GitHub 的 API 也会给条件缓存，刚 commit 完立刻读可能拿到旧树
+  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1&_=${Date.now()}`, { headers: GH });
+  if (!r.ok) { const t = await r.text(); assertNotRateLimited(r, t); throw new Error(`读靶子仓 tree 失败 ${r.status}：${t.slice(0, 200)}`); }
   const j = await r.json();
   if (j.truncated) throw new Error("tree 被截断，拒绝在不完整基线上判断");
   return new Map(j.tree.filter((t) => t.type === "blob").map((t) => [t.path, t.sha]));
@@ -52,7 +85,10 @@ const has = (tree, p) => tree.has(p);
  */
 async function readJsonAt(tree, path) {
   const sha = tree.get(path);
-  if (!sha) throw new Error(`${path} 不在树里，读不了`);
+  // ⚠️ 读不到就返回 null，让调用方用 ck 报红 —— **不要抛**：
+  //    抛出去会终止整轮，后面那些本来能量到的判据一条都跑不了，
+  //    而错误信息只说"读不了"，说不出"仓里到底是什么样"。
+  if (!sha) return null;
   const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/blobs/${sha}`, { headers: GH });
   if (!r.ok) throw new Error(`读 blob ${sha.slice(0, 7)} 失败 ${r.status}`);
   const j = await r.json();
@@ -79,6 +115,21 @@ if (d.repo !== TARGET_REPO || d.productsDir !== DIR) {
 if (!d.writeEnabled) {
   console.log("🔴 writeEnabled=false（多半是 GITHUB_TOKEN_SELFTEST 没配）—— 不出结论。");
   process.exit(2);
+}
+// ⚠️ 校验侧的读也必须带 token，否则匿名 60/h 打爆之后，红的原因是限流而不是被测对象。
+if (!TOKEN) {
+  console.log("🔴 校验侧拿不到 GITHUB_TOKEN_SELFTEST（.dev.vars 里没有）—— 匿名读会被限流，结论不可信。不出结论。");
+  process.exit(2);
+}
+{
+  const r = await fetch(`https://api.github.com/rate_limit`, { headers: GH });
+  const j = await r.json();
+  const core = j?.resources?.core;
+  say(`⓪ GitHub 校验配额：剩 ${core?.remaining}/${core?.limit}（带 token ⇒ 5000 档才算对）`);
+  if ((core?.limit || 0) < 1000) {
+    console.log("🔴 配额上限只有 " + core?.limit + " ⇒ token 没被认（可能过期/权限不对）。不出结论。");
+    process.exit(2);
+  }
 }
 
 // 拿一张**真实的 webp 字节**来上传：从公开仓取一张现成的产品图，不自己合成。
@@ -129,7 +180,7 @@ try {
     has(t2, P_PUB) && !has(t2, P_DRAFT), `products=${has(t2, P_PUB)} _draft=${has(t2, P_DRAFT)}`);
   const j2 = await readJsonAt(t2, P_JSON);
   ck("② JSON 里的路径也跟着改了（文件搬了而 JSON 没改 = 官网当场缺图）",
-    j2.images.main === `products/${SLUG}.webp`, JSON.stringify(j2.images));
+    j2?.images?.main === `products/${SLUG}.webp`, `读到的 images=${JSON.stringify(j2?.images ?? null)}（null=JSON 不在树里）`);
 
   // ══════════ ③ published → draft：反方向必须同样成立 ══════════
   const r3 = await put(SLUG, { patch: { status: "draft" } });
@@ -138,7 +189,7 @@ try {
   ck("③ 反方向：图回到 _draft/，products/ 里的已删除",
     has(t3, P_DRAFT) && !has(t3, P_PUB), `_draft=${has(t3, P_DRAFT)} products=${has(t3, P_PUB)}`);
   const j3 = await readJsonAt(t3, P_JSON);
-  ck("③ 往返闭合：JSON 路径回到起点", j3.images.main === `products/_draft/${SLUG}.webp`, JSON.stringify(j3.images));
+  ck("③ 往返闭合：JSON 路径回到起点", j3?.images?.main === `products/_draft/${SLUG}.webp`, `读到的 images=${JSON.stringify(j3?.images ?? null)}（null=JSON 不在树里）`);
 
   // ══════════ ④ 契约闸不回归：坏数据必须 422 且**零 commit** ══════════
   const before = await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?per_page=1`, { headers: GH })).json();
@@ -169,3 +220,4 @@ try {
 console.log("\n" + out.filter((l) => l.startsWith("✅") || l.startsWith("🔴") || l.startsWith("⚠️")).join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
+

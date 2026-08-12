@@ -100,11 +100,22 @@ export async function commitFiles(
     }
 
     if ("text" in f) {
-      // 文本可以内联进 tree（GitHub 按 UTF-8 解释）。期望 sha 本地算。
-      expected.set(f.path, await gitBlobSha(f.text));
-      treeEntries.push({ path: f.path, mode: "100644", type: "blob", content: f.text });
+      // ⚠️ 不用 tree 的内联 `content`：内联的话，这个 blob 的 sha 只能靠 tree 响应回读，
+      //    而那条路已经被证明不可靠（见下方"读回创建出来的 tree"的注释）。
+      //    显式建 blob ⇒ **建的那一刻就能验字节**，与图片走同一条路径、同一种证据。
+      const wantText = await gitBlobSha(f.text);
+      const blobT = await api(env, `/repos/${repo}/git/blobs`, {
+        method: "POST", headers: json({}), body: JSON.stringify({ content: f.text, encoding: "utf-8" }),
+      });
+      if (blobT.sha !== wantText) {
+        throw new ByteMismatchError(
+          `🔴 ${f.path} 的字节与 GitHub 存下的不一致（期望 blob ${wantText}，实际 ${blobT.sha}）。已中止，未产生 commit。`,
+        );
+      }
+      expected.set(f.path, wantText);
+      treeEntries.push({ path: f.path, mode: "100644", type: "blob", sha: blobT.sha });
       verifiedBytes += new TextEncoder().encode(f.text).length;
-      files.push({ path: f.path, sha: "", how: "文本内联" });
+      files.push({ path: f.path, sha: blobT.sha, how: "文本 blob" });
       continue;
     }
 
@@ -145,7 +156,17 @@ export async function commitFiles(
 
   // ── 5. ⭐ 验证：GitHub 算出的 sha 必须与我方期望逐条相等 ──
   //    这一步在建 commit **之前**。不等 ⇒ 直接抛，仓里什么都没发生（tree 是游离对象，不进历史）。
-  const got = new Map<string, string>((tree.tree || []).map((t: any) => [t.path, t.sha]));
+  //
+  // 🔴 **不能直接用 `POST /git/trees` 的响应体来对账。**（2026-08-12 靶子实跑打出来的）
+  //    它只列**顶层**条目（`fixtures`、`src` 这种 type=tree 的目录），
+  //    嵌套路径如 `fixtures/products/x.json` **结构上永远不会出现在里面** ——
+  //    于是这道闸对任何嵌套路径都是**恒红**：它不是偶尔误报，是从来没通过过。
+  //    ⚠️ 方向是安全的（fail-closed，写不进去），但**照错了东西的闸没有判据价值**：
+  //       恒红和恒绿一样，都不携带关于被测对象的信息。
+  //    ⇒ 改成把创建出来的 tree **递归读回来**，那里面才有完整的 path→sha。
+  const back = await api(env, `/repos/${repo}/git/trees/${tree.sha}?recursive=1`);
+  if (back.truncated) throw new Error("创建出来的 tree 回读被截断 —— 无法逐条对账，拒绝提交。");
+  const got = new Map<string, string>((back.tree || []).map((t: any) => [t.path, t.sha]));
   const bad: string[] = [];
   for (const [path, want] of expected) {
     const actual = got.get(path);
