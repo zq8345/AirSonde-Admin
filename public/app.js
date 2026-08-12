@@ -24,6 +24,7 @@ const state = {
   tab: "all",                 // 状态 tab：all | published | draft
   nav: "products",            // 左导航当前视图：products | media
   media: null, mediaTab: "all",
+  audit: null,
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -898,14 +899,69 @@ function renderMedia() {
   if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
 }
 
-/** 左导航切视图。⚠️ 只切这三个，SOON 项不可点（见 index.html 的 .soon）。 */
+// ═══════════════ 审计日志 ═══════════════
+async function loadAudit() {
+  $("#auditSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
+  try {
+    const { body } = await api("/api/audit?limit=60");
+    state.audit = body;
+    renderAudit();
+  } catch (e) {
+    $("#auditSummary").innerHTML = "";
+    $("#auditSummary").append(mkNotice("bad", "读取失败：" + e.message));
+  }
+}
+
+function renderAudit() {
+  const a = state.audit; if (!a) return;
+  const sum = $("#auditSummary"); sum.innerHTML = "";
+  // ⚠️ 必须说清楚日志**包含别处推的改动**，否则人会以为"这就是后台干的全部"
+  sum.append(mkNotice("ok", `最近 **${a.total}** 条改动 · 本后台写的 **${a.fromAdmin}** · 别处推的 **${a.fromOther}**`));
+  sum.append(mkNotice("warn", a.note));
+
+  const tb = $("#auditRows"); tb.innerHTML = "";
+  a.entries.forEach((e) => {
+    const tr = el("tr");
+    const d = new Date(e.date);
+    tr.append(el("td", "col-st li-sub", isNaN(d) ? e.date : d.toLocaleString("zh-CN", { hour12: false })));
+
+    const src = el("td", "col-cat");
+    src.append(el("span", `badge badge-${e.source === "admin" ? "published" : "unknown"}`, e.source === "admin" ? "后台" : "别处"));
+    tr.append(src);
+
+    const act = el("td");
+    if (e.action) {
+      const label = { create: "新建", update: "修改", delete: "删除", bulk: "批量" }[e.action] || e.action;
+      const line = el("div", "li-name", `${label} ${e.slugs.join("、") || "—"}`);
+      act.append(line);
+      if (e.fields) act.append(el("div", "li-sub", "字段：" + e.fields));
+    } else {
+      // 🔴 解析不出来就**原样显示 commit 标题**，不猜 —— 猜错的审计条目会被当成事实引用
+      act.append(el("div", "li-name", e.subject || "(无标题)"));
+      act.append(el("div", "li-sub", "未按后台格式记录，只能显示原始标题"));
+    }
+    tr.append(act);
+
+    tr.append(el("td", "col-cat li-sub", e.operator || "—"));
+
+    const sha = el("td", "col-st");
+    const link = el("a", "linkish", e.shortSha);
+    link.href = e.url; link.target = "_blank"; link.rel = "noopener";
+    sha.append(link); tr.append(sha);
+    tb.append(tr);
+  });
+}
+
+/** 左导航切视图。⚠️ 只切实做出来的这几个，SOON 项不可点（见 index.html 的 .soon）。 */
 function showNav(which) {
   state.nav = which;
   $("#listView").hidden = which !== "products";
   $("#mediaView").hidden = which !== "media";
+  $("#auditView").hidden = which !== "audit";
   $("#detailView").hidden = true;
   document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
   if (which === "media" && !state.media) loadMedia();
+  if (which === "audit" && !state.audit) loadAudit();
 }
 document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
 
@@ -983,6 +1039,7 @@ $("#deleteBtn").onclick = async () => {
     $("#listEmpty").textContent = "加载失败：" + e.message;
   }
 })();
+
 
 
 

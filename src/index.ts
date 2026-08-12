@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Env } from "./env";
 import { listProducts, readProductFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 import { crossReference } from "./media";
+import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
@@ -194,6 +195,37 @@ app.get("/api/products-expanded", async (c) => {
   } catch (e) {
     console.error(JSON.stringify({ evt: "expand_failed", msg: String(e) }));
     return c.json({ error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+// ─────────── 审计日志：谁在什么时候改了哪个产品 ───────────
+//
+// 数据源就是 git commit 链 —— 不另存审计表。另存一份就有两个真源，
+// 而"审计表说改过、git 说没改过"这种分歧恰恰会在出事时出现。
+// ⚠️ **两条路径都要查**：产品 JSON 与图片是分开的目录，只查一条会漏掉纯图片改动。
+app.get("/api/audit", async (c) => {
+  const repo = c.env.GITHUB_REPO, branch = c.env.GITHUB_BRANCH, dir = c.env.PRODUCTS_DIR;
+  if (!repo || !branch || !dir) return c.json({ error: "配置缺失" }, 500);
+  const limit = Math.min(Number(c.req.query("limit") || 60), 100);
+  try {
+    const fetchPath = async (path: string) => {
+      const r = await ghFetch(c.env, `/repos/${repo}/commits?sha=${branch}&path=${encodeURIComponent(path)}&per_page=${limit}`);
+      if (!r.ok) throw new Error(`读 commits(${path}) 失败 ${r.status}：${(await r.text()).slice(0, 160)}`);
+      return ((await r.json()) as any[]).map((x) =>
+        classify(x.sha, x.commit?.message || "", x.commit?.author?.date || "", x.html_url || ""));
+    };
+    const [data, imgs] = await Promise.all([fetchPath(dir), fetchPath("src/assets/products")]);
+    const entries = mergeCommits(data, imgs).slice(0, limit);
+    const fromAdmin = entries.filter((e) => e.source === "admin").length;
+    return c.json({
+      repo, branch, entries,
+      total: entries.length, fromAdmin, fromOther: entries.length - fromAdmin,
+      // ⚠️ 这句要说出来：日志里**包含**别处推的改动，否则人会以为"这就是后台干的全部"
+      note: "包含所有改动过产品数据/图片的 commit —— 后台写的标 admin，Web 窗或直接推送的标 other。",
+    });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "audit_failed", msg: String(e) }));
+    return c.json({ error: "读取审计日志失败", detail: String(e) }, 502);
   }
 });
 
@@ -699,4 +731,5 @@ app.get("/api/contract", (c) =>
 app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
 
 export default app;
+
 

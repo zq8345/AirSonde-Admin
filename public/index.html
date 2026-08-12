@@ -42,7 +42,7 @@
     <div class="nav-item soon" title="SEO 元数据">SEO <span class="soon-tag">SOON</span></div>
 
     <div class="nav-sec">系统</div>
-    <div class="nav-item soon" title="谁在什么时候改了哪个产品">审计日志 <span class="soon-tag">SOON</span></div>
+    <button class="nav-item" data-nav="audit">审计日志</button>
     <div class="nav-item soon" title="设置">设置 <span class="soon-tag">SOON</span></div>
     <!-- ✅ 这一条是真链接：询盘归 CRM 管 -->
     <a class="nav-item" href="https://crm.airsonde.com" target="_blank" rel="noopener"
@@ -89,6 +89,24 @@
         </table>
       </div>
       <div class="empty" id="listEmpty" hidden></div>
+    </section>
+
+    <!-- ══════ 审计日志 ══════ -->
+    <section id="auditView" hidden>
+      <div class="page-head"><h1>审计日志</h1></div>
+      <div id="auditSummary"></div>
+      <div class="table-wrap">
+        <table class="ptable">
+          <thead><tr>
+            <th class="col-st">时间</th>
+            <th class="col-cat">来源</th>
+            <th>操作</th>
+            <th class="col-cat">操作人</th>
+            <th class="col-st">commit</th>
+          </tr></thead>
+          <tbody id="auditRows"></tbody>
+        </table>
+      </div>
     </section>
 
     <!-- ══════ 媒体库 ══════ -->
