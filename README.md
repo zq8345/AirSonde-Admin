@@ -1,18 +1,43 @@
 # AirSonde Admin — `admin.airsonde.com`
 
-AirSonde 产品后台。**没有数据库**：产品数据的真源是 `zq8345/AirSonde-Web` 仓的
-`src/content/products/*.json`（契约 C1）。本 worker 是那些文件的编辑器，不是它们的宿主。
+AirSonde 产品与站点内容后台。**没有数据库**：真源是 `zq8345/AirSonde-Web` 仓里的文件。
+本 worker 是那些文件的编辑器，不是它们的宿主。
 
 ```
 admin.airsonde.com  =  Cloudflare Workers + Hono
         ↓ Cloudflare Access 门控
         ↓ GitHub API 读写
-AirSonde-Web : src/content/products/*.json
+AirSonde-Web : src/content/products/*.json   ← 产品（契约 C1，一个产品一个文件）
+               src/data/site-content.json    ← 站点内容（联系方式 / 首页文案 / 站级 SEO）
         ↓ commit 触发
 CF Pages 重建 airsonde.com
 ```
 
-当前进度：**M1 —— 只读打通。没有任何写入能力。** 写入 / 编辑界面是 M2，单独派单。
+## 🔴 写入范围 —— 就这两处，没有别的
+
+后台在官网仓**能写的全部**是上面那两行。其余任何文件（页面、模板、样式、图片、配置、
+**任何 `.ts`**）都不写。
+
+**为什么站点内容是一份 JSON，而不是让后台去改 `src/data/site.ts`：**
+重写 TS 的出错方式是产出一个**语法合法但语义变了**的文件 —— 契约闸看不出来，
+tsc 也可能看不出来，而它会直接上线。所以官网把可编辑的**值**抽进了
+`site-content.json`，`site.ts` 只负责读它；后台只写 JSON。
+
+**有意不接进后台的东西**（改错了会静默坏掉，不是"文案难看"）：
+
+| 东西 | 不接的理由 |
+|---|---|
+| `NAV` / CTA 的 `href` | 改错 = 指向 404 |
+| `CONTACT_FORM.inquiryOptions` | 必须与 `functions/api/contact.ts` 的白名单一致；只改一边 = 表单被后端拒，**而页面上看不出任何异常** |
+| section `id`、各种 label / 字段名 | 那是结构，不是内容 |
+| `HOME_SECTIONS` 的两个 heading、整个 `CAPABILITIES` | **实测在产出页里 0 处**（死导出）。接上去 = 让人改一段改了不会变的字，比没有那个输入框更糟 |
+
+⚠️ 站上的 `mailto:` / `wa.me` / `tel:` / Google 地图链接**都是派生的**，不单独存。
+存两份的下场是号码改了而某个 href 没改 —— 页面上毫无症状，直到有人点了它。
+
+当前进度：产品 CRUD、批量、图片、媒体库、审计日志、分类、设置、站点内容**全部上线**。
+`/api/_whoami` 的 `milestone` 字段由**写入闸与 token 的实际状态**算出来，不写死阶段名 ——
+一个诊断端点里的假话是最坏的一种，因为出事时第一个被引用的就是它。
 
 ---
 
