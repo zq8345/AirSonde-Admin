@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=6">
+<link rel="stylesheet" href="/style.css?v=7">
 </head>
 <body>
 
@@ -250,6 +250,24 @@
         <div class="edit-grid">
         <div class="edit-col-main">
 
+        <!-- ══ 图片：主列**第一个**模块（A10-R1，Joe 当面定）══
+             一个列表，**第一张就是主图**（挂「封面」角标）。不再有"选择主图 / 更多图片"两段分立形态。
+             保存时映射 list[0] → images.main、list[1..] → images.gallery ——
+             ✅ 这是呈现层的事，**契约不动**，Web 窗按 v1 读，完全不受影响。
+             ⚠️ 学 wanew 的：单一数组 + i===0 挂封面 + 拖拽换位 + 拖文件进来 + 多选 + 每张 ✕。
+             ⛔ 不学 wanew 的（逐条见派单）：dragover 里整块 innerHTML 重绘、内联字符串事件、
+                删图无确认、**每张图的 alt 输入框**（AirSonde 的 alt 从 name 派生，契约里没有
+                放 alt 的位置 —— 做了就是第二个 moq，而这一单正在删掉第一个）。 -->
+        <section class="card">
+          <h3>产品图片 <span class="h3sub">第一张即主图 · 可拖动排序</span></h3>
+          <div class="imglist" id="imgList"></div>
+          <label class="imgdrop" id="imgDrop">
+            <input type="file" id="f_imgfile" accept="image/*" multiple hidden>
+            <span class="imgdrop-t">＋ 添加图片</span>
+            <span class="imgdrop-s">点击选择，或把图片拖到这里 · 可多选 · 自动转 WebP、≤2MB</span>
+          </label>
+        </section>
+
         <section class="card">
           <h3>基本信息</h3>
         <div class="field">
@@ -326,32 +344,13 @@
         </details>
 
         </div><!-- /edit-col-main -->
-
-        <!-- 🔴 右栏：图片。常驻（sticky）且排在视觉动线最前 —— Joe 的主路是"传图 + 填标题 + 保存"。 -->
-        <div class="edit-col-side">
-        <section class="card">
-          <h3>产品图片 <span class="h3sub">主图必填</span></h3>
-          <div class="field">
-            <div class="imgrow">
-              <div class="thumb" id="mainThumb"><span class="thumb-empty">无图</span></div>
-              <div class="imgrow-side">
-                <label class="filebtn">选择主图<input type="file" id="f_mainfile" accept="image/*" hidden></label>
-                <p class="hint" id="mainImgNote"></p>
-              </div>
-            </div>
-            <!-- ⚠️ 路径由 slug 与 status 决定，不给人手填：手填等于让人去维护一条服务端已经在维护的规则。
-                 说明文字已撤：路径是只读的、自动的，讲它的生成规则对填表的人没有用。 -->
-            <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false" readonly>
-          </div>
-
-          <details class="more" id="moreImages">
-            <summary>更多图片<span class="h3sub"> gallery</span></summary>
-            <div class="gallery" id="galleryBox"></div>
-            <label class="add filebtn">+ 加一张<input type="file" id="f_galfile" accept="image/*" hidden></label>
-          </details>
-        </section>
-        </div><!-- /edit-col-side -->
         </div><!-- /edit-grid -->
+
+        <!-- ⚠️ images.main 的路径仍然由**服务端**（planImages）算。这里留一个隐藏字段
+             只为了把当前值带回去，不给人手填 —— 手填等于让人去维护一条服务端已经在维护的规则。
+             ⚠️ 隐藏而不是删掉：readForm 仍然读它，删了会让 images.main 变成空。 -->
+        <input type="hidden" id="f_imgmain" name="images.main">
+        <p class="hint" id="mainImgNote" hidden></p>
 
         <div class="actions">
           <span class="actions-note" id="actionsNote"></span>
@@ -363,7 +362,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=6"></script>
+<script src="/app.js?v=7"></script>
 </body>
 </html>
 

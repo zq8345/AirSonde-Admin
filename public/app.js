@@ -18,6 +18,9 @@ const state = {
   isNew: false,
   /** 人是否动过 slug。⚠️ 显式标记，不靠比值猜 —— 见 f_slug 的 input 监听。 */
   slugTouched: false,
+  /** A10-R1：单一图片列表。第一项就是主图。见 renderImages()。 */
+  imgList: [],
+  dragFrom: null,
   // 🔴 写能力是**服务端告诉我们的事实**，不是前端的一个开关。
   //    null = 还没问到。在问到之前界面不该假装知道自己能不能写。
   write: null,      // { enabled, gateOpen, tokenConfigured }
@@ -536,57 +539,130 @@ function setThumb(node, src, alt) {
 }
 
 /** 把当前草稿 + 待上传的图渲染成缩略图。 */
+// ═══ A10-R1：单一图片列表，**第一张就是主图** ═══
+//
+// state.imgList 的每一项是二者之一：
+//   { kind:"have", path }  —— 仓里已有的图
+//   { kind:"new",  base64, url, size, quality, w, h } —— 本次待上传
+// 保存时映射：list[0] → images.main、list[1..] → images.gallery。**契约不动。**
+//
+// ⛔ 明确不学 wanew 的四点（派单逐条给了理由）：
+//    ① 不在 dragover 里整块 innerHTML 重绘（每秒几十次，会打断正在输入的框）
+//       ⇒ 这里 dragover 只改一个 class，**换位才重绘**
+//    ② 不用内联字符串事件处理器 —— 全部 el() 建节点 + 属性赋事件
+//    ③ 删图**要确认**（尤其封面）
+//    ④ **不做每张图的 alt 输入框** —— AirSonde 的 alt 从 name 派生，契约的 gallery 是
+//       string[] 没有 alt 的位置。做了就是第二个 moq，而这一单正在删掉第一个。
+
+/** 从草稿重建列表 —— 编辑一个产品或还原时调用。 */
+function imgListFromDraft(p) {
+  const out = [];
+  if (p?.images?.main) out.push({ kind: "have", path: p.images.main });
+  (p?.images?.gallery || []).forEach((g) => out.push({ kind: "have", path: g }));
+  return out;
+}
+
 function renderImages() {
   // 图片增删改后同步刷新 sticky 条的计数（这里是所有图片变化的汇合点）
   setTimeout(() => { try { updateDirty(); } catch {} }, 0);
-  const p = state.draft || {};
-  const pend = state.pending;
+  const box = $("#imgList");
+  if (!box) return;
+  box.innerHTML = "";
+  const list = state.imgList || [];
 
-  setThumb($("#mainThumb"), pend.main ? pend.main.url : (p.images?.main ? rawUrl(p.images.main) : null), "主图");
-  $("#mainImgNote").textContent = pend.main
-    ? `待上传：${pend.main.w}×${pend.main.h}，${(pend.main.size / 1024).toFixed(0)}KB（质量 ${pend.main.quality}）`
-    : (p.images?.main ? "已有图片。选择新图会替换它，旧文件在同一个 commit 里删除。" : "还没有主图。");
+  list.forEach((it, i) => {
+    const card = el("div", "icard" + (it.kind === "new" ? " is-new" : ""));
+    card.draggable = true;
+    card.dataset.i = String(i);
 
-  const box = $("#galleryBox"); box.innerHTML = "";
-  (p.images?.gallery || []).forEach((g, i) => {
-    const card = el("div", "gcard");
-    if (pend.removed.has(i)) card.classList.add("is-removed");
-    const t = el("div", "thumb"); setThumb(t, rawUrl(g), g);
-    const del = el("button", "gdel", pend.removed.has(i) ? "↩" : "×");
+    const t = el("div", "thumb");
+    setThumb(t, it.kind === "have" ? rawUrl(it.path) : it.url, it.kind === "have" ? it.path : "待上传");
+    card.append(t);
+
+    // i===0 就是主图 —— 角标不是装饰，它是这条规则**唯一**的可见处
+    if (i === 0) card.append(el("span", "icover", "封面"));
+
+    const del = el("button", "idel", "×");
     del.type = "button";
-    del.title = pend.removed.has(i) ? "撤销删除" : "删除这张";
-    del.onclick = () => { pend.removed.has(i) ? pend.removed.delete(i) : pend.removed.add(i); renderImages(); };
-    card.append(del, t, el("span", "gtag", g.split("/").pop()));
+    del.title = i === 0 ? "删除封面" : "删除这张";
+    del.onclick = (e) => {
+      e.stopPropagation();
+      // ⚠️ 删图要确认（wanew 那边是直接 splice）。封面单独说，因为它的后果不一样。
+      const what = it.kind === "new" ? "这张还没上传的图" : it.path.split("/").pop();
+      const msg = i === 0
+        ? `删除封面「${what}」？\n\n删掉后**下一张会自动成为封面**。保存时仓里的旧文件会被删除。`
+        : `删除「${what}」？\n\n保存时仓里的文件会被删除。`;
+      if (!confirm(msg)) return;
+      state.imgList.splice(i, 1);
+      renderImages();
+    };
+    card.append(del);
+
+    card.append(el("span", "itag", it.kind === "new"
+      ? `待上传 ${(it.size / 1024).toFixed(0)}KB`
+      : it.path.split("/").pop()));
+
+    // ── 拖拽换位 ──
+    card.addEventListener("dragstart", (e) => {
+      state.dragFrom = i;
+      card.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      // ⚠️ 必须 setData，否则 Firefox 不认这是一次拖拽
+      e.dataTransfer.setData("text/plain", String(i));
+    });
+    card.addEventListener("dragend", () => { card.classList.remove("is-dragging"); state.dragFrom = null; });
+    card.addEventListener("dragover", (e) => {
+      if (state.dragFrom == null) return;    // 拖的是文件，不是卡片 —— 交给下面的投放区
+      e.preventDefault();
+      card.classList.add("is-over");          // ⭐ 只改一个 class，**不重绘**
+    });
+    card.addEventListener("dragleave", () => card.classList.remove("is-over"));
+    card.addEventListener("drop", (e) => {
+      if (state.dragFrom == null) return;
+      e.preventDefault(); e.stopPropagation();
+      card.classList.remove("is-over");
+      const from = state.dragFrom, to = i;
+      if (from === to) return;
+      const [moved] = state.imgList.splice(from, 1);
+      state.imgList.splice(to, 0, moved);
+      state.dragFrom = null;
+      renderImages();                          // 换位了才重绘
+    });
+
     box.append(card);
   });
-  pend.gallery.forEach((u, k) => {
-    const card = el("div", "gcard is-new");
-    const t = el("div", "thumb"); setThumb(t, u.url, "待上传");
-    const del = el("button", "gdel", "×"); del.type = "button"; del.title = "取消这张";
-    del.onclick = () => { pend.gallery.splice(k, 1); renderImages(); };
-    card.append(del, t, el("span", "gtag", `待上传 ${(u.size / 1024).toFixed(0)}KB`));
-    box.append(card);
-  });
+
+  const note = $("#mainImgNote");
+  if (note) note.textContent = list.length ? "" : "还没有图片。第一张会成为封面（主图）。";
 }
 
-async function pickImage(input, target) {
-  const file = input.files?.[0];
-  input.value = "";                    // 允许连续选同一个文件
-  if (!file) return;
-  const note = $("#mainImgNote");
-  const prev = note.textContent;
-  note.textContent = "正在转成 WebP…";
+/** 把一批文件转成 WebP 并追加到列表末尾。多选、拖文件进来都走这里。 */
+async function addImageFiles(files) {
+  const arr = [...(files || [])];
+  if (!arr.length) return;
+  const drop = $("#imgDrop");
+  const prev = drop ? drop.dataset.state : "";
+  if (drop) { drop.dataset.state = "busy"; drop.querySelector(".imgdrop-t").textContent = `正在转 WebP…（0/${arr.length}）`; }
   try {
-    const { blob, quality, w, h } = await toWebp(file);
-    const rec = { base64: await blobToBase64(blob), url: URL.createObjectURL(blob), size: blob.size, quality, w, h };
-    if (target === "main") state.pending.main = rec;
-    else state.pending.gallery.push(rec);
-    renderImages();
+    for (let k = 0; k < arr.length; k++) {
+      const { blob, quality, w, h } = await toWebp(arr[k]);
+      state.imgList.push({
+        kind: "new", base64: await blobToBase64(blob),
+        url: URL.createObjectURL(blob), size: blob.size, quality, w, h,
+      });
+      if (drop) drop.querySelector(".imgdrop-t").textContent = `正在转 WebP…（${k + 1}/${arr.length}）`;
+      renderImages();
+    }
   } catch (e) {
-    note.textContent = prev;
     renderIssues({ ok: false, errors: [{ field: "图片", code: "image", message: e.message }], warnings: [] });
+  } finally {
+    if (drop) { drop.dataset.state = prev || ""; drop.querySelector(".imgdrop-t").textContent = "＋ 添加图片"; }
   }
 }
+
+// ⚠️ 旧的 pickImage(input, "main"|"gallery") 已删除：A10-R1 之后只有一个列表，
+//    "主图"和"更多图片"不再是两个入口 —— 留着它就是留一条**没人走但仍能写 state 的**路径。
+//    上传统一走 addImageFiles()。
 
 function repeatRow(container, value) {
   const r = el("div", "repeat-row");
@@ -618,6 +694,8 @@ function fillForm(p) {
 
   const h = $("#f_highlights"); h.innerHTML = ""; (p.highlights || []).forEach((x) => repeatRow(h, x));
   const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
+  // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
+  state.imgList = imgListFromDraft(p);
   renderImages();
 }
 
@@ -671,18 +749,32 @@ function readForm() {
   return patch;
 }
 
-/** 组装发给服务端的信封：patch + 待上传 + 待删除。两个端点用同一个函数，形状不可能不一致。 */
+/**
+ * 组装发给服务端的信封：patch + 待上传。两个端点用同一个函数，形状不可能不一致。
+ *
+ * ═══ A10-R1：单一列表 → 契约形状的映射就在这里，**只有这一处** ═══
+ * list[0] → images.main，list[1..] → images.gallery。
+ * 新上传的那一位在 gallery 里送 **null 占位** + 一条 slot=该下标的 upload ——
+ * 这样"新图排在第 2 位"能被原样表达，而不是被迫排到末尾。
+ * ⚠️ 不再送 removeGallery：删掉 = 它不在列表里了。服务端按"最终引用集合"兜底删孤儿。
+ */
 function buildEnvelope(extra = {}) {
+  const list = state.imgList || [];
   const uploads = [];
-  if (state.pending.main) uploads.push({ slot: "main", base64: state.pending.main.base64 });
-  const galLen = (state.draft?.images?.gallery || []).length;
-  state.pending.gallery.forEach((u, k) => uploads.push({ slot: galLen + k, base64: u.base64 }));
-  return {
-    patch: readForm(),
-    uploads,
-    removeGallery: [...state.pending.removed],
-    ...extra,
+  const patch = readForm();
+
+  const first = list[0];
+  const rest = list.slice(1);
+  if (first?.kind === "new") uploads.push({ slot: "main", base64: first.base64 });
+  rest.forEach((it, i) => { if (it.kind === "new") uploads.push({ slot: i, base64: it.base64 }); });
+
+  patch.images = {
+    // 新封面的路径由服务端算（planImages），这里给空串占位
+    main: first ? (first.kind === "have" ? first.path : "") : "",
+    ...(rest.length ? { gallery: rest.map((it) => (it.kind === "have" ? it.path : null)) } : {}),
   };
+
+  return { patch, uploads, ...extra };
 }
 
 // ═══════════════ 预览（dry-run）═══════════════
@@ -1504,7 +1596,12 @@ function updateDirty() {
       if (JSON.stringify(now[k] ?? null) !== JSON.stringify(base[k] ?? null)) changed.push(k);
     }
   } catch { /* 表单还没填好时不报错，保持上一次的显示 */ }
-  const imgs = (state.pending.main ? 1 : 0) + state.pending.gallery.length + state.pending.removed.size;
+  // 图片的改动 = 待上传张数 + 顺序/删除是否与打开时不同。
+  // ⚠️ 顺序也算改动：只数"待上传"的话，纯拖顺序会显示"未改动"，
+  //    而人明明动了东西 —— 那种"我改了它说没改"最伤信任。
+  const orig = imgListFromDraft(state.draft).map((x) => x.path).join("|");
+  const nowList = (state.imgList || []).map((x) => (x.kind === "have" ? x.path : "«new»")).join("|");
+  const imgs = (state.imgList || []).filter((x) => x.kind === "new").length + (orig !== nowList ? 1 : 0);
   if (!changed.length && !imgs) { n.textContent = "未改动"; return; }
   const parts = [];
   if (changed.length) parts.push(`<b>${changed.length}</b> 个字段（${changed.join("、")}）`);
@@ -1527,8 +1624,23 @@ $("#f_name").addEventListener("input", () => {
   updateDirty();
 });
 
-$("#f_mainfile").onchange = (e) => pickImage(e.target, "main");
-$("#f_galfile").onchange = (e) => pickImage(e.target, "gallery");
+// ── 图片：多选 + 拖文件进来 ──
+$("#f_imgfile").onchange = (e) => { const f = e.target.files; e.target.value = ""; addImageFiles(f); };
+{
+  const drop = $("#imgDrop");
+  // ⚠️ dragover 只切一个 class，绝不重绘 —— 它每秒触发几十次
+  ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+    if (state.dragFrom != null) return;              // 拖的是卡片换位，不是文件
+    e.preventDefault(); drop.classList.add("is-over");
+  }));
+  ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove("is-over")));
+  drop.addEventListener("drop", (e) => {
+    if (state.dragFrom != null) return;
+    e.preventDefault();
+    const files = [...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (files.length) addImageFiles(files);
+  });
+}
 
 // status 改了 ⇒ 图片路径会跟着搬家，立刻在界面上说出来，别等到预览才让人发现
 $("#f_status").addEventListener("change", () => {

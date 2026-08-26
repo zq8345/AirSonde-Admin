@@ -27,6 +27,15 @@
 
 * { box-sizing: border-box; }
 
+/* 🔴 全局兜底：`hidden` 属性必须真的隐藏（A10-R3-a，实测出来的 bug）。
+   浏览器默认样式表里的 `[hidden]{display:none}` 与作者样式表里的 `.batchbar{display:flex}`
+   **特异性相同 ⇒ 作者表恒赢** ⇒ 那个元素的 `hidden` 属性**从来没生效过**：
+   代码写着 `hidden = n===0`、注释写着"选中才出现"，而生产上它一直显示着一排点不动的按钮。
+   —— 这是「我以为在控制的 ≠ 真正在控制的」的标本：源码、注释、意图三者一致，产出是反的。
+   ⛔ 不要改成给某个类加 `.is-hidden` 特例：那是给通用机制打补丁，
+      下一个给带 hidden 的元素设 display 的人还会再踩一次，而且症状同样不像 CSS 问题。 */
+[hidden] { display: none !important; }
+
 /* 🔴 页面本身**不滚动**（照 CRM 后台的做法）：body 撑满视口并纵向分成
    横幅 / 顶栏 / 内容三段，滚动发生在内容区的两个面板**内部**。
    ⇒ 顶栏与横幅天然固定，**下面的内容不需要算任何偏移**。
@@ -387,6 +396,43 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 @media (max-width: 1100px) { .edit-grid { grid-template-columns: 1fr; } }
 .edit-col-side { position: sticky; top: 72px; }
 @media (max-width: 1100px) { .edit-col-side { position: static; } }
+
+/* ══ A10-R1：单一图片列表（第一张即主图）══ */
+.imglist { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.imglist:empty { margin-bottom: 0; }
+.icard {
+  position: relative; width: 116px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); padding: 6px; cursor: grab; user-select: none;
+}
+.icard:active { cursor: grabbing; }
+.icard .thumb { width: 100%; height: 82px; border-radius: 5px; }
+.icard.is-new { border-color: var(--ok); background: var(--ok-soft); }
+.icard.is-dragging { opacity: .4; }
+/* 拖到谁身上，谁左边亮一条 —— 只是一个 class，不重绘（wanew 那边在 dragover 里整块重绘） */
+.icard.is-over { box-shadow: -3px 0 0 var(--accent); border-color: var(--accent); }
+.icover {
+  position: absolute; top: 10px; left: 10px; z-index: 2;
+  background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 600;
+  padding: 2px 7px; border-radius: 999px; letter-spacing: .02em;
+}
+.idel {
+  position: absolute; top: 8px; right: 8px; z-index: 2; width: 20px; height: 20px; line-height: 1;
+  border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; font-size: 13px;
+}
+.idel:hover { background: var(--danger); }
+.itag {
+  display: block; margin-top: 5px; font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 投放区：点它选文件，也可以把文件拖进来 */
+.imgdrop {
+  display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center;
+  padding: 16px; border: 1.5px dashed var(--line); border-radius: var(--radius);
+  cursor: pointer; text-align: center; background: var(--bg);
+}
+.imgdrop:hover, .imgdrop.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.imgdrop-t { font-weight: 600; font-size: 13.5px; }
+.imgdrop-s { font-size: 11.5px; color: var(--muted); }
 
 /* ══ A10：「更多（选填）」折叠区 ══
    新建时收起、编辑时由 JS 打开。用原生 <details>：零 JS 也能开合，键盘天然可达。 */

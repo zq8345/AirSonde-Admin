@@ -9,7 +9,7 @@
 //    自己编的缺陷只能证明"我认得我自己写的错法"。
 //
 // 跑：node scripts/contract-selftest.mjs   （Node ≥22.6 直接吃 .ts，无需构建）
-import { validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct } from "../src/contract.ts";
+import { validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount } from "../src/contract.ts";
 
 let pass = 0, fail = 0;
 const results = [];
@@ -104,6 +104,47 @@ for (const f of ["slug", "name", "model", "category", "sensors", "status", "imag
   // 反向自证：不是把整条闸拆了 —— 必填还在
   const r = mut((p) => { p.model = "   "; });
   check("④ 反向自证：空 model 仍被拒", hasErr(r, "required"), JSON.stringify(codes(r)));
+}
+{
+  // A10-R2-b：文案要对"正在逐个换型号的人"有用，而不只是报个分类
+  const r = mut((p) => { p.model = "AS-D16"; });
+  const w = r.warnings.find((x) => x.code === "unknown_series_prefix");
+  check("④ warning 说清了为什么亮（占位值）以及怎么消失",
+    !!w && /占位值/.test(w.message) && /自动消失/.test(w.message), w?.message);
+}
+
+// ════════ ④-b A10-R3-b：列表 badge 只报"需要人做点什么"的东西 ════════
+//
+// 🔴 23 个产品全都有 supplierRef ⇒ 全都会亮一条 internal_field。
+//    一个在 **100% 的行**上都亮的警告不携带任何区分信息，它只会把真正要注意的淹掉；
+//    而 Joe 正要靠 badge 当"哪些型号还没换"的清单。
+{
+  // ⚠️ 必须显式给上 supplierRef —— 这才是那 23 个产品的真实形态（它们全都有）。
+  //    不给的话这条用例根本产生不出 internal_field，测的就不是要测的东西。
+  const r = mut((p) => { p.model = "AK101"; p.supplierRef = "https://www.alibaba.com/x"; });
+  check("④-b 只剩状态说明时，可操作计数 = 0（badge 消失 —— 这就是 Joe 要的清单）",
+    actionableWarnCount(r.warnings) === 0 && r.warnings.some((w) => w.code === "internal_field"),
+    `warnings=${JSON.stringify(wcodes(r))} actionable=${actionableWarnCount(r.warnings)}`);
+}
+{
+  const r = mut((p) => { p.model = "AS-D16"; p.supplierRef = "https://www.alibaba.com/x"; });
+  check("④-b 型号没换时可操作计数 = 1（不是 2 —— 状态说明不占名额）",
+    actionableWarnCount(r.warnings) === 1, `warnings=${JSON.stringify(wcodes(r))}`);
+  check("④-b 且那一条正是 unknown_series_prefix",
+    r.warnings.filter((w) => !["internal_field"].includes(w.code))[0]?.code === "unknown_series_prefix",
+    JSON.stringify(wcodes(r)));
+}
+{
+  // ⚠️ 被排除的只是**列表计数**：完整 warnings 里那条必须还在，详情页要照常显示它
+  const r = mut((p) => { p.model = "AK101"; p.supplierRef = "https://www.alibaba.com/x"; });
+  check("④-b 关键：internal_field 仍然在 warnings 里（详情页要显示，只是不计入 badge）",
+    r.warnings.some((w) => w.code === "internal_field"), JSON.stringify(wcodes(r)));
+}
+{
+  // 反向自证：这不是"把 warning 计数关掉了" —— 非状态说明类照常计数
+  const r = mut((p) => { p.model = "AK101"; p.name = "Air Gas Analyzer Monitor Quality Detector Tester System Indoor Equipment Pm 2.5 10 Device Aire Pollution Multi Smart 4G Desktop"; });
+  check("④-b 反向自证：真正需要处理的 warning 照常计数（不是把计数关掉了）",
+    actionableWarnCount(r.warnings) >= 1, `warnings=${JSON.stringify(wcodes(r))}`);
 }
 
 // ════════ 枚举 ════════

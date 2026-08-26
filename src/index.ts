@@ -13,7 +13,7 @@ import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
-  validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct,
+  validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount,
   CATEGORIES, SENSORS, STATUSES,
 } from "./contract";
 import { summarizeDiff } from "./diff";
@@ -217,7 +217,11 @@ app.get("/api/products-expanded", async (c) => {
           category: p.category ?? null, status: p.status ?? null,
           image: p.images?.main ?? null, sensors: p.sensors ?? [],
           hasSupplierRef: !!p.supplierRef,
-          valid: v.ok, errorCount: v.errors.length, warnCount: v.warnings.length,
+          valid: v.ok, errorCount: v.errors.length,
+          // 🔴 列表 badge 只报**需要人做点什么**的东西，判据在 contract.ts 的 INFO_CODES 里。
+          //    用 v.warnings.length 的话，23 个产品会因为都有 supplierRef 而全亮「1 提示」——
+          //    一个 100%% 命中的警告不携带任何区分信息，只会把真正要注意的淹掉。
+          warnCount: actionableWarnCount(v.warnings),
           size: f.size,
         };
       } catch (e) { return { slug: f.slug, error: String(e).slice(0, 120) }; }

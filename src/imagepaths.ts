@@ -35,13 +35,55 @@ export function retarget(jsonPath: string, dir: string): string {
   return `${dir}/${basename(jsonPath)}`;
 }
 
-/** 上传时用的文件名：slug 派生，gallery 依次编号。⚠️ 一律小写 .webp。 */
+/**
+ * 从一批已有路径里，找出 `<slug>-N.webp` 用掉的最大 N。没有就返回 1（主图算第 1 张）。
+ * ⚠️ 只认**本 slug 的**编号：别的产品的图不参与，否则编号会毫无必要地一直涨。
+ */
+export function maxUsedIndex(slug: string, paths: (string | undefined)[]): number {
+  const re = new RegExp(`(?:^|/)${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)\\.webp$`, "i");
+  let max = 1;   // 主图 `<slug>.webp` 占掉第 1 号
+  for (const p of paths) {
+    const m = p && re.exec(p);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max;
+}
+
+/**
+ * 上传时用的文件名。⚠️ 一律小写 .webp。
+ *
+ * 🔴 **编号不再由数组下标派生**（A10-R1-c，实测证实过一个静默覆盖）：
+ *    旧写法 `slot + 2` 把**位置编进了文件名**，而位置是会变的。实测出的事故时序：
+ *      gallery=[foo-2,foo-3,foo-4] → 删中间的 foo-3 → 数组长度变 2
+ *      → 再传一张，slot=2 → 旧写法给出 `foo-4.webp`
+ *      → planImages 走"新增"分支 upsert → **覆盖掉仍被引用的 foo-4**，
+ *         而结果 gallery 变成 [foo-2, foo-4, foo-4]（同一文件两个下标），预览还显示成"新增"。
+ *    加上拖拽排序之后，下标与编号彻底脱钩，这个洞会更容易踩到。
+ *
+ * ⇒ 改由**已占用编号 max+1** 派生：新号永远没人用过。
+ * ⚠️ **不复用刚删掉的号**：复用会让 git 历史里出现同名不同图，
+ *    将来查"这张图什么时候变的"会查到两条互不相干的历史上去。
+ * ⚠️ `<slug>-N.webp` 的约定保持不变 —— 现存 23 个产品全是这个形态，不许分叉。
+ *    （gallery 从 -2 起，因为主图 `<slug>.webp` 占掉第 1 号。）
+ */
 export function uploadName(slug: string, slot: "main" | number): string {
-  // ⚠️ gallery 从 **-2** 开始编号，不是 -1：**主图算第 1 张**。
-  //    真实数据里第一张 gallery 就是 `desktop-16in1-monitor-2.webp`（实测 23 个产品的约定）。
-  //    写成 slot+1 的话，新传的图叫 `-1.webp`，与既有 23 个产品的命名分叉 ——
-  //    而这种分叉不会报错，只会让仓里同时存在两套命名，越积越乱。
-  return slot === "main" ? `${slug}.webp` : `${slug}-${slot + 2}.webp`;
+  // ⚠️ 非 main 时，第二个参数现在是**真实编号 N**（由 planImages 的分配器给），
+  //    不再是数组下标。名字的形态没变，变的是"N 从哪来"。
+  return slot === "main" ? `${slug}.webp` : `${slug}-${slot}.webp`;
+}
+
+/**
+ * 一次保存内的编号分配器：从**已占用编号 max+1** 开始，用一个发一个，绝不回头。
+ * ⚠️ 必须把 current 与 next 两侧的路径都算进"已占用" ——
+ *    只看其中一侧的话，另一侧还引用着的那个号会被当成空号发出去。
+ */
+function makeNameAllocator(slug: string, current: { main?: string; gallery?: string[] } | null,
+                           next: { main?: string; gallery?: (string | null)[] } | null) {
+  let n = maxUsedIndex(slug, [
+    current?.main, ...(current?.gallery ?? []),
+    next?.main, ...((next?.gallery ?? []).filter(Boolean) as string[]),
+  ]);
+  return () => uploadName(slug, ++n);
 }
 
 export interface Upload {
@@ -82,13 +124,16 @@ export function planImages(
   slug: string,
   status: string,
   current: { main?: string; gallery?: string[] } | null,
-  next: { main?: string; gallery?: string[] } | null,
+  next: { main?: string; gallery?: (string | null)[] } | null,
   uploads: Upload[] = [],
   removeGallery: number[] = [],
 ): ImagePlan {
   const dir = dirForStatus(status);
   const ops: FileOp[] = [];
   const uploadBySlot = new Map<string | number, Upload>(uploads.map((u) => [u.slot, u]));
+  // 🔴 新图的编号一律从这里领（A10-R1-c）：已占用 max+1，用一个发一个，绝不回头。
+  //    下标不再参与命名 —— 下标会因为删除和拖拽而变，而文件名不能跟着变。
+  const allocName = makeNameAllocator(slug, current, next);
 
   // ── 主图 ──
   const curMain = current?.main;
@@ -117,21 +162,25 @@ export function planImages(
 
   // ── gallery ──
   const curGal = current?.gallery ?? [];
-  const nextGal = next?.gallery ?? curGal;
+  const nextGal = (next?.gallery ?? curGal) as (string | null)[];
   const keep: string[] = [];
   nextGal.forEach((g, i) => {
     if (removeGallery.includes(i)) {
-      ops.push({ op: "delete", path: repoPath(g), why: `gallery[${i}] 被删除` });
+      if (g) ops.push({ op: "delete", path: repoPath(g), why: `gallery[${i}] 被删除` });
       return;
     }
     const up = uploadBySlot.get(i);
     if (up) {
-      const p = `${dir}/${uploadName(slug, i)}`;
+      const p = `${dir}/${allocName()}`;
       ops.push({ op: "upsert", path: repoPath(p), base64: up.base64, why: `上传了 gallery[${i}]` });
-      if (repoPath(g) !== repoPath(p)) ops.push({ op: "delete", path: repoPath(g), why: `gallery[${i}] 被替换` });
+      // ⚠️ `g` 可能是 null：新 UI 用 null 占位表示"这一位是本次新上传的"，
+      //    这样**顺序**能原样表达出来（新图不必被迫排到末尾）。null 位没有旧文件可删。
+      if (g && repoPath(g) !== repoPath(p)) ops.push({ op: "delete", path: repoPath(g), why: `gallery[${i}] 被替换` });
       keep.push(p);
       return;
     }
+    // 没有上传却是 null ⇒ 调用方给错了。不静默跳过：静默跳过会让那一位凭空消失。
+    if (!g) throw new Error(`gallery[${i}] 是占位 null 但本次没有对应的上传 —— 调用方给的 uploads 与顺序对不上。`);
     const t = retarget(g, dir);
     if (repoPath(g) !== repoPath(t)) {
       ops.push({ op: "copy", path: repoPath(t), fromPath: repoPath(g), why: `status=${status} ⇒ gallery[${i}] 搬到 ${dir}/` });
@@ -145,10 +194,27 @@ export function planImages(
     .filter((u) => u.slot !== "main" && (u.slot as number) >= nextGal.length)
     .sort((a, b) => (a.slot as number) - (b.slot as number))
     .forEach((u) => {
-      const p = `${dir}/${uploadName(slug, u.slot as number)}`;
+      const p = `${dir}/${allocName()}`;
       ops.push({ op: "upsert", path: repoPath(p), base64: u.base64, why: `新增 gallery[${u.slot}]` });
       keep.push(p);
     });
+
+  // ── 清理不再被引用的旧文件 ──
+  //
+  // 🔴 新 UI 是**单一列表**：删掉一张 = 它不在列表里了，而不是"在 removeGallery 里点名"。
+  //    不在这里兜底的话，被移出列表的图会变成仓里的孤儿 —— 没人引用、也没人删，
+  //    而症状要等到媒体库那边报"未被引用"才看得见。
+  // ⚠️ 判据用**归一化后的仓内路径**比，不比 JSON 相对路径：搬家会改目录，
+  //    比错单位的话会把刚搬过去的文件当成孤儿删掉。（这个单位错我今天已经踩过一次。）
+  const finalPaths = new Set<string>([repoPath(mainJson), ...keep.map(repoPath)]);
+  const alreadyDeleted = new Set(ops.filter((o) => o.op === "delete").map((o) => o.path));
+  for (const old of [curMain, ...curGal]) {
+    if (!old) continue;
+    const rp = repoPath(old);
+    if (finalPaths.has(rp) || alreadyDeleted.has(rp)) continue;
+    ops.push({ op: "delete", path: rp, why: "已从图片列表中移除，不再被任何字段引用" });
+    alreadyDeleted.add(rp);
+  }
 
   const images: { main: string; gallery?: string[] } = { main: mainJson };
   if (keep.length) images.gallery = keep;

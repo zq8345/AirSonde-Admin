@@ -25,6 +25,8 @@ export const SENSORS = [
 
 export const STATUSES = ["draft", "published"] as const;
 
+
+
 export type Category = (typeof CATEGORIES)[number];
 export type Sensor = (typeof SENSORS)[number];
 export type Status = (typeof STATUSES)[number];
@@ -64,6 +66,26 @@ export interface ValidationResult {
 }
 
 const err = (field: string, code: string, message: string): Issue => ({ field, code, message });
+
+/**
+ * **状态说明**类 warning 的 code —— 不是待办。
+ *
+ * 🔴 判据写在这里，不写在消费端：**列表上的 badge 只报"需要人做点什么"的东西。**
+ *    `internal_field` 说的是"这个字段不会上站"，那是一条恒真的状态说明 ——
+ *    23 个产品全都有 supplierRef，于是 23 行全亮「1 提示」。
+ *    **一个在 100% 的行上都亮的警告，不携带任何区分信息**，它只会把真正需要注意的那些淹掉。
+ *
+ * ⚠️ 被排除的只是**列表计数**。详情页仍要照常显示这条 warning ——
+ *    对着单个产品它是有用的信息，两者不是一回事。
+ * ⚠️ 以后再加"状态说明"类的 warning，**把 code 加进这个集合**，
+ *    而不是去列表渲染层写 `if (code === "…")`：判据藏在消费端的话，
+ *    下一个加同类 warning 的人根本不会知道有这条规矩。
+ */
+export const INFO_CODES: ReadonlySet<string> = new Set(["internal_field"]);
+
+/** 需要人做点什么的 warning 条数 —— 列表 badge 用它，不用 warnings.length。 */
+export const actionableWarnCount = (warnings: Issue[]): number =>
+  warnings.filter((w) => !INFO_CODES.has(w.code)).length;
 
 // ─────────────────────────────────────────────────────────────
 // 硬规则 1 的闸：供应商痕迹绝不允许进入**会被渲染的字段**
@@ -152,10 +174,14 @@ const KNOWN_MODEL_PREFIXES = ["AK"];
 function checkModelPrefix(model: string, out: Issue[]): void {
   const m = model.trim();
   if (KNOWN_MODEL_PREFIXES.some((p) => m.toUpperCase().startsWith(p))) return;
+  // ⚠️ 这句话是写给**正在逐个核对 23 个产品的 Joe** 看的（A10-R2-b）：
+  //    闸放开后，那 23 个 `AS-` 会各自亮一条 —— 它天然就是一张"还没换完"的清单。
+  //    ⇒ 文案要说清"为什么亮"和"怎么让它消失"，而不是干巴巴一句"不在已知系列"。
   out.push(err("model", "unknown_series_prefix",
     `「${m}」不在已知系列前缀里（当前已知：${KNOWN_MODEL_PREFIXES.join(" / ")}）。` +
-    `如果这是一个新系列，直接存就行 —— 这条只是提醒，不阻断。` +
-    `⚠️ 但如果它是**供应商的型号**，请换成我方型号：贴牌生意，型号是我们的资产。`));
+    `站上这批 \`AS-\` 开头的型号是**当初冻结契约时的占位值**，需要换成真实编号 —— ` +
+    `换掉之后这条提示会自动消失。` +
+    `如果这是一个新系列，直接存就行：这条只是提醒，不阻断。`));
 }
 
 // ─────────────────────────────────────────────────────────────
