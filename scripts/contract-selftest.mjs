@@ -9,7 +9,18 @@
 //    自己编的缺陷只能证明"我认得我自己写的错法"。
 //
 // 跑：node scripts/contract-selftest.mjs   （Node ≥22.6 直接吃 .ts，无需构建）
-import { validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount } from "../src/contract.ts";
+import {
+  validateProduct as validateProductRaw, mergeProduct, checkSlugMatchesPath, serializeProduct,
+  actionableWarnCount, SAMPLE_CATEGORIES, SAMPLE_SENSORS,
+} from "../src/contract.ts";
+
+// 契约 v1.4 起，两个轴的取值不再是契约里的常量，而是 taxonomy.json（官网真源）。
+// ⚠️ 这里的 SAMPLE_* 只是**自检用的固定轴**，不是运行时的取值来源 ——
+//    运行时的每一次校验都从 taxonomy.json 现读（src/index.ts 的 loadAxes）。
+//    自检要的是一个**不随官网改动而漂的轴**，否则某天 Joe 在后台删掉一个机型，
+//    这份自检就会红，而红的原因是样本过时，不是被测对象坏了。
+const AXES = { categories: [...SAMPLE_CATEGORIES], sensors: [...SAMPLE_SENSORS] };
+const validateProduct = (p) => validateProductRaw(p, AXES);
 
 let pass = 0, fail = 0;
 const results = [];
@@ -59,6 +70,25 @@ const mut = (fn) => { const p = clone(GOOD); fn(p); return validateProduct(p); }
     category: "portable", sensors: ["CO2"], images: { main: "products/portable-co2.webp" }, status: "draft" };
   const r = validateProduct(minimal);
   check("② 只有必填字段也必须通过（选填缺失不是错）", r.ok, JSON.stringify(codes(r)));
+}
+
+// ════════ ②' 轴必须真的是**传进来的那一份**（契约 v1.4） ════════
+// 🔴 这两条防的是同一件事：校验器偷偷用了自己内置的一份轴。
+//    那样的话后台新增一个机型，产品还是会被判"未知机型"——而且 100% 全绿的自检
+//    看不出来，因为内置的那份恰好和 SAMPLE_* 一样。
+{
+  let threw = false;
+  try { validateProductRaw(GOOD); } catch { threw = true; }
+  check("②' 不传轴 ⇒ 抛错，不静默回落到内置常量", threw);
+}
+{
+  // 反向自证：换一份**不含 desktop、却含 mycat** 的轴，判定必须跟着翻过来。
+  const other = { categories: ["mycat"], sensors: [...SAMPLE_SENSORS] };
+  const a = validateProductRaw(GOOD, other);
+  const b = validateProductRaw({ ...clone(GOOD), category: "mycat" }, other);
+  check("②' 换一份轴，desktop 变非法（说明用的是传进来的那份）", hasErr(a, "enum"),
+    JSON.stringify(codes(a)));
+  check("②' 同一份轴里，mycat 合法（说明不是「换轴就一律报错」）", b.ok, JSON.stringify(codes(b)));
 }
 
 // ════════ 必填缺失（硬规则 4：缺就是缺，不兜底）════════

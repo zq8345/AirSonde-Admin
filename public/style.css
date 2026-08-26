@@ -384,9 +384,25 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .shint b { color: var(--text); }
 .shint code { font-family: var(--mono); font-size: 11px; }
 
-/* 分类页脚注：回答"加分类的按钮为什么不存在"。列表比一整段话读得快。 */
+/* 分类页脚注。列表比一整段话读得快。 */
 .catnote { margin: 10px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
 .catnote b { color: var(--text); }
+
+/* 两个轴并排。⚠️ minmax(0,1fr) 而不是 1fr：1fr 的最小尺寸是 auto，表格里一个长取值
+   就会把那一列撑出去、把另一列挤没。窄屏塌成一列。 */
+.axiscols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 1080px) { .axiscols { grid-template-columns: minmax(0, 1fr); } }
+.axishead { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.axisadd { display: flex; gap: 8px; margin-top: 10px; }
+.axisadd input { flex: 1 1 0; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+.axisadd button { white-space: nowrap; }
+/* 行内改名：输入框顶掉那一格的显示名，不跳走、不开弹窗。 */
+.axisedit { display: flex; gap: 6px; align-items: center; }
+.axisedit input { font: inherit; font-size: 13px; padding: 4px 6px; min-width: 0; flex: 1 1 0;
+  border: 1px solid var(--accent); border-radius: 5px; background: var(--card); color: var(--text); }
+/* 危险动作要长得像危险动作 —— 与「改名」并排时不能是同一个灰。 */
+.linkish.danger { color: var(--danger); }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
 #bulkCat { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
 

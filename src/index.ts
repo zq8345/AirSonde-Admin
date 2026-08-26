@@ -6,7 +6,10 @@
 import { Hono } from "hono";
 import type { Env } from "./env";
 import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
-import { parseCategoryLabels } from "./catlabels";
+// ⚠️ catlabels.ts 已删除（A13）：它在**运行时解析官网 lib/products.ts** 去取分类显示名。
+//    契约 v1.4 之后，显示名的真源是 taxonomy.json，而 products.ts 里的 CATEGORY_LABELS
+//    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
+//    留着它 = 留一份看起来还在用、其实指错方向的代码。
 import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_PAGES, SEO_LIMITS } from "./sitecontent";
 import { crossReference } from "./media";
 import { classify, mergeCommits } from "./audit";
@@ -14,8 +17,12 @@ import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount, INFO_CODES,
-  CATEGORIES, SENSORS, STATUSES,
+  STATUSES, type Axes,
 } from "./contract";
+import {
+  validateTaxonomy, axesOf, valuesOf, refsOf, unreadableCount, addItem, editItem, deleteItem,
+  serializeTaxonomy, AXIS_LABEL, type Taxonomy, type Axis,
+} from "./taxonomy";
 import { summarizeDiff } from "./diff";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -176,6 +183,31 @@ app.get("/api/_whoami", (c) => {
   });
 });
 
+
+// ═══════════ 分类轴（机型 / 传感器）—— 契约 v1.4 的真源 ═══════════
+//
+// 🔴 官网仓的 `src/data/taxonomy.json` 是**唯一真源**：官网 content.config.ts 与
+//    lib/products.ts 都从它读，本后台从 A13 起可以增删改它。
+// 🔴🔴 **删除在用的取值时，官网构建不会兜底**（W18 四层实验实测：只有删
+//    `node_modules/.astro/data-store.json` 才失败）⇒ 这里的删除闸是**唯一防线**。
+const taxonomyPath = (env: Env): string => env.TAXONOMY_PATH || "src/data/taxonomy.json";
+
+async function loadTaxonomy(env: Env): Promise<{ tax: Taxonomy; sha: string; path: string }> {
+  const path = taxonomyPath(env);
+  const f = await readRepoFile(env, path);
+  if (!f.exists) throw new Error(`官网仓里没有 ${path} —— 分类轴的真源不在，拒绝据此下任何结论。`);
+  let tax: Taxonomy;
+  try { tax = JSON.parse(f.text!); }
+  catch (e) { throw new Error(`${path} 不是合法 JSON（${e}）—— 拒绝在坏文件上做任何修改。`); }
+  const v = validateTaxonomy(tax);
+  // ⚠️ 真源坏了就**停**，不"尽量用"：用半份轴去校验产品，会把合法产品判成非法。
+  if (!v.ok) throw new Error(`${path} 未通过校验：${v.errors.map((e) => e.field + " " + e.code).join("; ")}`);
+  return { tax, sha: f.sha!, path };
+}
+
+/** 校验产品时要用的轴 —— **每次都从真源现读**，不缓存成模块级常量。 */
+const loadAxes = async (env: Env): Promise<Axes> => axesOf((await loadTaxonomy(env)).tax);
+
 // ───────────────────── M1 只读打通：列产品数据文件 ─────────────────────
 app.get("/api/products", async (c) => {
   try {
@@ -197,35 +229,42 @@ app.get("/api/products", async (c) => {
 // ⚠️ 为什么单开一个 expand 而不是让前端逐个拉：列表页要一次画出 23 行，
 //    前端逐个拉就是 23 个串行往返，列表会一行一行地"长出来"，而且筛选/计数在数据到齐前都是错的。
 //    这里并发拉一次，前端拿到的就是完整的一页。
+
+/**
+ * 全部产品的展开视图 —— `/api/products-expanded` 与**删除闸的引用检查**共用同一份。
+ * 🔴 各读各的话，会出现"列表说 15 个在用、删除闸说 0 个"这种分歧，
+ *    而分歧发生时被信的往往是那个放行的。
+ * ⚠️ 读不出来的产品**保留在结果里并带 error 字段** —— 过滤掉的话，
+ *    它引用的取值会凭空变成"没人用"，于是删除闸放行。
+ */
+async function listExpanded(env: Env): Promise<any[]> {
+  const axes = await loadAxes(env);
+  const list = await listProducts(env);
+  return Promise.all(list.files.map(async (f) => {
+    try {
+      const r = await readProductFile(env, f.slug);
+      if (!r.exists || !r.text) return { slug: f.slug, error: "读不到" };
+      let p: any;
+      try { p = JSON.parse(r.text); }
+      catch (e) { return { slug: f.slug, error: "不是合法 JSON", detail: String(e).slice(0, 120) }; }
+      const v = validateProduct(p, axes);
+      return {
+        slug: f.slug, name: p.name ?? null, model: p.model ?? null,
+        category: p.category ?? null, status: p.status ?? null,
+        image: p.images?.main ?? null, sensors: p.sensors ?? [],
+        hasSupplierRef: !!p.supplierRef,
+        valid: v.ok, errorCount: v.errors.length,
+        warnCount: actionableWarnCount(v.warnings),
+        size: f.size,
+      };
+    } catch (e) { return { slug: f.slug, error: String(e).slice(0, 120) }; }
+  }));
+}
+
 app.get("/api/products-expanded", async (c) => {
   try {
     const list = await listProducts(c.env);
-    const items = await Promise.all(list.files.map(async (f) => {
-      try {
-        const r = await readProductFile(c.env, f.slug);
-        if (!r.exists || !r.text) return { slug: f.slug, error: "读不到" };
-        let p: any;
-        try { p = JSON.parse(r.text); }
-        catch (e) {
-          // ⚠️ 坏文件要**出现在列表里并标红**，不能被过滤掉 ——
-          //    过滤掉的话，一个解析不了的产品会从后台彻底消失，没人知道它存在。
-          return { slug: f.slug, error: "不是合法 JSON", detail: String(e).slice(0, 120) };
-        }
-        const v = validateProduct(p);
-        return {
-          slug: f.slug, name: p.name ?? null, model: p.model ?? null,
-          category: p.category ?? null, status: p.status ?? null,
-          image: p.images?.main ?? null, sensors: p.sensors ?? [],
-          hasSupplierRef: !!p.supplierRef,
-          valid: v.ok, errorCount: v.errors.length,
-          // 🔴 列表 badge 只报**需要人做点什么**的东西，判据在 contract.ts 的 INFO_CODES 里。
-          //    用 v.warnings.length 的话，23 个产品会因为都有 supplierRef 而全亮「1 提示」——
-          //    一个 100%% 命中的警告不携带任何区分信息，只会把真正要注意的淹掉。
-          warnCount: actionableWarnCount(v.warnings),
-          size: f.size,
-        };
-      } catch (e) { return { slug: f.slug, error: String(e).slice(0, 120) }; }
-    }));
+    const items = await listExpanded(c.env);
     return c.json({ ...list, items });
   } catch (e) {
     console.error(JSON.stringify({ evt: "expand_failed", msg: String(e) }));
@@ -334,10 +373,15 @@ app.post("/api/products/batch", async (c) => {
   const slugs = [...new Set(body.slugs || [])];
   if (!slugs.length) return c.json({ wrote: false, error: "没有选中任何产品" }, 400);
 
+  // 轴从真源现读 —— 批量改机型的合法值必须包含 Joe 刚新增的那个
+  let axes: Axes;
+  try { axes = await loadAxes(c.env); }
+  catch (e) { return c.json({ wrote: false, error: "读不到分类轴", detail: String(e) }, 502); }
+
   // ⭐ 允许批改的字段是**白名单**，不是"body 里给什么就改什么"。
   //    后者等于把整个产品结构暴露成批量接口：哪天有人传 op:"supplierRef"，
   //    一次就能把 23 个产品的内部字段全改掉，而契约闸拦不住（那是合法字段）。
-  const OPS: Record<string, readonly string[]> = { status: STATUSES, category: CATEGORIES };
+  const OPS: Record<string, readonly string[]> = { status: STATUSES, category: axes.categories };
   const op = String(body.op || "");
   const allowed = OPS[op];
   if (!allowed) {
@@ -372,7 +416,7 @@ app.post("/api/products/batch", async (c) => {
       const plan = planImages(slug, nextStatus, existing.images ?? null, (merged as any).images ?? null, [], []);
       (merged as any).images = plan.images;
 
-      const v = validateProduct(merged);
+      const v = validateProduct(merged, axes);
       const si = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
       if (si) v.errors.push(si);
       if (!v.ok) { rejected.push({ slug, codes: v.errors.map((e) => e.code) }); continue; }
@@ -446,6 +490,7 @@ app.get("/api/products/:slug", async (c) => {
     const f = await readProductFile(c.env, slug);
     if (!f.exists) return c.json({ slug, exists: false, path: f.path, product: null, validation: null }, 404);
 
+    const axes = await loadAxes(c.env);
     let product: unknown = null;
     let parseError: string | null = null;
     try { product = JSON.parse(f.text!); }
@@ -461,7 +506,7 @@ app.get("/api/products/:slug", async (c) => {
     return c.json({
       slug, exists: true, path: f.path, sha: f.sha,
       product, raw: f.text,
-      validation: validateProduct(product),
+      validation: validateProduct(product, axes),
       slugPathIssue: checkSlugMatchesPath((product as any)?.slug ?? "", `${slug}.json`),
     });
   } catch (e) {
@@ -518,7 +563,8 @@ app.post("/api/products/:slug/preview", async (c) => {
     );
     (merged as any).images = plan.images;
 
-    const validation = validateProduct(merged);
+    const axes = await loadAxes(c.env);
+    const validation = validateProduct(merged, axes);
     const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
     if (slugIssue) validation.errors.push(slugIssue);
 
@@ -649,7 +695,8 @@ app.put("/api/products/:slug", async (c) => {
     );
     (merged as any).images = plan.images;
 
-    const validation = validateProduct(merged);
+    const axes = await loadAxes(c.env);
+    const validation = validateProduct(merged, axes);
     const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
     if (slugIssue) validation.errors.push(slugIssue);
 
@@ -861,60 +908,160 @@ app.put("/api/site-content", async (c) => {
   }
 });
 
-// ───────────────────── 分类：这一轴是**冻结的**，这里只解释它 ─────────────────────
+// ───────────────────── 分类轴：现在**可管理**（契约 v1.4 / A13）─────────────────────
 //
-// 🔴 与 admin.wanew.com 的分类页**不是同一件事**，照搬会搬错：
-//    wanew 的机型/品类是官网仓里的一份**数据**（categories.json / forms.json），
-//    所以那边的后台可以改名、排序、增删。
-//    AirSonde 的 category 是**契约 C1 冻结的枚举**，而且它同时写在两个仓的**源码**里：
-//      · admin  src/contract.ts       CATEGORIES
-//      · 官网   src/content.config.ts CATEGORIES（Astro schema，构建时校验）
-//    ⇒ 改这一轴 = 改两个仓的代码 + 改契约，不是后台点一下的事。**这里绝不提供那个按钮。**
-//    ⚠️ 界面上必须把这条**写出来**：一个找了半天"加分类"按钮的人，
-//       最后会以为是自己没找到，而不是它按设计不存在。
+// 🔴 这一节以前写着「这一轴是冻结的……走总工，不在后台做」——**那句话已经不成立了**：
+//    W18 把两个轴搬进了官网仓的 `src/data/taxonomy.json`（唯一真源），本后台可以增删改。
+//    ⚠️ 留着那句旧话比没有更糟：人会照它去找总工，而总工会说"你自己在后台改"。
 //
-// 显示名从官网源码**读**、不抄（见 catlabels.ts）。读不到就说读不到。
-app.get("/api/categories", async (c) => {
-  const LABELS_PATH = "src/lib/products.ts";
-  let source: string | null = null;
-  let readError: string | null = null;
+// 🔴🔴 **删除在用的取值时，官网构建不会兜底。** 见 taxonomy.ts 顶部那四层实验。
+//    ⇒ 这里的引用检查是**唯一防线**，而且它必须**准确**：漏数一个 = 放行一次删除，
+//      而后果要到某次毫不相关的提交时才爆，那时没人会想到是几天前删了个分类。
+app.get("/api/taxonomy", async (c) => {
   try {
-    const f = await readRepoFile(c.env, LABELS_PATH);
-    source = f.exists ? f.text : null;
-    if (!f.exists) readError = `官网仓里没有 ${LABELS_PATH}`;
+    const { tax, sha, path } = await loadTaxonomy(c.env);
+    const products = await listExpanded(c.env);
+    const unreadable = unreadableCount(products);
+    const decorate = (axis: Axis) =>
+      tax[axis].slice().sort((a, b) => a.order - b.order).map((it) => {
+        const refs = refsOf(products, axis, it.value);
+        return {
+          ...it,
+          refs,                       // 谁在用 —— 删除被拒时要列给人看
+          refCount: refs.length,
+          // 🔴 有产品读不出来时，"0 个在用"**不成立**：那不是"没人用"，是"我没看全"。
+          canDelete: refs.length === 0 && unreadable === 0,
+        };
+      });
+    return c.json({
+      path, sha,
+      categories: decorate("categories"),
+      sensors: decorate("sensors"),
+      productCount: products.length,
+      unreadable,
+      unreadableNote: unreadable
+        ? `有 ${unreadable} 个产品读不出来 —— 它们引用了什么看不见，所以**任何删除都先拒绝**。`
+        : "",
+      // 官网 /products/ 的筛选栏只列**有已上架产品**的机型（lib/products.ts 的 categoriesOf）。
+      onSiteRule: "published > 0",
+    });
   } catch (e) {
-    readError = String(e);
+    return c.json({ error: "读取分类轴失败", detail: String(e) }, 502);
   }
-  const parsed = parseCategoryLabels(source, CATEGORIES);
+});
 
-  return c.json({
-    frozen: true,
-    categories: CATEGORIES.map((slug) => ({ slug, label: parsed.labels?.[slug] ?? null })),
-    labels: {
-      ok: parsed.ok,
-      path: LABELS_PATH,
-      why: parsed.ok ? "" : (readError ? `${readError}。` : "") + parsed.why,
-      note: `显示名的真源是官网仓 ${LABELS_PATH} 的 CATEGORY_LABELS，本后台**只读不写**。`,
-    },
-    // 官网 /products/ 的筛选栏只列**有已上架产品**的分类（lib/products.ts 的 categoriesOf）。
-    // ⇒ 一个 0 个已上架产品的分类，在站上是**看不见的**。界面拿这条当判据，不是我猜的规则。
-    onSiteRule: "published > 0",
-    whyFrozen:
-      "category 是契约 C1 冻结的枚举，同时写在 admin 的 src/contract.ts 与官网的 src/content.config.ts。" +
-      "增删或改名要改两个仓的源码并改契约 —— 走总工，不在后台做。",
-  });
+app.put("/api/taxonomy", async (c) => {
+  const operator = c.req.header("cf-access-authenticated-user-email")
+    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
+
+  let body: { axis?: Axis; op?: string; value?: string; label?: string; order?: number; expectedSha?: string };
+  try { body = await c.req.json(); } catch (e) { return c.json({ wrote: false, error: "请求体不合法", detail: String(e) }, 400); }
+
+  const axis = body.axis as Axis;
+  if (axis !== "categories" && axis !== "sensors") {
+    return c.json({ wrote: false, error: `未知的轴：${body.axis}（只支持 categories / sensors）` }, 400);
+  }
+  const value = String(body.value || "").trim();
+  if (!value) return c.json({ wrote: false, error: "value 必填" }, 400);
+
+  try {
+    const { tax, sha, path } = await loadTaxonomy(c.env);
+    if (body.expectedSha && body.expectedSha !== sha) {
+      return c.json({ wrote: false, error: "并发冲突",
+        detail: `分类轴在你打开它之后被改过了（你基于 ${String(body.expectedSha).slice(0, 7)}，现在是 ${sha.slice(0, 7)}）。请重新读一次再改。` }, 409);
+    }
+
+    let next: Taxonomy;
+    let what: string;
+    if (body.op === "add") {
+      if (tax[axis].some((x) => x.value === value)) {
+        return c.json({ wrote: false, error: `${AXIS_LABEL[axis]}里已经有「${value}」了` }, 422);
+      }
+      next = addItem(tax, axis, { value, label: String(body.label || value) });
+      what = `新增${AXIS_LABEL[axis]} ${value}`;
+    } else if (body.op === "edit") {
+      // ⛔ 只改 label / order。value 一旦创建不可改 —— 它已经写进产品 JSON，改它 = 改数据。
+      next = editItem(tax, axis, value, { label: body.label, order: body.order });
+      what = `改${AXIS_LABEL[axis]} ${value} 的显示名`;
+    } else if (body.op === "delete") {
+      // 🔴🔴 唯一防线：自己数引用、自己拒绝。官网构建不会替我们把关。
+      const products = await listExpanded(c.env);
+      const unreadable = unreadableCount(products);
+      if (unreadable) {
+        return c.json({ wrote: false, error: "拒绝删除",
+          detail: `有 ${unreadable} 个产品读不出来 —— 它们引用了什么看不见。此时"没人在用"这个结论不成立，所以先拒绝。` }, 422);
+      }
+      const refs = refsOf(products, axis, value);
+      if (refs.length) {
+        return c.json({ wrote: false, error: "拒绝删除：还有产品在用",
+          refs, refCount: refs.length,
+          detail: `「${value}」还被 ${refs.length} 个产品使用。先把它们改成别的${AXIS_LABEL[axis]}，再回来删。` +
+                  `
+⚠️ 官网构建**不会**替我们拦这一步（实测），所以这里必须拦。`,
+        }, 422);
+      }
+      next = deleteItem(tax, axis, value);
+      what = `删除${AXIS_LABEL[axis]} ${value}`;
+    } else {
+      return c.json({ wrote: false, error: `未知操作：${body.op}（只支持 add / edit / delete）` }, 400);
+    }
+
+    const v = validateTaxonomy(next);
+    if (!v.ok) return c.json({ wrote: false, reason: "改完之后的分类轴未通过校验，**没有产生任何 commit**", errors: v.errors }, 422);
+
+    const text = serializeTaxonomy(next);
+    const cur = await readRepoFile(c.env, path);
+    if (text === cur.text) return c.json({ wrote: false, reason: "内容与仓里的完全相同，无需写入" });
+
+    const r = await commitFiles(c.env, {
+      message: `admin: taxonomy ${what} (${operator})
+
+来源：admin.airsonde.com`,
+      files: [{ path, text }],
+    });
+    console.log(JSON.stringify({ evt: "taxonomy_ok", operator, axis, op: body.op, value, commit: r.commitSha }));
+    return c.json({ wrote: true, ...r, what,
+      note: "已提交。官网由 Cloudflare Pages 重建，约 1 分钟后生效。" });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
+    console.error(JSON.stringify({ evt: "taxonomy_failed", operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "写入失败", detail: String(e) }, 502);
+  }
 });
 
 // 契约的机器可读形态：界面用它渲染下拉框/多选框，避免枚举在前端被抄第二份。
 // ⚠️ 前端硬编码一份枚举 = 第二个真源：契约改了，界面不会跟着变，而它看起来一切正常。
-app.get("/api/contract", (c) =>
-  c.json({
-    version: "C1 v1", categories: CATEGORIES, sensors: SENSORS, statuses: STATUSES,
+app.get("/api/contract", async (c) => {
+  // ⚠️ 枚举从 taxonomy.json **现读**，不再是模块级常量 ——
+  //    常量的话，Joe 在后台新增一个机型后，界面的下拉框不会有它。
+  //
+  // 🔴 读不出来时必须**说清是哪个文件读不出来**，不能让它冒成一个裸 500。
+  //    实测（把 TAXONOMY_PATH 指到不存在的路径）：不接这一段，界面上的症状是
+  //    "两个下拉框都是空的" —— 和"数据没加载完"长得一模一样，而真因在另一个仓的一个文件上。
+  //    ⛔ 也不回落到 SAMPLE_*：回落的话下拉框会有值、看起来一切正常，
+  //       而那些值来自后台自己抄的一份，与官网真源无关。宁可空着并说明白。
+  let axes;
+  try {
+    axes = await loadAxes(c.env);
+  } catch (e) {
+    return c.json({
+      error: "读不到分类轴，界面的机型/传感器选项无法渲染",
+      path: taxonomyPath(c.env),
+      repo: c.env.GITHUB_REPO,
+      detail: String(e),
+    }, 502);
+  }
+  return c.json({
+    version: "C1 v1.4", categories: axes.categories, sensors: axes.sensors, statuses: STATUSES,
     // ⚠️ 判据落在**集合**上，界面不抄第二份：哪些 warning 属于"状态说明、不是待办"
     //    由契约说了算。界面写 `if (code === "internal_field")` 的话，
     //    下一个加同类 warning 的人不会知道有这条规矩。
     infoCodes: [...INFO_CODES],
-  }));
+  });
+});
 
 // ⭐ 没匹配上的路径 → 交给静态资源（界面在 public/）。
 //

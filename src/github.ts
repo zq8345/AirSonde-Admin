@@ -268,7 +268,8 @@ export async function readProductFile(env: Env, slug: string): Promise<ReadResul
  *
  * ⚠️ **只读**。后台在官网仓的写入范围仍然只有 `PRODUCTS_DIR`；这个函数不改变那件事
  *    （写走的是 gitcommit.ts，而出站闸在 ghFetch 里，与这里无关）。
- *    加它是为了能读官网源码里的显示名，从而**不用在后台再抄一份**（见 catlabels.ts）。
+ *    加它当初是为了读官网源码里的分类显示名（catlabels.ts，A13 已删 —— 契约 v1.4 之后
+ *    显示名的真源是 taxonomy.json，不再需要解析别人的源码）。它现在的用处是读产品 JSON。
  */
 export async function readRepoFile(env: Env, path: string): Promise<ReadResult> {
   const repo = env.GITHUB_REPO, ref = env.GITHUB_BRANCH;

@@ -12,13 +12,23 @@
 //    契约硬规则 4 原话："必填字段缺失 = 构建失败，不要用 `|| ""` 兜底静默通过。"
 //    所以这里没有任何默认值、没有任何 coercion。校验不过就拒绝，不"尽量修好它"。
 
-export const CATEGORIES = ["desktop", "portable", "wall-mounted", "wearable", "industrial", "other"] as const;
+/**
+ * 🔴 **这两个数组不再是真源**（契约 v1.4 / A13）。真源是官网仓的
+ *    `src/data/taxonomy.json`，官网的 content.config.ts 与本后台都从它读。
+ *
+ * ⚠️ 那为什么还留着？—— 它们是**仅供自检使用的样例轴**，让纯函数测试不必联网。
+ *    🔴 **服务端的每一次校验都必须显式传入真实的轴**（见 validateProduct 的 axes 参数）。
+ *       不传就退回这里的话，Joe 在后台新增一个机型之后，产品会因为"不在枚举里"被拒 ——
+ *       而症状是"我明明加了这个分类却存不了"，没有人会想到是校验器还在看一份旧副本。
+ *    ⇒ 所以 axes 是**必填参数**，不做默认回退。
+ */
+export const SAMPLE_CATEGORIES = ["desktop", "portable", "wall-mounted", "wearable", "industrial", "other"] as const;
 
 // ⚠️ `CO` 是契约 v1.1 §① 新增的（2026-08-10，总工批准）：素材里有家用 CO 报警器，
 //    而枚举里原本只有 `CO2` 和 `combustible-gas`，两个都不是它。
 //    🔴 这一行漏掉的话，后果不是"少个选项"，是**带 CO 的产品在后台根本存不了**
 //       —— 而报出来的会是"sensors 含契约外的值"，看起来像数据错了，其实是校验器过时了。
-export const SENSORS = [
+export const SAMPLE_SENSORS = [
   "CO2", "CO", "PM1.0", "PM2.5", "PM10", "HCHO", "TVOC",
   "temperature", "humidity", "AQI", "radiation", "alcohol", "WBGT", "combustible-gas",
 ] as const;
@@ -27,8 +37,8 @@ export const STATUSES = ["draft", "published"] as const;
 
 
 
-export type Category = (typeof CATEGORIES)[number];
-export type Sensor = (typeof SENSORS)[number];
+export type Category = string;
+export type Sensor = string;
 export type Status = (typeof STATUSES)[number];
 
 export interface Product {
@@ -213,7 +223,16 @@ function badStringItems(arr: unknown[]): number[] {
  * ⚠️ 校验的是**完整对象**，不是补丁。补丁要先经 mergeProduct 合成完整对象再来这里 ——
  *    否则"这次没提交 name"会被当成"name 缺失"，那正是 [[missing-input-is-not-intent-to-clear]] 那个病。
  */
-export function validateProduct(input: unknown): ValidationResult {
+export interface Axes { categories: readonly string[]; sensors: readonly string[] }
+
+export function validateProduct(input: unknown, axes: Axes): ValidationResult {
+  // 🔴 轴必须显式传进来（见 SAMPLE_CATEGORIES 上方的理由）。
+  //    不传就用旧副本的话，新增的分类会让产品**存不进去**，而症状指向数据不指向校验器。
+  if (!axes || !Array.isArray(axes.categories) || !Array.isArray(axes.sensors)) {
+    throw new Error("validateProduct 需要显式传入 axes（来自 taxonomy.json）—— 不做默认回退，见 contract.ts 顶部说明。");
+  }
+  const CATEGORIES = axes.categories;
+  const SENSORS = axes.sensors;
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
 

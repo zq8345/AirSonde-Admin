@@ -30,7 +30,7 @@ const state = {
   nav: "products",            // 左导航当前视图：products | media
   media: null, mediaTab: "all",
   audit: null,
-  cats: null,       // /api/categories：枚举 + 官网显示名（计数不在里面，见 renderCats）
+  cats: null,       // /api/taxonomy：两个轴 + 每条的 refs/refCount/canDelete（引用计数由服务端数）
   who: null,        // /api/_whoami 的完整响应 —— 设置页整页由它渲染
   // 站点内容：首页/联系方式/SEO 三个视图共用**同一个 JSON**
   site: null,       // 服务端那一版（含 sha —— 保存时当乐观锁）
@@ -142,17 +142,35 @@ function applyWriteMode() {
 
 // ═══════════════ 契约枚举 ═══════════════
 async function loadContract() {
-  const { body } = await api("/api/contract");
+  // 🔴 契约 v1.4 起这两个轴来自官网仓的 taxonomy.json ⇒ 它读不出来是**有可能的**，
+  //    而症状（两个选择器都是空的）与"还没加载完"一模一样。⇒ 必须明说。
+  //    ⛔ 不回落到任何一份后台自己抄的枚举：那会让界面看起来正常，而值与官网无关。
+  // ⚠️ api() 对 502 是**抛**而不是返回 —— 所以这里要接住，不能只判 status。
+  let body;
+  try {
+    const r = await api("/api/contract");
+    body = r.body;
+    if (!body || !Array.isArray(body.categories)) throw new Error("响应里没有 categories");
+  } catch (e) {
+    $("#banner").append(el("span", "banner-why",
+      `🔴 读不到机型/传感器选项（官网仓的 taxonomy.json）：${e.message}`));
+    throw e;
+  }
   state.contract = body;
 
+  // ⚠️ 先清空：轴改完之后会**再调一次**这个函数。不清的话选项会一份一份叠上去，
+  //    而下拉框里出现两个 desktop 时，人只会以为数据坏了。
   const cat = $("#f_category");
+  cat.innerHTML = "";
   cat.append(new Option("（请选择）", ""));
   body.categories.forEach((c) => cat.append(new Option(c, c)));
 
   const st = $("#f_status");
+  st.innerHTML = "";
   body.statuses.forEach((s) => st.append(new Option(s, s)));
 
   const box = $("#f_sensors");
+  box.innerHTML = "";
   body.sensors.forEach((s) => {
     const lab = el("label", "chip");
     const cb = el("input"); cb.type = "checkbox"; cb.value = s;
@@ -368,7 +386,10 @@ async function bulk(slugs, value, op = "status") {
       state.cacheBust = b.commitSha;
       state.selected.clear();
       await loadList();
-      if (state.cats) renderCats();          // 分类页的计数与列表同源，改完要一起变
+      // 🔴 必须**重读**，不能只 renderCats()：契约 v1.4 起「在用 N 个」和 canDelete
+      //    都出自服务端此刻数的引用，不再是前端拿 state.list 现算的。批量改完机型后
+      //    只重渲染的话，页面上会留着改之前的引用数 —— 而那个数正是删除闸给人看的依据。
+      if (state.cats) loadCats();
       alert(`已${verb} ${b.changed.length} 个。commit ${String(b.commitSha).slice(0, 7)}\n` +
         (b.skipped?.length ? `跳过 ${b.skipped.length} 个：${b.skipped.map((s) => s.slug + "(" + s.why + ")").join("、")}` : ""));
     } else if (b?.rejected?.length) {
@@ -1636,9 +1657,13 @@ function renderSettings() {
     const c = card("契约", "数据的形状由它定");
     row(c, "版本", el("code", null, ct?.version || "—"),
       "界面上所有下拉/多选框的选项**都来自它**，前端不抄第二份 —— 抄一份的话契约改了界面不会跟着变，而且看起来一切正常。");
-    row(c, "机型", `${ct?.categories?.length ?? "—"} 个（冻结）`,
-      "增删或改名要改两个仓的源码并改契约。详见「分类」页。");
-    row(c, "传感器", `${ct?.sensors?.length ?? "—"} 种`);
+    // 🔴 这两行以前写着"（冻结）· 增删改要改两个仓的源码"。契约 v1.4 之后**那是假话**，
+    //    而且是**印在屏幕上的**假话 —— 人照着它去找总工，总工会说"你自己在后台改"。
+    //    （这一批里同类残留一共三处：这里、app.js 顶部的 state.cats 注释、github.ts 的 catlabels 注释。）
+    row(c, "机型", `${ct?.categories?.length ?? "—"} 个`,
+      "真源是官网仓的 **src/data/taxonomy.json**，在「分类」页可以增删改。");
+    row(c, "传感器", `${ct?.sensors?.length ?? "—"} 种`,
+      "与机型同一个文件、同一页管理。");
     // ⚠️ 这里不用反引号：appendMd 只认 **粗体**，而给它加反引号语法是危险的 ——
     //    同一个函数还要渲染**用户填的 specs 值**，那些值里出现一个反引号就会被吃掉半句。
     row(c, "状态", (ct?.statuses || []).join(" / ") || "—",
@@ -1655,17 +1680,21 @@ function renderSettings() {
     "改它们要动仓库配置 / secret 并重新部署 —— 那是一次看得见、留得下痕迹的动作。"));
 }
 
-// ═══════════════ 分类（机型轴）═══════════════
+// ═══════════════ 分类（机型 / 传感器 两个轴）═══════════════
 //
-// 这一页做三件事，**没有第四件**：
-//   ① 每个分类的实况（已上架/草稿/**官网筛选栏上是否出现**）
-//   ② 点一行 → 回列表并套上这个分类的筛选（计数与筛选结果**同源**：都出自 state.list）
-//   ③ 说清楚为什么这里不能加分类/改名
-// ⛔ 不提供"改名/增删分类"：那不是数据，是两个仓的源码 + 契约。放个会报错的按钮比没有更糟。
+// 契约 v1.4：两个轴的真源 = 官网仓 src/data/taxonomy.json，这一页能增删改。
+//
+// 🔴🔴 **删除是这一页唯一危险的动作，而且没有第二道闸。**
+//    实测（W18 四层实验）：删掉一个仍被产品引用的取值，官网构建**照常通过** ——
+//    Astro 只在内容配置文件本身变化时才重新校验，单改 taxonomy.json 不算。
+//    ⇒ 服务端的引用计数是唯一防线。前端这里**不自己数一份**：
+//      前端数的是 state.list（可能是几分钟前的），服务端数的是此刻仓里的字节。
+//      两份数字迟早不一致，而不一致时**看起来正确的那一份**会赢。
+//      ⇒ canDelete / refs 全部取自 /api/taxonomy 的响应，前端只负责显示。
 async function loadCats() {
   $("#catsSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
   try {
-    const { body } = await api("/api/categories");
+    const { body } = await api("/api/taxonomy");
     state.cats = body;
     renderCats();
   } catch (e) {
@@ -1674,83 +1703,212 @@ async function loadCats() {
   }
 }
 
+/** 一次轴写入。成功后**重读**，不在前端猜新状态（sha 也变了）。 */
+async function taxonomyOp(payload, btn) {
+  const label = btn && btn.textContent;
+  const out = $("#catsResult");
+  // 🔴 一进来就清：这一格只属于**这一次**提交。
+  //    实测过不清的样子 —— 上一次被拒的红字留在屏幕上，这一次的结果叠在旁边，
+  //    两条消息各说各的一次操作，而人只会读离得近的那条。
+  out.innerHTML = "";
+  out.append(mkNotice("warn", "提交中…（一次轴改动 = 官网仓的一个 commit）"));
+  if (btn) { btn.disabled = true; btn.textContent = "提交中…"; }
+  try {
+    const { body } = await api("/api/taxonomy", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...payload, expectedSha: state.cats?.sha }),
+    });
+    out.innerHTML = "";
+    if (!body || !body.wrote) {
+      // ⚠️ 拒绝要把**服务器的原话**放出来，尤其是 refs 那一串 ——
+      //    "还有产品在用"没有用，"这 15 个产品在用"才是人能照着做事的东西。
+      out.append(mkNotice("bad", `🔴 ${(body && (body.error || body.reason)) || "没有写入"}`));
+      if (body && body.detail) out.append(mkNotice("warn", body.detail));
+      if (body && body.refs && body.refs.length) {
+        const ul = el("ul", "catnote");
+        body.refs.forEach((slug) => {
+          const li = el("li");
+          const b = el("button", "linkish", slug); b.type = "button";
+          b.onclick = () => { showNav("products"); select(slug); };
+          li.append(b);
+          ul.append(li);
+        });
+        out.append(ul);
+      }
+      // ⚠️ 是 "error" 不是 "bad"：mkIssue 的 kind 直接拼成 class，而样式表里只有
+      //    issue-error / issue-warn / issue-ok。写错的话不报错，只是**那几行没有颜色**。
+      if (body && body.errors) body.errors.forEach((x) => out.append(mkIssue("error", x.field, x.message)));
+      return false;
+    }
+    // ⚠️ 先重读再写结果 —— loadCats() 会重画 #catsSummary，结果落在 #catsResult 才不会被它抹掉。
+    await loadCats();
+    out.append(mkNotice("ok", `✅ ${body.what} —— commit ${String(body.commitSha || "").slice(0, 7)}。${body.note || ""}`));
+    // 下拉框/多选框的取值来自 /api/contract，轴变了它就过期了。
+    loadContract().catch(() => {});
+    return true;
+  } catch (e) {
+    out.innerHTML = "";
+    out.append(mkNotice("bad", "提交失败：" + e.message));
+    return false;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
 function renderCats() {
   const c = state.cats; if (!c) return;
   const sum = $("#catsSummary"); sum.innerHTML = "";
 
-  // 🔴 显示名读不到 ⇒ 明说读不到，**不回退到后台自己抄的一份**。
-  //    抄一份的话官网改了名这里永远显示旧的，而且没有任何症状。
-  if (!c.labels.ok) {
-    sum.append(mkNotice("warn",
-      `⚠️ 读不到官网的分类显示名（真源：\`${c.labels.path}\`），下表只能显示 slug。原因：${c.labels.why}`));
-  }
+  // 🔴 有产品读不出来 ⇒ 引用计数**不完整**，此时"0 个在用"不是"没人用"，是"我没看全"。
+  //    这一行必须在最前面，因为它决定了下面每一个「删除」是不是可信的。
+  if (c.unreadable) sum.append(mkNotice("bad", `🔴 ${c.unreadableNote}`));
 
-  // ⭐ 对账：逐分类计数之和必须等于产品总数。
-  //    不等 ⇒ 有产品的 category 不在契约枚举里，而那种产品在这张表上**根本不出现**——
-  //    一张"看起来完整"的表把它藏掉了。宁可红着说，也不要静默漏。
-  const known = new Set(c.categories.map((x) => x.slug));
+  // ⭐ 对账：每个产品的 category 都必须落在轴里。落不进去的产品在下表上**根本不出现**。
+  const known = new Set(c.categories.map((x) => x.value));
   const good = state.list.filter((p) => !p.error);
   const strays = good.filter((p) => !known.has(p.category));
   if (strays.length) {
     sum.append(mkNotice("bad",
-      `🔴 有 **${strays.length}** 个产品的 category 不在契约枚举里，下表统计不到它们：` +
+      `🔴 有 **${strays.length}** 个产品的机型不在这一轴里，下表统计不到它们：` +
       strays.map((p) => `${p.slug}(${p.category || "空"})`).join("、")));
   } else {
-    // ⚠️ 对账成立时也要**出一行**。什么都不显示的话，"查过了，没问题"和"这个检查根本没跑"
-    //    在界面上长得一模一样 —— 而那正是一道闸失效之后最不容易被发现的样子。
-    const onSite = c.categories.filter((cat) => good.some((p) => p.category === cat.slug && p.status === "published")).length;
+    // ⚠️ 对账成立时也要**出一行**：什么都不显示的话，"查过了，没问题"和"这个检查根本没跑"
+    //    在界面上长得一模一样。
+    const onSite = c.categories.filter((cat) => good.some((p) => p.category === cat.value && p.status === "published")).length;
     sum.append(mkNotice("ok",
-      `${good.length} 个产品全部落在契约的 ${c.categories.length} 个机型里（对账成立）· ` +
-      `官网筛选栏上会出现 **${onSite}** 个机型`));
+      `${good.length} 个产品全部落在 ${c.categories.length} 个机型里（对账成立）· ` +
+      `官网筛选栏上会出现 **${onSite}** 个机型 · 真源 ${c.path}`));
   }
 
-  const tb = $("#catsRows"); tb.innerHTML = "";
-  c.categories.forEach((cat) => {
-    const mine = state.list.filter((p) => !p.error && p.category === cat.slug);
-    const pub = mine.filter((p) => p.status === "published").length;
-    const draft = mine.filter((p) => p.status === "draft").length;
+  renderAxis("categories", $("#catsRows"), c.categories, good);
+  renderAxis("sensors", $("#sensorsRows"), c.sensors, good);
 
-    const tr = el("tr");
-    const tdName = el("td");
-    tdName.append(el("div", "li-name", cat.label || cat.slug));
-    tdName.append(el("div", "li-sub", cat.label ? cat.slug : "（官网显示名未知）"));
-    tr.append(tdName);
-
-    tr.append(el("td", "col-st", String(pub)));
-    tr.append(el("td", "col-st li-sub", String(draft)));
-
-    // 🔴 判据取自官网自己的规则（lib/products.ts 的 categoriesOf 只收有已上架产品的分类），
-    //    不是我按"看起来应该"编的。⇒ 0 个已上架 = 站上根本没有这个筛选按钮。
-    const tdOn = el("td", "col-cat");
-    if (pub > 0) tdOn.append(el("span", "badge badge-published", "显示"));
-    else {
-      tdOn.append(el("span", "badge badge-unknown", "不显示"));
-      tdOn.append(el("div", "li-sub", "没有已上架产品"));
-    }
-    tr.append(tdOn);
-
-    const tdAct = el("td", "col-act");
-    if (mine.length) {
-      const b = el("button", "linkish", `查看 ${mine.length} 个`); b.type = "button";
-      b.onclick = () => { showNav("products"); $("#catFilter").value = cat.slug; state.tab = "all"; renderList(); };
-      tdAct.append(b);
-    } else tdAct.append(el("span", "li-sub", "空"));
-    tr.append(tdAct);
-    tb.append(tr);
-  });
-
-  // ⚠️ 这一段回答的是"加分类的按钮在哪" —— 不写的话，人会以为是自己没找到，
-  //    而不是它按设计不存在。⇒ 它必须在页面上，不是只在文档里。
   const note = $("#catsNote"); note.innerHTML = "";
-  note.append(mkNotice("warn", `**这一轴是冻结的：这里不能加分类、改名或删分类。** ${c.whyFrozen}`));
   const ul = el("ul", "catnote");
   [
-    "**改某个产品的归属**（把它从一个机型挪到另一个）：可以 —— 列表里勾选后用「批量改机型」，或在产品编辑页改 category。",
-    "**官网筛选栏**只列有已上架产品的分类。一个 0 个已上架的分类，在站上是看不见的。",
-    `显示名的真源是官网仓 ${c.labels.path} 的 CATEGORY_LABELS，本后台**只读不写**（所以这里不会与官网漂移）。`,
+    "**取值（value）创建之后不能改** —— 它已经写进每个产品的 JSON，改它等于改数据。要换叫法，改**显示名**。",
+    "**删除只对没人在用的取值开放。** 官网构建**不会**替我们拦这一步（实测），所以拦在这里。要删一个在用的：先把那些产品改成别的，再回来删。",
+    "**官网筛选栏**只列有已上架产品的机型。一个 0 个已上架的机型，在站上是看不见的。",
+    "改产品的**归属**是另一件事：列表里勾选后用「批量改机型」，或在产品编辑页改。",
   ].forEach((t) => ul.append(appendMd(el("li"), t)));
   note.append(ul);
 }
+
+/** 两个轴共用一份渲染 —— 写成两份的话，改了一边忘了另一边不会有任何症状。 */
+function renderAxis(axis, tb, items, good) {
+  const isCat = axis === "categories";
+  const canWrite = !!state.write?.enabled;
+  tb.innerHTML = "";
+  items.forEach((it) => {
+    const tr = el("tr");
+
+    const tdName = el("td");
+    tdName.append(el("div", "li-name", it.label || it.value));
+    tdName.append(el("div", "li-sub", it.value));
+    tr.append(tdName);
+
+    // 在用数取服务端的 refCount（此刻仓里的真相），不是前端 state.list 的再数一遍。
+    const tdN = el("td", "col-st");
+    if (it.refCount && isCat) {
+      // 机型有筛选栏，点得过去。
+      const b = el("button", "linkish", String(it.refCount)); b.type = "button";
+      b.title = it.refs.join("、");
+      b.onclick = () => { showNav("products"); $("#catFilter").value = it.value; state.tab = "all"; renderList(); };
+      tdN.append(b);
+    } else if (it.refCount) {
+      // ⚠️ 传感器**没有**列表筛选。做成按钮的话点了什么也不会发生 ——
+      //    一个骗人的按钮比一个纯数字糟。列表在 title 里，够用。
+      const s = el("span", null, String(it.refCount)); s.title = it.refs.join("、");
+      tdN.append(s);
+    } else tdN.append(el("span", "li-sub", "0"));
+    tr.append(tdN);
+
+    if (isCat) {
+      // 🔴 判据取自官网自己的规则（lib/products.ts 的 categoriesOf 只收有已上架产品的机型）。
+      const pub = good.filter((p) => p.category === it.value && p.status === "published").length;
+      const tdOn = el("td", "col-cat");
+      if (pub > 0) tdOn.append(el("span", "badge badge-published", "显示"));
+      else {
+        tdOn.append(el("span", "badge badge-unknown", "不显示"));
+        tdOn.append(el("div", "li-sub", "没有已上架产品"));
+      }
+      tr.append(tdOn);
+    }
+
+    const tdAct = el("td", "col-act");
+    if (canWrite) {
+      const bEdit = el("button", "linkish", "改名"); bEdit.type = "button";
+      bEdit.onclick = () => startRename(tr, tdName, axis, it);
+      tdAct.append(bEdit);
+
+      const bDel = el("button", "linkish danger", "删除"); bDel.type = "button";
+      if (!it.canDelete) {
+        // ⚠️ 禁用**必须带原因**：一个灰掉的按钮什么也没告诉人，人只会以为后台坏了。
+        bDel.disabled = true;
+        bDel.title = it.refCount
+          ? `还有 ${it.refCount} 个产品在用：${it.refs.join("、")}`
+          : "有产品读不出来，此刻数不准谁在用 —— 任何删除都先拒绝";
+      } else {
+        bDel.onclick = () => {
+          if (!confirm(`删除${axis === "categories" ? "机型" : "传感器"}「${it.label || it.value}」（${it.value}）？\n\n服务端会再数一次引用；有人在用就会被拒。`)) return;
+          taxonomyOp({ axis, op: "delete", value: it.value }, bDel);
+        };
+      }
+      tdAct.append(bDel);
+    } else tdAct.append(el("span", "li-sub", "只读"));
+    tr.append(tdAct);
+    tb.append(tr);
+  });
+}
+
+/** 行内改名。⛔ 只动 label —— value 那一格连输入框都不给。 */
+function startRename(tr, tdName, axis, it) {
+  tdName.innerHTML = "";
+  const box = el("div", "axisedit");
+  const inp = el("input"); inp.type = "text"; inp.value = it.label || it.value;
+  const ok = el("button", "linkish", "保存"); ok.type = "button";
+  const no = el("button", "linkish", "取消"); no.type = "button";
+  box.append(inp, ok, no);
+  tdName.append(box);
+  tdName.append(el("div", "li-sub", `${it.value}（取值不可改）`));
+  inp.focus(); inp.select();
+
+  const cancel = () => renderCats();
+  no.onclick = cancel;
+  inp.onkeydown = (e) => { if (e.key === "Escape") cancel(); if (e.key === "Enter") ok.click(); };
+  ok.onclick = async () => {
+    const label = inp.value.trim();
+    if (!label) { inp.focus(); return; }
+    if (label === (it.label || "")) return cancel();
+    await taxonomyOp({ axis, op: "edit", value: it.value, label }, ok);
+  };
+}
+
+/** 两个轴的新增表单。⚠️ 绑一次，不在 renderCats 里重绑（那会叠出 N 个提交）。 */
+["categories", "sensors"].forEach((axis) => {
+  const form = document.getElementById(axis === "categories" ? "addCategories" : "addSensors");
+  if (!form) return;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const value = form.value.value.trim();
+    const label = form.label.value.trim();
+    if (!value) { form.value.focus(); return; }
+    const okDone = await taxonomyOp({ axis, op: "add", value, label: label || value }, form.querySelector("button"));
+    if (!okDone) return;
+    form.reset();
+    // ⚠️ 这一句是**事实**，不是客套：官网的 productTypePhrase 是 src/lib/products.ts 里
+    //    一张写死的表（后台的写入范围到不了那个文件）。新机型不在表里 ⇒ 产品页的
+    //    结构化描述会少那半句。不说的话，没有任何症状能让人发现。
+    //    （`other` 是**故意**不给短语的 —— 所以这是提示，不是错误。）
+    if (axis === "categories") {
+      $("#catsResult").append(mkNotice("warn",
+        `⚠️ 新机型「${value}」在官网还**没有 SEO 描述短语** —— 属于这个机型的产品页，` +
+        "结构化描述里会少一句（现有的长这样：「desktop indoor air quality monitor」）。" +
+        "那张表在官网源码 `src/lib/products.ts` 里，后台改不了：**告诉总工补上**。"));
+    }
+  };
+});
 
 // ═══════════════ 审计日志 ═══════════════
 async function loadAudit() {

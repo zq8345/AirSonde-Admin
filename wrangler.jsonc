@@ -36,6 +36,8 @@
     // ⚠️ 后台在官网仓能写的**全部**就是：PRODUCTS_DIR/*.json + 这一个文件。
     //    端点里写死只认这一个路径，不接受调用方传路径。
     "SITE_CONTENT_PATH": "src/data/site-content.json",
+    // 分类轴（机型 / 传感器），契约 v1.4 的真源。官网 content.config.ts 也从它读。
+    "TAXONOMY_PATH": "src/data/taxonomy.json",
 
     // 🔴 允许进入本后台的邮箱（逗号分隔）。**空 = 拒绝全部**，不是"不限制"。
     // ⚠️ 放在 vars 而不是 secret，是为了**和代码同一次部署**：否则会有一段

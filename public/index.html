@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=18">
+<link rel="stylesheet" href="/style.css?v=19">
 </head>
 <body>
 
@@ -65,7 +65,7 @@
 
     <div class="nav-sec">目录</div>
     <button class="nav-item is-on" data-nav="products">产品<span class="cnt" id="navCount"></span></button>
-    <button class="nav-item" data-nav="cats" title="机型轴：契约冻结，此处只看实况与批量改归属">分类</button>
+    <button class="nav-item" data-nav="cats" title="机型 / 传感器两个轴：增删改 + 谁在用">分类</button>
 
     <div class="nav-sec">内容</div>
     <button class="nav-item" data-nav="media">图片<span class="cnt" id="navMediaCount"></span></button>
@@ -107,8 +107,8 @@
         <span id="batchCount"></span>
         <button type="button" data-bulk="published">批量上架</button>
         <button type="button" data-bulk="draft">批量下架</button>
-        <!-- 机型是产品的**归属**，不是轴本身 —— 改归属在我们的写入范围内（产品 JSON），
-             改轴（增删/改名）不在（那是两个仓的源码）。见分类页的说明。 -->
+        <!-- 机型是产品的**归属**，不是轴本身。两件事都在写入范围内，但是两个文件：
+             归属在产品 JSON，轴本身在 src/data/taxonomy.json（分类页）。 -->
         <select id="bulkCat"><option value="">批量改机型…</option></select>
         <button type="button" class="linkish" id="batchClear">取消选择</button>
         <span class="batch-note">一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
@@ -133,24 +133,59 @@
       <div class="empty" id="listEmpty" hidden></div>
     </section>
 
-    <!-- ══════ 分类（机型轴）══════
-         ⚠️ 与 admin.wanew.com 的分类页不是同一件事：那边机型是官网仓里的一份数据，可改名/排序/增删；
-            这边 category 是契约冻结的枚举，写在两个仓的源码里。⇒ 这一页**没有**"加分类/改名"按钮，
-            而且必须把"为什么没有"写在页面上 —— 否则人会一直找那个按钮。 -->
+    <!-- ══════ 分类（机型 / 传感器 两个轴）══════
+         契约 v1.4 起**可管理**：两个轴的真源是官网仓 src/data/taxonomy.json，后台可增删改。
+         ⚠️ 这一页从前写着"这一轴是冻结的，改轴走总工" —— 那句话已作废，而且**留着它比没有更糟**：
+            人会照它去找总工，而总工会说"你自己在后台改"。
+         🔴 删除在用的取值时官网构建**不会**兜底（实测，见 src/taxonomy.ts 顶部四层实验）
+            ⇒ 这一页的引用计数是唯一防线，它必须准，而且拒绝时必须把"谁在用"列出来。 -->
     <section id="catsView" hidden>
-      <div class="page-head"><h1>分类 <span class="h3sub">机型轴 · category</span></h1></div>
+      <div class="page-head"><h1>分类 <span class="h3sub">机型 category · 传感器 sensors</span></h1></div>
       <div id="catsSummary"></div>
-      <div class="table-wrap">
-        <table class="ptable">
-          <thead><tr>
-            <th>机型</th>
-            <th class="col-st">已上架</th>
-            <th class="col-st">草稿</th>
-            <th class="col-cat">官网筛选栏</th>
-            <th class="col-act"></th>
-          </tr></thead>
-          <tbody id="catsRows"></tbody>
-        </table>
+      <!-- 🔴 写入结果**独占一格**，与上面的实况对账分开。
+           实测过混在一起的样子：一次被拒的提交留在屏幕上，下一次提交的结果叠在它旁边 ——
+           两条关于两次操作的消息同时在场，人只会读离得近的那条。
+           分开之后，"这一格里永远只有最近一次提交的结果"是**结构上成立**的，不靠记得去清。 -->
+      <div id="catsResult"></div>
+      <div class="axiscols">
+        <div class="axisbox">
+          <h2 class="axishead">机型 <span class="h3sub">category · 每个产品一个</span></h2>
+          <div class="table-wrap">
+            <table class="ptable">
+              <thead><tr>
+                <th>机型</th>
+                <th class="col-st">在用</th>
+                <th class="col-cat">官网筛选栏</th>
+                <th class="col-act"></th>
+              </tr></thead>
+              <tbody id="catsRows"></tbody>
+            </table>
+          </div>
+          <form class="axisadd" id="addCategories">
+            <input type="text" name="value" placeholder="取值（英文，如 wall-mounted）" autocomplete="off">
+            <input type="text" name="label" placeholder="显示名（官网上显示的，如 Wall-mounted）" autocomplete="off">
+            <button type="submit" class="primary">新增机型</button>
+          </form>
+        </div>
+
+        <div class="axisbox">
+          <h2 class="axishead">传感器 <span class="h3sub">sensors · 每个产品可多个</span></h2>
+          <div class="table-wrap">
+            <table class="ptable">
+              <thead><tr>
+                <th>传感器</th>
+                <th class="col-st">在用</th>
+                <th class="col-act"></th>
+              </tr></thead>
+              <tbody id="sensorsRows"></tbody>
+            </table>
+          </div>
+          <form class="axisadd" id="addSensors">
+            <input type="text" name="value" placeholder="取值（如 PM1.0、NO2）" autocomplete="off">
+            <input type="text" name="label" placeholder="显示名（留空就用取值本身）" autocomplete="off">
+            <button type="submit" class="primary">新增传感器</button>
+          </form>
+        </div>
       </div>
       <div id="catsNote"></div>
     </section>
@@ -369,7 +404,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=18"></script>
+<script src="/app.js?v=19"></script>
 </body>
 </html>
 

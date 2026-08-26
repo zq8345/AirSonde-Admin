@@ -24,6 +24,11 @@ export interface Env {
    *    端点里写死了只认这一个路径，不接受调用方传路径。
    */
   SITE_CONTENT_PATH?: string;
+  /**
+   * 分类轴（机型 / 传感器）的真源 —— 契约 v1.4。
+   * ⚠️ 后台在官网仓能写的**全部**：PRODUCTS_DIR/*.json + SITE_CONTENT_PATH + 这一个文件。
+   */
+  TAXONOMY_PATH?: string;
   /** 逗号分隔。**空 = 拒绝全部**，不是"不限制"。 */
   ALLOWED_EMAILS?: string;
 
