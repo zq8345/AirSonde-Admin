@@ -37,6 +37,8 @@ const state = {
   siteDraft: null,  // 编辑中的那一份
   siteBase: null,   // 打开时的那一份：改动计数比的是它，不是"敲过几下键盘"
   siteSection: "home",
+  /** /api/_whoami 报回来的部署警告 —— 有它就必须显示横幅（见 applyWriteMode）。 */
+  deployWarnings: [],
   selected: new Set(),        // 批量选中的 slug
   /** 每次成功保存后换成新的 commit sha —— 用来打穿 raw 的 CDN 缓存，见 rawUrl()。 */
   cacheBust: null,
@@ -71,10 +73,15 @@ async function loadWho() {
     line1.append(document.createTextNode(`  ·  ${w.data.repo || "?"}`));
     const line2 = el("div", "muted", `${w.git.shortSha || "无 sha"}${w.git.dirty ? "（脏）" : ""} · ${w.deploy.versionId ? w.deploy.versionId.slice(0, 8) : "本地"} · ${w.request.colo || "-"}`);
     $("#who").append(line1, line2);
-    // ⚠️ warnings 不是给日志看的，是给正在用后台的人看的
-    if (w.warnings?.length) {
-      const b = el("span", "banner-why", "⚠️ " + w.warnings.join("；"));
-      $("#banner").append(b);
+    // ⚠️ warnings 不是给日志看的，是给正在用后台的人看的。
+    // 🔴 A12-1 撤掉常驻横幅时**差点把这些一起藏掉** —— 它们（GIT_SHA 未注入 / 部署时工作区是脏的）
+    //    正是"这一版不可信"的信号，属于**真警告**，不是那条被撤掉的装饰性红字。
+    //    ⇒ 记下来，让 applyWriteMode 决定显隐时把它算进去。
+    state.deployWarnings = w.warnings || [];
+    if (state.deployWarnings.length) {
+      $("#banner").append(el("span", "banner-why", "⚠️ " + state.deployWarnings.join("；")));
+      $("#bannerTitle").textContent = "这一版有问题";
+      $("#bannerText").textContent = "下面这些是部署本身的警告，不是你操作出的错。";
     }
     state.who = w;          // 设置页整页由它渲染 —— 不为同一份事实开第二个端点
     state.repo = w.data.repo; state.branch = w.data.branch;
@@ -88,6 +95,8 @@ async function loadWho() {
     $("#who").textContent = "身份读取失败：" + e.message;
     // 🔴 问不到就**保持"未知"**，绝不默认成"能写"。
     //    默认能写的话，一次网络抖动就会让界面开始说它没有把握的话。
+    // 问不到服务端 ⇒ 这条必须看得见（横幅默认可见，这里显式再兜一次，防止别处藏过它）
+    $("#banner").hidden = false;
     $("#bannerTitle").textContent = "写入能力未知";
     $("#bannerText").textContent = "问不到服务端。在确认之前不要假设这里能保存。";
   }
@@ -100,13 +109,20 @@ function applyWriteMode() {
   // 删除按钮只在真能写时出现 —— 一个点了没反应的删除按钮比没有更糟
   $("#deleteBtn").hidden = !(w.enabled && state.slug);
 
+  // ══ A12-1：能写的时候**不再常驻横幅**（Joe 当面定）══
+  //
+  // 它当初是防"以为在沙盒里点着玩"。Joe 现在天天用这个后台，那条红字已经变成噪音 ——
+  // **一条永远亮着的警告和没有警告是一回事**，它只会把真正该看的东西挤下去。
+  // ⛔ 只撤显示面，**判定逻辑一个字没动**：writeEnabled 仍是真闸，
+  //    删除按钮 / 提交按钮 / 批量条照旧由它决定。
+  // 🔴 写不了的时候**仍然要吼**（下面 else 分支）—— 那才是这条横幅真正的用处：
+  //    "我改了半天存不进去"必须当场有解释，而不是等人自己发现提交按钮不出现。
+  // ⚠️ 有部署警告时**照样显示** —— 那不是被撤掉的那条装饰红字，那是真警告。
   if (w.enabled) {
-    banner.classList.add("banner-live");
-    title.textContent = "写入已开启";
-    text.innerHTML = "保存会<b>真的提交到官网数据仓</b>，并自动触发 airsonde.com 重建。";
-    why.textContent = "提交前先看 diff —— 这是生产数据。";
+    banner.hidden = !(state.deployWarnings || []).length;
     $("#actionsNote").textContent = "先校验预览，确认 diff 之后才会出现提交按钮。";
   } else {
+    banner.hidden = false;
     banner.classList.remove("banner-live");
     title.textContent = "预览模式";
     text.innerHTML = "校验与 diff 都是真的，但<b>不会写入任何文件</b>。";
@@ -567,7 +583,11 @@ function renderImages() {
   setTimeout(() => { try { updateDirty(); } catch {} }, 0);
   const box = $("#imgList");
   if (!box) return;
-  box.innerHTML = "";
+  // ⚠️ 只清卡片，**不能 innerHTML=""** —— 那会把「＋」那一格连同它里面的
+  //    <input type=file> 一起销毁，而事件就绑在那个 input 上（A12-5）。
+  //    销毁重建的话绑定要么丢失、要么每次都得重绑 —— 那正是 wanew「整块重绘」的病。
+  box.querySelectorAll(".icard").forEach((n) => n.remove());
+  const addTile = $("#imgDrop");
   const list = state.imgList || [];
 
   list.forEach((it, i) => {
@@ -629,7 +649,8 @@ function renderImages() {
       renderImages();                          // 换位了才重绘
     });
 
-    box.append(card);
+    // ⚠️ 插在「＋」那一格**之前**，它永远是最后一格
+    box.insertBefore(card, addTile);
   });
 
   const note = $("#mainImgNote");
@@ -640,9 +661,16 @@ function renderImages() {
 async function addImageFiles(files) {
   const arr = [...(files || [])];
   if (!arr.length) return;
-  const drop = $("#imgDrop");
-  const prev = drop ? drop.dataset.state : "";
-  if (drop) { drop.dataset.state = "busy"; drop.querySelector(".imgdrop-t").textContent = `正在转 WebP…（0/${arr.length}）`; }
+  // ⚠️ 投放区是**整个网格**，不只那一格 —— 派单明确要求。
+  //    只绑那一格的话，人把文件拖到缩略图之间会毫无反应，而那看起来像拖拽坏了。
+  // 进度显示在「＋」那一格里 —— 就在人刚点过的地方，不用他去别处找。
+  // ⚠️ 转 WebP 是会卡几秒的一段，多选十几张更明显。不报进度的话，
+  //    人会以为点了没反应，然后再点一次。
+  const tile = $("#imgDrop");
+  const plus = tile ? tile.querySelector(".iadd-plus") : null;
+  const setTip = (t) => { if (plus) plus.textContent = t; };
+  if (tile) tile.dataset.busy = "1";
+  setTip(`0/${arr.length}`);
   try {
     for (let k = 0; k < arr.length; k++) {
       const { blob, quality, w, h } = await toWebp(arr[k]);
@@ -650,13 +678,14 @@ async function addImageFiles(files) {
         kind: "new", base64: await blobToBase64(blob),
         url: URL.createObjectURL(blob), size: blob.size, quality, w, h,
       });
-      if (drop) drop.querySelector(".imgdrop-t").textContent = `正在转 WebP…（${k + 1}/${arr.length}）`;
+      setTip(`${k + 1}/${arr.length}`);
       renderImages();
     }
   } catch (e) {
     renderIssues({ ok: false, errors: [{ field: "图片", code: "image", message: e.message }], warnings: [] });
   } finally {
-    if (drop) { drop.dataset.state = prev || ""; drop.querySelector(".imgdrop-t").textContent = "＋ 添加图片"; }
+    if (tile) delete tile.dataset.busy;
+    setTip("＋");
   }
 }
 
@@ -1627,7 +1656,9 @@ $("#f_name").addEventListener("input", () => {
 // ── 图片：多选 + 拖文件进来 ──
 $("#f_imgfile").onchange = (e) => { const f = e.target.files; e.target.value = ""; addImageFiles(f); };
 {
-  const drop = $("#imgDrop");
+  // ⚠️ 投放区是**整个网格**，不只那一格 —— 派单明确要求。
+  //    只绑那一格的话，人把文件拖到缩略图之间会毫无反应，而那看起来像拖拽坏了。
+  const drop = $("#imgList");
   // ⚠️ dragover 只切一个 class，绝不重绘 —— 它每秒触发几十次
   ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
     if (state.dragFrom != null) return;              // 拖的是卡片换位，不是文件

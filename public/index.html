@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=7">
+<link rel="stylesheet" href="/style.css?v=10">
 </head>
 <body>
 
@@ -260,12 +260,17 @@
                 放 alt 的位置 —— 做了就是第二个 moq，而这一单正在删掉第一个）。 -->
         <section class="card">
           <h3>产品图片 <span class="h3sub">第一张即主图 · 可拖动排序</span></h3>
-          <div class="imglist" id="imgList"></div>
-          <label class="imgdrop" id="imgDrop">
-            <input type="file" id="f_imgfile" accept="image/*" multiple hidden>
-            <span class="imgdrop-t">＋ 添加图片</span>
-            <span class="imgdrop-s">点击选择，或把图片拖到这里 · 可多选 · 自动转 WebP、≤2MB</span>
-          </label>
+          <!-- A12-5：添加入口是**网格里的最后一格**，尺寸与缩略图一致，就一个「+」。
+               原来那个整宽大虚线框占了半屏，而它承担的信息量只有"点这里加图"。
+               ⚠️ 投放区是**整个网格**（含这一格），不只这一格 —— 见 app.js 的 drop 绑定。
+               ⚠️ 一张图都没有时这一格仍然在，且要看得出是"点这里加图"。 -->
+          <div class="imglist" id="imgList">
+            <label class="iadd" id="imgDrop" title="点击选择图片，或把图片拖进来">
+              <input type="file" id="f_imgfile" accept="image/*" multiple hidden>
+              <span class="iadd-plus">＋</span>
+            </label>
+          </div>
+          <p class="hint imglimits">可多选 · 自动转 WebP · 单张 ≤2MB · <b>第一张是封面</b>，拖动可换序</p>
         </section>
 
         <section class="card">
@@ -362,7 +367,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=7"></script>
+<script src="/app.js?v=10"></script>
 </body>
 </html>
 

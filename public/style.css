@@ -398,10 +398,14 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 @media (max-width: 1100px) { .edit-col-side { position: static; } }
 
 /* ══ A10-R1：单一图片列表（第一张即主图）══ */
-.imglist { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+/* --tile：网格每一格的高度。**这个数字只写这一处**，缩略图卡与「＋」格都引用它 ——
+   两边各写一份的话，改了一处另一处就错位 4px，而那种歪没人会立刻归因到 CSS。
+   ⚠️ 本来想用 align-self:stretch 让「＋」自动跟着卡片走，实测**没生效**
+      （去掉 min-height 后它是 113 而不是卡片的 120）⇒ 不跟它较劲，改成单一真源。 */
+.imglist { --tile: 120px; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .imglist:empty { margin-bottom: 0; }
 .icard {
-  position: relative; width: 116px; border: 1px solid var(--line); border-radius: var(--radius);
+  position: relative; width: 116px; height: var(--tile); border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg); padding: 6px; cursor: grab; user-select: none;
 }
 .icard:active { cursor: grabbing; }
@@ -424,15 +428,26 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
   display: block; margin-top: 5px; font-family: var(--mono); font-size: 10.5px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* 投放区：点它选文件，也可以把文件拖进来 */
-.imgdrop {
-  display: flex; flex-direction: column; gap: 3px; align-items: center; justify-content: center;
-  padding: 16px; border: 1.5px dashed var(--line); border-radius: var(--radius);
-  cursor: pointer; text-align: center; background: var(--bg);
+/* A12-5：添加入口 = 网格里的最后一格，尺寸与缩略图一致，就一个「＋」。
+   ⚠️ 原来是缩略图下面一个整宽大虚线框，占了半屏 —— 而它承担的信息量只有"点这里加图"。
+   ⚠️ 一张图都没有时它仍然在（它是网格里唯一的一格），且要看得出是可点的。 */
+.iadd {
+  width: 116px; flex: 0 0 auto;
+  /* ⚠️ 高度**不写死**：用 stretch 跟着同一行里最高的卡片走。
+     写死 116 的话，卡片底下那行文件名让它变成 120 —— 底边差 4px，网格看起来是歪的。
+     而写死的数字还会在将来卡片改高时**再错一次**，且没人会想到回来改这里。 */
+  height: var(--tile);
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px dashed var(--line); border-radius: var(--radius);
+  background: var(--bg); cursor: pointer; color: var(--muted);
 }
-.imgdrop:hover, .imgdrop.is-over { border-color: var(--accent); background: var(--accent-soft); }
-.imgdrop-t { font-weight: 600; font-size: 13.5px; }
-.imgdrop-s { font-size: 11.5px; color: var(--muted); }
+.iadd:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.iadd-plus { font-size: 26px; line-height: 1; font-weight: 300; }
+.iadd[data-busy] { border-color: var(--accent); color: var(--accent); }
+.iadd[data-busy] .iadd-plus { font-size: 15px; font-family: var(--mono); }
+/* 拖文件进来时整个网格高亮 —— 投放区是整个网格，不只那一格 */
+.imglist.is-over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: var(--radius); }
+.imglimits { margin-top: 8px; }
 
 /* ══ A10：「更多（选填）」折叠区 ══
    新建时收起、编辑时由 JS 打开。用原生 <details>：零 JS 也能开合，键盘天然可达。 */
