@@ -85,8 +85,26 @@ if (isCI) {
   }
 }
 
+// 🔴 工作区不干净 ⇒ **拒绝部署**（总工 2026-08-26 立的规矩，这里把它变成机制）。
+//
+// 为什么必须是闸而不是一句 warning：`wrangler deploy` 发的是**工作区**，不是某个 commit。
+// 于是"手上有一块改到一半的活" + "顺手发一下已验收的那个 commit" = **半成品直接上生产**，
+// 而版本戳上只会多一个 dirty=1 —— 没有人会因为那个字段去回滚。
+// ⚠️ **规矩不是机制**：一条只写在消息里的纪律，撑不过一次"就这一次，很急"。
+//
+// 逃生口是**显式的**：真有急事时带 ALLOW_DIRTY_DEPLOY=1，那一次会在日志里留痕。
 if (dirty === "1") {
-  console.warn(`⚠️ 工作区有未提交改动 —— 本次部署的字节无法由 ${sha.slice(0, 7)} 还原。/api/_whoami 会带 warning 标出来。`);
+  if (process.env.ALLOW_DIRTY_DEPLOY === "1") {
+    console.warn("⚠️ 工作区不干净，但 ALLOW_DIRTY_DEPLOY=1 —— 放行。");
+    console.warn(`   本次部署的字节**无法**由 ${sha.slice(0, 7)} 还原；/api/_whoami 会带 warning 标出来。`);
+  } else {
+    console.error("🔴 拒绝部署：工作区有未提交改动。");
+    console.error(`   wrangler 发的是**工作区**、不是 ${sha.slice(0, 7)} ⇒ 手上改到一半的东西会一起上生产。`);
+    console.error("   未提交的文件：");
+    for (const line of String(porcelain || "").split("\n").filter(Boolean)) console.error("     " + line);
+    console.error("   ⇒ 先 commit 或 stash；确实要带着脏工作区发，显式加 ALLOW_DIRTY_DEPLOY=1。");
+    process.exit(1);
+  }
 }
 
 const vars = {
