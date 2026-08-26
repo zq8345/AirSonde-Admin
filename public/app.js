@@ -126,7 +126,7 @@ function applyWriteMode() {
   // ⚠️ 有部署警告时**照样显示** —— 那不是被撤掉的那条装饰红字，那是真警告。
   if (w.enabled) {
     banner.hidden = !(state.deployWarnings || []).length;
-    $("#actionsNote").textContent = "先校验预览，确认 diff 之后才会出现提交按钮。";
+    $("#actionsNote").textContent = "点「保存」后会先让你确认一遍，确认了才真的写。";
   } else {
     banner.hidden = false;
     banner.classList.remove("banner-live");
@@ -390,9 +390,31 @@ const cache = new Map();
  *   ⚠️ 原来它落在默认的「详情」tab —— 按钮说编辑、进的是详情，
  *      **按钮名与它做的事对不上**，是最容易让人以为自己点错了的一种。
  */
+/**
+ * 离开一个产品时要清掉的**全部**面板与状态 —— 收在一处（A12 追加①）。
+ *
+ * 🔴 Joe 实测：在「新建产品」页点「详情」，看到的是**上一个产品的全部字段，包括 supplierRef**。
+ *    根因是 `startNew()` 从不清 `#viewPane`。
+ * ⚠️ 但那**不止一处** —— 我按总工的提醒系统排查了一遍，实测还有两个：
+ *      · `#preview` 残留 1036 字符（虽然 hidden，但内容还在：谁一 un-hide 就露出上一个产品的 diff）
+ *      · `state.lastValidation` 残留（切 tab 会拿它重画 —— 画的是上一个产品的提示）
+ * ⇒ 所以不逐个补洞：**"离开一个产品该清什么"只写在这一个函数里**，
+ *   select() 和 startNew() 都调它。以后新增一个面板，只需要在这里加一行 ——
+ *   而漏加的话两条路径**一起**漏，不会出现"编辑页清了、新建页没清"这种半修状态。
+ */
+function clearProductPanes() {
+  $("#viewPane").innerHTML = "";
+  const pv = $("#preview"); pv.innerHTML = ""; pv.hidden = true;
+  $("#issues").innerHTML = "";
+  clearFieldIssues();
+  state.lastValidation = undefined;
+  state.lastPreview = null;
+}
+
 async function select(slug, opts = {}) {
   state.slug = slug; state.isNew = false;
   resetPending();                       // 换产品必须清空待上传，否则上一份的图会跟过来
+  clearProductPanes();                  // ⚠️ 上一份的预览/diff/提示也一样要清
   $("#deleteBtn").hidden = !state.write?.enabled;
   $("#listView").hidden = true; $("#detailView").hidden = false;
   $("#preview").hidden = true;
@@ -427,6 +449,7 @@ async function select(slug, opts = {}) {
   // 编辑一个已存在的产品：**不简化**，全部展开。slug 也不再跟随标题（它已经是 URL 了）。
   state.slugTouched = true;
   setFormMode(false);
+  setPreviewTabEnabled(true);
   if (opts.view === "edit") switchView("edit");
   renderList();
 }
@@ -443,6 +466,9 @@ async function select(slug, opts = {}) {
  */
 function setFormMode(isNew) {
   const pane = $("#editPane");
+  // ⚠️ 进入某一态时就把主按钮文案设对 —— 只在校验完才更新的话，
+  //    人第一眼看到的是上一态的词（新建页写着"保存"、编辑页写着"保存草稿"）。
+  const sb = $("#previewBtn"); if (sb) sb.textContent = isNew ? "保存草稿" : "保存";
   pane.classList.toggle("is-new", isNew);
   pane.classList.toggle("is-edit", !isNew);
   // status 只在编辑态出现：新建的东西必然还没核过图，
@@ -463,6 +489,7 @@ function slugify(s) {
 function startNew() {
   state.isNew = true; state.slug = null; state.loaded = null;
   resetPending();
+  clearProductPanes();
   state.slugTouched = false;            // 新建时 slug 跟随标题，直到人自己动它
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
   $("#f_slug").readOnly = false;
@@ -473,8 +500,19 @@ function startNew() {
   state.draft = { sensors: [], images: {}, status: "draft" };
   fillForm(state.draft);
   setFormMode(true);
+  // 🔴 新建态**没有预览可言** —— 东西还不存在。留着那个 tab 只会让人点进一个
+  //    要么空、要么装着上一个产品的面板。禁用它，比清空它更诚实。
+  setPreviewTabEnabled(false);
   switchView("edit");
   renderList();
+}
+
+/** 「预览」tab 能不能点。新建态不能 —— 还不存在的东西没有预览。 */
+function setPreviewTabEnabled(on) {
+  const t = document.querySelector('.tab[data-view="view"]');
+  if (!t) return;
+  t.disabled = !on;
+  t.title = on ? "" : "新建的产品还没有内容可预览 —— 先保存草稿";
 }
 
 // ═══════════════ 校验结果 ═══════════════
@@ -961,11 +999,21 @@ function buildEnvelope(extra = {}) {
 }
 
 // ═══════════════ 预览（dry-run）═══════════════
+/**
+ * 主按钮的文案（A12 追加③）。
+ *
+ * 🔴 闸没变：仍是"点它 → 校验 + 展示将要写入的内容 → 再点确认才真写"。
+ *    变的是**措辞**：原来叫「校验并预览」——那是在描述**机制**，而人找的是「保存」。
+ *    而且新建时根本没有 diff 可言（新文件），"预览 diff"这个概念对新建态本就不成立。
+ * ⚠️ 新建与编辑**各说各的**，⛔ 不用同一句话硬套两种情形。
+ */
+const saveBtnLabel = () => (state.isNew ? "保存草稿" : "保存");
+
 async function doPreview(e) {
   e.preventDefault();
   const btn = $("#previewBtn");
   const slug = state.isNew ? ($("#f_slug").value.trim() || "unnamed") : state.slug;
-  btn.disabled = true; btn.textContent = "校验中…";
+  btn.disabled = true; btn.textContent = "检查中…";
   try {
     const { body } = await api(`/api/products/${encodeURIComponent(slug)}/preview`, {
       method: "POST",
@@ -978,7 +1026,7 @@ async function doPreview(e) {
     renderIssues({ ok: false, errors: [{ field: "(请求)", code: "failed", message: err.message }], warnings: [] });
     $("#preview").hidden = true;
   } finally {
-    btn.disabled = false; btn.textContent = "校验并预览（不会保存）";
+    btn.disabled = false; btn.textContent = saveBtnLabel();
   }
 }
 
@@ -1002,7 +1050,9 @@ function renderPreview(r) {
     wrap.append(mkNotice("bad", `契约校验未通过（${r.validation.errors.length} 个错误），这份内容不允许写入。上方已逐条列出。`));
   } else {
     wrap.append(mkNotice("ok", state.write?.enabled
-      ? "契约校验通过。以下是将要写入的改动 —— **确认无误后再点下面的提交**。"
+      ? (state.isNew
+          ? "契约校验通过。以下是**将要创建的文件** —— 确认无误后点下面的按钮。"
+          : "契约校验通过。以下是**将要写入的改动** —— 确认无误后点下面的按钮。")
       : "契约校验通过。以下是将要写入的改动 —— 但当前无法写入。"));
   }
 
@@ -1037,10 +1087,13 @@ function renderPreview(r) {
     wrap.append(d);
   }
 
-  // ⚠️ 完整内容必须可取走：本阶段存不了，如果连内容都拿不出来，
+  // ⚠️ 完整内容必须可取走：万一保存失败或写能力没开，如果连内容都拿不出来，
   //    人编辑了半小时的东西就真的没了。
   const det = el("details", "raw");
-  det.append(el("summary", null, "完整内容（本阶段存不了，可以复制走）"));
+  // 🔴 原来这里写的是「本阶段存不了，可以复制走」—— 那是写入还没开启时的话，
+  //    **早就过时了**（现在写得了）。界面上一句过时的话比没有更坏：
+  //    人会照着它调整自己的做法（"那我复制出去手动改吧"）。
+  det.append(el("summary", null, "完整内容（可复制走）"));
   const pre = el("pre", null, r.wouldWrite.text);
   det.append(pre);
   wrap.append(det);
@@ -1050,11 +1103,14 @@ function renderPreview(r) {
   //    而真实情况是这份内容根本不允许提交。不该出现的东西就不要出现。
   if (state.write?.enabled && r.validation.ok && !r.change.identical) {
     const bar = el("div", "commit-bar");
-    const btn = el("button", "primary", `提交到数据仓（${r.target.exists ? "更新" : "新建"} ${r.target.path.split("/").pop()}）`);
+    // ⚠️ 这一步**没有被去掉**，只是名字从"提交"改成"确认保存并上线" ——
+    //    它写的是生产数据且会触发官网重建，写前看一眼是真价值。
+    const btn = el("button", "primary", "确认保存并上线");
     btn.type = "button";
     btn.onclick = () => doCommit(r, btn);
     bar.append(btn);
-    bar.append(el("span", "actions-note", "提交会产生一次 commit 并触发 airsonde.com 重建。"));
+    bar.append(el("span", "actions-note",
+      `${r.target.exists ? "更新" : "新建"} ${r.target.path.split("/").pop()} —— 会产生一次 commit 并触发 airsonde.com 重建。`));
     wrap.append(bar);
   } else {
     wrap.append(mkNotice("warn", r.note + `（写能力：${r.writeCapability}）`));
@@ -1120,6 +1176,10 @@ function mkNotice(kind, msg) {
 
 // ═══════════════ 视图切换 / 事件 ═══════════════
 function switchView(v) {
+  // ⚠️ 守一道：被禁用的 tab 不许切过去。只把按钮设成 disabled 是不够的 ——
+  //    别处（如恢复上次状态）仍可能直接调 switchView("view")。
+  const t = document.querySelector(`.tab[data-view="${v}"]`);
+  if (t && t.disabled) return;
   state.activeView = v;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.view === v));
   $("#viewPane").hidden = v !== "view";
@@ -1813,7 +1873,17 @@ $("#f_name").addEventListener("input", () => {
 });
 
 // ── 图片：多选 + 拖文件进来 ──
-$("#f_imgfile").onchange = (e) => { const f = e.target.files; e.target.value = ""; addImageFiles(f); };
+// 🔴 **先拷成真数组，再清 input** —— 顺序反了就是一个静默失效的上传。
+//    `input.files` 是**活的 FileList**：`input.value = ""` 会把已经拿到手的那个引用
+//    一起清空（实测：清空前 length=1，清空后同一个引用 length=0）⇒
+//    addImageFiles 收到空数组，什么都不做，**界面上毫无反应也毫无报错**。
+//    ⚠️ 这个 bug 是 A12-5 重构入口时我自己引入的，已经上了生产（afd3b26 起）。
+//    清 value 本身是必要的：不清的话连续选同一个文件不会再触发 change。
+$("#f_imgfile").onchange = (e) => {
+  const files = [...e.target.files];   // ← 快照
+  e.target.value = "";                 // ← 之后才清
+  addImageFiles(files);
+};
 {
   // ⚠️ 投放区是**整个网格**，不只那一格 —— 派单明确要求。
   //    只绑那一格的话，人把文件拖到缩略图之间会毫无反应，而那看起来像拖拽坏了。
