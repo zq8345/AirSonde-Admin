@@ -300,7 +300,10 @@ function renderList() {
       n.append(siteLink(it.slug, it.status, it.name || it.slug));
       // 校验有问题的要在列表上就看得见，而不是点进去才发现
       if (!it.valid) n.append(el("span", "flag-bad", `${it.errorCount} 个错误`));
-      else if (it.warnCount) n.append(el("span", "flag-warn", `${it.warnCount} 提示`));
+      // ⛔ 黄色的「N 提示」角标已撤（总工 2026-08-26）：23 个产品里几乎每个都有，
+      //    一个 100% 命中的信号零区分信息 —— 它只是把红色那几个淹掉。
+      //    🔴 撤的是**这一块**，不是这一类：红色「N 个错误」保留，
+      //       服务端的 warnCount / actionableWarnCount 一个字不动（详情页仍在用）。
       // model 已独立成列，这里只留 slug
       tdName.append(n, el("div", "li-sub", it.slug));
     }
@@ -1805,7 +1808,12 @@ function renderAxis(axis, tb, items, good) {
 
     const tdName = el("td");
     tdName.append(el("div", "li-name", it.label || it.value));
-    tdName.append(el("div", "li-sub", it.value));
+    // ⚠️ 显示名与取值**逐字节相同**时只显示一次。传感器那栏 14 行现在几乎全是
+    //    `CO2 / CO2` 这样把同一个串印两遍 —— 重复的字符串不携带信息，
+    //    只是把真正有区别的那几行（如 `Wall-mounted / wall-mounted`）淹掉。
+    // ⚠️ 判据是"逐字节相同"，不是"忽略大小写相同"：`Desktop` 与 `desktop` 不是一回事，
+    //    进产品 JSON 和官网 URL 的是小写那个，看得见它才不会照着显示名去填。
+    if (it.label && it.label !== it.value) tdName.append(el("div", "li-sub", it.value));
     tr.append(tdName);
 
     // 在用数取服务端的 refCount（此刻仓里的真相），不是前端 state.list 的再数一遍。
@@ -1846,7 +1854,11 @@ function renderAxis(axis, tb, items, good) {
       if (!it.canDelete) {
         // ⚠️ 禁用**必须带原因**：一个灰掉的按钮什么也没告诉人，人只会以为后台坏了。
         bDel.disabled = true;
-        bDel.title = it.refCount
+        // 🔴 title 挂在 **td 上，不挂在按钮上**：`disabled` 的按钮在 Chrome 里
+        //    不接收指针事件，挂在它自己身上的 title 很可能永远不出现 ——
+        //    那就成了"我以为写了说明，屏幕上其实什么都没有"。
+        //    挂在 td 上，命中测试落到 td，说明跟着鼠标走。
+        tdAct.title = it.refCount
           ? `还有 ${it.refCount} 个产品在用：${it.refs.join("、")}`
           : "有产品读不出来，此刻数不准谁在用 —— 任何删除都先拒绝";
       } else {

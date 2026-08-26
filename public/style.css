@@ -211,7 +211,25 @@ input.bad, select.bad { border-color: var(--danger); background: var(--danger-so
 
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 button.primary { background: var(--accent); color: #fff; border: 0; padding: 8px 15px; border-radius: 6px; font: inherit; font-weight: 550; cursor: pointer; }
-button.primary:disabled { opacity: .5; cursor: default; }
+/* 🔴 禁用外观是**全局**的，不挑类名 —— 这是第三次栽在同一个形状上了：
+   ① 批量条的 `hidden` 被 `.batchbar{display:flex}` 顶掉（属性对、屏幕反）
+   ② `.thumb-sm{40px}` 写在 `.thumb{110px}` 前面，同特异性 ⇒ 后者赢，40 从没生效
+   ③ 分类页 14 个 `disabled` 的删除按钮 —— 全表唯一的禁用样式是 `button.primary:disabled`，
+      而它们是 `.linkish.danger` ⇒ **红边红字、cursor:pointer，与能点的一模一样**。
+      实测计算样式：禁用的与可用的完全相同（opacity 1 / rgb(180,35,24) / pointer）。
+   共同点：逻辑对、属性对、屏幕上是反的，而且都不报错。
+   ⛔ 不要只给 `.danger` 补一条 —— 那是第四次的伏笔。判据挂在 `:disabled` 本身。
+   ⚠️ 用 grayscale 而不是直接改 color：`.primary:disabled` 是白字蓝底，
+      全局改 color 会把它变成灰字蓝底（读不出来）。grayscale 对两种配色都成立。
+
+   🔴 `!important` 不是偷懒 —— 是**实测**出来的：不加的话 `cursor` 这一条仍然输。
+      `button:disabled` 与下面的 `button.danger{cursor:pointer}` **特异性同为 (0,1,1)**，
+      而后者写在后面 ⇒ 平局后者赢，禁用的删除按钮照样是"手指"光标。
+      这就是 `.thumb-sm` 那个病的第三个变种：**把规则写在文件靠前处并不能保护它**。
+      ⇒ 与 `[hidden]` 那条同样处理：禁用是**状态**，任何普通规则都不该盖得过它。 */
+button:disabled, [disabled] {
+  opacity: .5 !important; filter: grayscale(1) !important; cursor: not-allowed !important;
+}
 .actions button:not(.primary) { background: var(--bg); border: 1px solid var(--line); color: var(--text); padding: 8px 13px; border-radius: 6px; font: inherit; cursor: pointer; }
 .actions-note { font-size: 12px; color: var(--muted); }
 
@@ -323,7 +341,9 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 .li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 .li-sub.bad { color: var(--danger); }
 .flag-bad { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--danger-soft); color: var(--danger); }
-.flag-warn { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+/* ⛔ `.flag-warn` 已删（黄色「N 提示」角标撤掉，2026-08-26）。
+   留一条没人用的规则不是"以防万一"，是给下一个人埋雷：`.topbar` 那条死规则在这个仓里
+   躺了很久，我一加顶栏它当场复活并覆盖了我的 padding。用不上就删。 */
 .linkish { background: none; border: 0; padding: 2px 6px; color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; }
 .linkish:hover { text-decoration: underline; }
 
