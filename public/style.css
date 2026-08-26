@@ -498,3 +498,39 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .mcard .gtag { white-space: normal; line-height: 1.35; }
 /* 未被引用的压黄边 —— 但**只是提示**，界面不提供一键删除 */
 .mcard.is-orphan .thumb { border-color: var(--warn); background: var(--warn-soft); }
+
+/* ══ A12：详情/编辑页顶部并成一行 ══
+   原来「← 返回列表」在左、「详情|编辑」在右、标题另起一整块 —— 三样东西占三行高度，
+   而每次真正要用的只有一个按钮。并成一行。 */
+.detail-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.detail-bar h2 { margin: 0; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 字段级提示：贴在它所属的输入框正下方，而不是堆在顶部 */
+.field-issue { color: var(--warn); margin-top: 5px; }
+
+/* ══ A12-4：预览态 —— 接近官网产品页，不是字段表 ══
+   ⚠️ 目标是"看得出是不是对的"，不是"看起来一样"（官网样式会变，追了也守不住）。 */
+.pv { max-width: 760px; }
+.pv-hero { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pv-hero img { width: 100%; height: 100%; object-fit: contain; }
+.pv-strip { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.pv-thumb { width: 72px; height: 72px; border: 1px solid var(--line); border-radius: 5px;
+  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pv-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.pv-noimg { padding: 28px; text-align: center; color: var(--warn); background: var(--warn-soft);
+  border-radius: var(--radius); font-size: 13px; }
+.pv-title { font-size: 24px; margin: 18px 0 6px; line-height: 1.3; }
+.pv-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.pv-cat { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.pv-model { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.pv-sec { margin-top: 22px; }
+.pv-h3 { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em;
+  text-transform: uppercase; margin: 0 0 8px; }
+.pv-list { margin: 0; padding-left: 20px; line-height: 1.8; }
+.pv-specs { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pv-specs th { text-align: left; font-weight: 500; color: var(--muted); padding: 7px 10px 7px 0;
+  border-bottom: 1px solid var(--line); width: 34%; }
+.pv-specs td { padding: 7px 0; border-bottom: 1px solid var(--line); }
+/* 🔴 内部信息区**必须与预览区在视觉上分开** —— 否则"预览"这个词就是假的：
+   这里的东西官网上一个都看不到。 */
+.pv-internal { margin-top: 34px; padding-top: 18px; border-top: 2px dashed var(--line); max-width: 760px; }

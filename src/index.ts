@@ -13,7 +13,7 @@ import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
-  validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount,
+  validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount, INFO_CODES,
   CATEGORIES, SENSORS, STATUSES,
 } from "./contract";
 import { summarizeDiff } from "./diff";
@@ -908,7 +908,13 @@ app.get("/api/categories", async (c) => {
 // 契约的机器可读形态：界面用它渲染下拉框/多选框，避免枚举在前端被抄第二份。
 // ⚠️ 前端硬编码一份枚举 = 第二个真源：契约改了，界面不会跟着变，而它看起来一切正常。
 app.get("/api/contract", (c) =>
-  c.json({ version: "C1 v1", categories: CATEGORIES, sensors: SENSORS, statuses: STATUSES }));
+  c.json({
+    version: "C1 v1", categories: CATEGORIES, sensors: SENSORS, statuses: STATUSES,
+    // ⚠️ 判据落在**集合**上，界面不抄第二份：哪些 warning 属于"状态说明、不是待办"
+    //    由契约说了算。界面写 `if (code === "internal_field")` 的话，
+    //    下一个加同类 warning 的人不会知道有这条规矩。
+    infoCodes: [...INFO_CODES],
+  }));
 
 // ⭐ 没匹配上的路径 → 交给静态资源（界面在 public/）。
 //

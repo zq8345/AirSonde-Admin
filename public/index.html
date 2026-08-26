@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=12">
+<link rel="stylesheet" href="/style.css?v=15">
 </head>
 <body>
 
@@ -211,19 +211,16 @@
 
     <!-- ══════ 详情 / 编辑视图 ══════ -->
     <section id="detailView" hidden>
-      <div class="page-head">
-        <button type="button" class="linkish" id="backBtn">← 返回列表</button>
+      <!-- A12 顶部压缩：返回 + tab + 标题**并成一行**（原来返回在左、tab 在右、标题另起一块）。
+           ⛔ 文件路径 src/content/products/xxx.json 撤出顶部 —— Joe 不看仓，对他没用。
+              它挪到详情态底部的内部信息区（见 renderView）。 -->
+      <div class="detail-bar">
+        <button type="button" class="linkish" id="backBtn">← 返回</button>
         <div class="tabs">
-          <button type="button" class="tab is-on" data-view="view">详情</button>
+          <button type="button" class="tab is-on" data-view="view">预览</button>
           <button type="button" class="tab" data-view="edit">编辑</button>
         </div>
-      </div>
-
-      <div class="detail-head">
-        <div>
-          <h2 id="dTitle">—</h2>
-          <div class="path muted" id="dPath"></div>
-        </div>
+        <h2 id="dTitle">—</h2>
       </div>
 
       <div id="issues"></div>
@@ -370,7 +367,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=12"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>
 

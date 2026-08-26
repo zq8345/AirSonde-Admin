@@ -37,6 +37,12 @@ const state = {
   siteDraft: null,  // 编辑中的那一份
   siteBase: null,   // 打开时的那一份：改动计数比的是它，不是"敲过几下键盘"
   siteSection: "home",
+  /** 当前详情页 tab（view | edit）。提示贴在顶部还是字段旁，取决于它。 */
+  activeView: "view",
+  /** 最近一次校验结果 —— 切 tab 时用它重画提示，不重新校验。 */
+  lastValidation: undefined,
+  /** 数据文件在仓里的路径。⚠️ 不再显示在顶部（Joe 不看仓）—— 收进详情态底部的内部信息区。 */
+  filePath: "",
   /** /api/_whoami 报回来的部署警告 —— 有它就必须显示横幅（见 applyWriteMode）。 */
   deployWarnings: [],
   selected: new Set(),        // 批量选中的 slug
@@ -391,14 +397,14 @@ async function select(slug, opts = {}) {
   $("#listView").hidden = true; $("#detailView").hidden = false;
   $("#preview").hidden = true;
   $("#dTitle").textContent = slug;
-  $("#dPath").textContent = "读取中…";
+  state.filePath = "读取中…";
   renderList();
 
   const { status, body } = await api(`/api/products/${encodeURIComponent(slug)}`);
   state.loaded = body;
 
   if (status === 422) {
-    $("#dPath").textContent = body.path || "";
+    state.filePath = body.path || "";
     renderIssues({ ok: false, errors: [{ field: "(文件)", code: "invalid_json", message: body.hint + " " + body.parseError }], warnings: [] });
     $("#viewPane").innerHTML = ""; $("#editPane").hidden = true;
     return;
@@ -410,7 +416,7 @@ async function select(slug, opts = {}) {
   //    刚改完 slug 还没提交时，官网上仍是旧那页，跟着新值走会指向一个不存在的地址。
   $("#dTitle").textContent = "";
   $("#dTitle").append(siteLink(state.slug, p.status, p.name || slug));
-  $("#dPath").textContent = body.path;
+  state.filePath = body.path;
 
   const v = body.validation || { ok: true, errors: [], warnings: [] };
   if (body.slugPathIssue) v.errors = [...v.errors, body.slugPathIssue];
@@ -462,7 +468,7 @@ function startNew() {
   $("#f_slug").readOnly = false;
   $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
   $("#dTitle").textContent = "新建产品";
-  $("#dPath").textContent = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
+  state.filePath = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
   renderIssues(null);
   state.draft = { sensors: [], images: {}, status: "draft" };
   fillForm(state.draft);
@@ -472,15 +478,59 @@ function startNew() {
 }
 
 // ═══════════════ 校验结果 ═══════════════
+/** 哪个字段的提示贴到哪个输入框下面。不在表里的留在顶部。 */
+const FIELD_ANCHOR = { model: "f_model", name: "f_name", slug: "f_slug", category: "f_category", sensors: "f_sensors" };
+
+function clearFieldIssues() {
+  document.querySelectorAll(".field-issue").forEach((n) => n.remove());
+}
+
+/**
+ * 顶部只留**真正需要占那个位置**的东西。
+ *
+ * 🔴 两条都是"100% 命中的提示零区分信息"这同一个病（我们刚在列表 badge 上修过）：
+ *    ① `INFO_CODES` 里的（当前是 `internal_field`）**不进顶部** —— 23 个产品全都有
+ *       supplierRef ⇒ 它在详情页也是永远亮着。而编辑页 supplierRef 输入框旁边
+ *       **本来就有一句红字**说同样的事，顶部这条是纯重复。
+ *       ⚠️ 判据落在**集合**上（服务端 /api/contract 给的 infoCodes），
+ *          ⛔ 不写 `if (code === "internal_field")` —— 那把判据藏在了消费端。
+ *       ⚠️ 输入框旁那句红字**保留**：它在人真要粘链接的地方，那才是它该在的位置。
+ *    ② 字段级的提示**贴到那个字段的输入框下面**（如 model 那条是 Joe 的待办信号，
+ *       改完就消失，但不该占顶部一整条）。
+ * ⇒ 顶部最终只剩：错误、以及找不到归属控件的提示。
+ */
 function renderIssues(v) {
+  // ⚠️ 记下来：提示"贴在哪里"取决于**当前在哪个 tab**，而 tab 是会切的 ⇒
+  //    切 tab 时要能用同一份结果重画一次（见 switchView）。
+  if (v !== undefined) state.lastValidation = v;
   const box = $("#issues"); box.innerHTML = ""; box.className = "issues";
+  clearFieldIssues();
   if (!v) return;
-  if (v.ok && !v.warnings.length) {
+
+  const info = new Set(state.contract?.infoCodes || []);
+  const warns = (v.warnings || []).filter((i) => !info.has(i.code));
+
+  if (v.ok && !warns.length) {
+    // ⚠️ 只在**没有任何要处理的东西**时说"通过" —— 有 info 类提示时也算通过，
+    //    它们不是待办。但那句"通过"不该顶掉别的内容，所以放最小形态。
     box.append(mkIssue("ok", "", "契约校验通过。"));
-    return;
   }
+
   v.errors.forEach((i) => box.append(mkIssue("error", i.field, i.message)));
-  v.warnings.forEach((i) => box.append(mkIssue("warn", i.field, i.message)));
+
+  warns.forEach((i) => {
+    const anchorId = FIELD_ANCHOR[i.field];
+    const anchor = anchorId ? document.getElementById(anchorId) : null;
+    // 编辑态才有输入框可贴；详情（预览）态贴不了就回到顶部
+    // ⛔ 不用 offsetParent 判可见（这一单已反复证明它判不准）；
+    //    这里要问的本来也不是"现在可见吗"，而是**"当前是不是编辑态"** —— 用 state 判。
+    if (anchor && state.activeView === "edit") {
+      const n = appendMd(el("p", "hint field-issue"), "⚠️ " + i.message);
+      anchor.insertAdjacentElement("afterend", n);
+    } else {
+      box.append(mkIssue("warn", i.field, i.message));
+    }
+  });
 }
 
 /**
@@ -506,52 +556,93 @@ function mkIssue(kind, field, msg) {
 }
 
 // ═══════════════ 详情视图 ═══════════════
+/**
+ * 「预览」态 —— **接近官网产品页的排版**，不是字段表（A12-4）。
+ *
+ * 🔴 为什么不 iframe 官网：
+ *    ① 未上架的产品官网上**没有那一页**；
+ *    ② 线上是**上一次部署**的版本，与手里这份数据不一致 —— 那会让人以为自己的改动没生效。
+ * ⛔ `supplierRef` **绝不进预览区**：预览的定义就是"官网上看得到的样子"，而它不上站。
+ *    它只出现在下方那块视觉上分开的内部信息区。
+ * ⚠️ 不追求像素级还原官网（官网样式会变，追了也守不住）。
+ *    目标是**"看得出是不是对的"**，不是"看起来一样"。
+ */
 function renderView(p) {
-  const t = el("table", "kvtable");
-  const row = (k, valNode, cls) => {
-    const tr = el("tr", cls);
-    tr.append(el("th", null, k));
-    const td = el("td");
-    td.append(valNode);
-    tr.append(td);
-    t.append(tr);
-  };
-  const txt = (v) => el("span", null, v == null || v === "" ? "—" : String(v));
-  const code = (v) => { const c = el("code", null, v); return c; };
-  const tags = (arr) => {
-    const w = el("div", "taglist");
-    (arr || []).forEach((x) => w.append(el("span", "tag", x)));
-    if (!arr || !arr.length) w.append(txt(null));
-    return w;
-  };
+  const pane = $("#viewPane"); pane.innerHTML = "";
+  const wrap = el("div", "pv");
 
-  row("slug", code(p.slug || "—"));
-  row("name", txt(p.name));
-  row("model", code(p.model || "—"));
-  row("category", code(p.category || "—"));
-  row("sensors", tags(p.sensors));
-  row("status", (() => { const b = el("span", `badge badge-${p.status || "unknown"}`, p.status || "?"); return b; })());
-  row("moq", txt(p.moq == null ? "面议（未设 moq）" : p.moq));
-  row("images.main", code(p.images?.main || "—"));
-  row("images.gallery", tags(p.images?.gallery));
-  row("highlights", (() => {
-    const w = el("div");
-    (p.highlights || []).forEach((h) => w.append(el("div", null, "· " + h)));
-    if (!p.highlights?.length) w.append(txt(null));
-    return w;
-  })());
-  row("specs", (() => {
-    const w = el("div");
-    const e = Object.entries(p.specs || {});
-    e.forEach(([k, v]) => { const d = el("div"); d.append(code(k), document.createTextNode("  " + v)); w.append(d); });
-    if (!e.length) w.append(txt(null));
-    return w;
-  })());
-  if (p.supplierRef) {
-    row("supplierRef ⚠️内部", code(p.supplierRef), "internal-row");
+  // ── 图：主图大，其余排成一行小图 ──
+  const imgs = [p.images?.main, ...(p.images?.gallery || [])].filter(Boolean);
+  if (imgs.length) {
+    const hero = el("div", "pv-hero");
+    setThumb(hero, rawUrl(imgs[0]), p.name || p.slug);
+    wrap.append(hero);
+    if (imgs.length > 1) {
+      const strip = el("div", "pv-strip");
+      imgs.slice(1).forEach((g) => { const t = el("div", "pv-thumb"); setThumb(t, rawUrl(g), g); strip.append(t); });
+      wrap.append(strip);
+    }
+  } else {
+    wrap.append(el("div", "pv-noimg", "还没有图片 —— 官网上这个产品会没有主图。"));
   }
 
-  const pane = $("#viewPane"); pane.innerHTML = ""; pane.append(t);
+  // ── 标题 / 机型·型号 ──
+  wrap.append(el("h1", "pv-title", p.name || p.slug || "（未命名）"));
+  const meta = el("div", "pv-meta");
+  if (p.category) meta.append(el("span", "pv-cat", p.category));
+  if (p.model) meta.append(el("span", "pv-model", p.model));
+  // ⚠️ 预览态没有输入框可贴，model 那条提示就贴在型号旁边（见 renderIssues 的回落）
+  wrap.append(meta);
+
+  // ── 传感器 chip ──
+  if (p.sensors?.length) {
+    const sec = el("section", "pv-sec");
+    sec.append(el("h3", "pv-h3", "传感器"));
+    const chips = el("div", "taglist");
+    p.sensors.forEach((x) => chips.append(el("span", "tag", x)));
+    sec.append(chips); wrap.append(sec);
+  }
+
+  // ── 卖点 ──
+  if (p.highlights?.length) {
+    const sec = el("section", "pv-sec");
+    sec.append(el("h3", "pv-h3", "卖点"));
+    const ul = el("ul", "pv-list");
+    p.highlights.forEach((h) => ul.append(el("li", null, h)));
+    sec.append(ul); wrap.append(sec);
+  }
+
+  // ── 参数表 ──
+  const specEntries = Object.entries(p.specs || {});
+  if (specEntries.length) {
+    const sec = el("section", "pv-sec");
+    sec.append(el("h3", "pv-h3", "参数"));
+    const t = el("table", "pv-specs");
+    specEntries.forEach(([k, v]) => {
+      const tr = el("tr"); tr.append(el("th", null, k), el("td", null, v)); t.append(tr);
+    });
+    sec.append(t); wrap.append(sec);
+  }
+
+  pane.append(wrap);
+
+  // ── 内部信息区：**与预览区在视觉上分开** ──
+  // ⚠️ 这些东西官网上看不到，所以它们不能待在"预览"里面 —— 否则"预览"这个词就是假的。
+  const internal = el("section", "pv-internal");
+  internal.append(el("h3", "pv-h3", "内部信息 · 官网上看不到"));
+  const t = el("table", "kvtable");
+  const row = (k, v, cls) => {
+    const tr = el("tr", cls); tr.append(el("th", null, k));
+    const td = el("td"); td.append(typeof v === "string" ? el("code", null, v) : v); tr.append(td); t.append(tr);
+  };
+  row("slug", p.slug || "—");
+  row("状态", el("span", `badge badge-${p.status || "unknown"}`, statusLabel(p.status)));
+  row("moq", p.moq == null ? "面议（未设 moq）" : String(p.moq));
+  if (p.supplierRef) row("supplierRef", p.supplierRef, "internal-row");
+  // A12-③：文件路径从顶部挪到这里 —— Joe 不看仓，但排查时它有用
+  if (state.filePath) row("数据文件", state.filePath);
+  internal.append(t);
+  pane.append(internal);
 }
 
 // ═══════════════ 表单 ═══════════════
@@ -1029,9 +1120,14 @@ function mkNotice(kind, msg) {
 
 // ═══════════════ 视图切换 / 事件 ═══════════════
 function switchView(v) {
+  state.activeView = v;
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.view === v));
   $("#viewPane").hidden = v !== "view";
   $("#editPane").hidden = v !== "edit";
+  // 提示贴在哪儿取决于当前 tab ⇒ 切 tab 要用同一份结果重画一次。
+  // ⚠️ 传 state.lastValidation 而不是重新校验：重新校验会**掉进另一个真源**，
+  //    而人看到的应该始终是"上一次校验的结论"。
+  if (state.lastValidation !== undefined) renderIssues(state.lastValidation);
 }
 
 document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => switchView(t.dataset.view); });
