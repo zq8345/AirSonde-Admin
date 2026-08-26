@@ -136,6 +136,28 @@ function checkNameStuffing(name: string, out: Issue[]): void {
   }
 }
 
+/**
+ * 已知的系列前缀。**当前只有 `AK`**（Joe 2026-08-25 确认的我方真实编码）。
+ * ⚠️ 这张表是会长的（Joe 原话「以后或许有别的系列编码」）—— 所以它只用来**吼**，不用来拦。
+ *    拿一张"当前已知"的表去做硬闸，等于赌"以后不会有新系列"，而那个赌注写在数据里。
+ */
+const KNOWN_MODEL_PREFIXES = ["AK"];
+
+/**
+ * model 前缀检查 —— **warning，不阻断**。与 checkNameStuffing 同一条道理。
+ * ⚠️ 站上现存 23 个 `AS-xxx` 全是冻结契约时编的值（真实 AK 对照表还没拿到）。
+ *    它们必须仍然能在后台打开和保存 —— 改闸不能把存量数据变成不可保存，
+ *    那会把"闸更宽松了"变成"一批产品打不开了"。
+ */
+function checkModelPrefix(model: string, out: Issue[]): void {
+  const m = model.trim();
+  if (KNOWN_MODEL_PREFIXES.some((p) => m.toUpperCase().startsWith(p))) return;
+  out.push(err("model", "unknown_series_prefix",
+    `「${m}」不在已知系列前缀里（当前已知：${KNOWN_MODEL_PREFIXES.join(" / ")}）。` +
+    `如果这是一个新系列，直接存就行 —— 这条只是提醒，不阻断。` +
+    `⚠️ 但如果它是**供应商的型号**，请换成我方型号：贴牌生意，型号是我们的资产。`));
+}
+
 // ─────────────────────────────────────────────────────────────
 
 function checkUnknownKeys(p: any, out: Issue[]): void {
@@ -191,12 +213,21 @@ export function validateProduct(input: unknown): ValidationResult {
     checkNameStuffing(p.name, warnings);
   }
 
-  // ---- model（必填，硬规则 3：我方型号，AS- 前缀）----
+  // ---- model（必填。硬规则 3，契约 v1.3 修订）----
+  //
+  // 🔴 原来这里是 `^AS-` 硬闸。**它作废了**，理由不是"太严"，是**它守的那个前缀是编的**：
+  //    冻结契约时并不知道我方真实编码，`AS-` 是当时造出来的；Joe 2026-08-25 确认
+  //    真实编码是 `AK` + 数字，且「以后或许有别的系列编码」。
+  //    ⇒ 一个照着编造值去拦真实值的闸，拦下的全是对的东西。
+  //
+  // 现在的判据：必填 + 非空 + 不含供应商痕迹（供应商痕迹由 scanSupplierLeak 统一扫，
+  // 它覆盖所有公开字段，model 不需要自己再写一遍）。
+  // 前缀只**吼一声**，不阻断 —— 与 checkNameStuffing 同构：
+  // 闸拦的是"确定错的"，吼的是"看着可疑但可能正当"。一个天天误报的闸，人很快就不看它了。
   if (typeof p.model !== "string" || !p.model.trim()) {
     errors.push(err("model", "required", "model 必填。"));
-  } else if (!/^AS-[A-Za-z0-9-]+$/.test(p.model.trim())) {
-    errors.push(err("model", "must_be_our_model",
-      `model 必须用我方型号（\`AS-\` 前缀），不能用供应商型号（当前：${p.model}）。贴牌生意，型号是我们的资产。`));
+  } else {
+    checkModelPrefix(p.model, warnings);
   }
 
   // ---- category（必填，枚举）----

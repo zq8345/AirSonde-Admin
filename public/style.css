@@ -388,6 +388,28 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .edit-col-side { position: sticky; top: 72px; }
 @media (max-width: 1100px) { .edit-col-side { position: static; } }
 
+/* ══ A10：「更多（选填）」折叠区 ══
+   新建时收起、编辑时由 JS 打开。用原生 <details>：零 JS 也能开合，键盘天然可达。 */
+.more {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0 16px; margin: 0 0 14px;
+}
+.more > summary {
+  cursor: pointer; padding: 13px 0; font-weight: 600; font-size: 14px;
+  list-style: none; display: flex; align-items: baseline; gap: 8px;
+}
+.more > summary::-webkit-details-marker { display: none; }
+/* 自己画三角：原生 marker 在各浏览器里长得不一样，而这是主路上的一个控件 */
+.more > summary::before {
+  content: "▸"; color: var(--muted); font-size: 11px; transition: transform .15s ease; display: inline-block;
+}
+.more[open] > summary::before { transform: rotate(90deg); }
+.more > summary:hover { color: var(--accent); }
+.more[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.more > *:last-child { margin-bottom: 14px; }
+/* 折叠区里的图片那一份挨着主图，不要再套一层卡片边框 */
+#moreImages { border: 0; padding: 0; background: none; margin-top: 6px; }
+
 /* sticky 保存条：改动计数 + 提交入口常驻，不用滚到底才找得到 */
 .editbar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
   padding: 10px 14px; margin: 0 0 14px; background: var(--surface); border: 1px solid var(--line);

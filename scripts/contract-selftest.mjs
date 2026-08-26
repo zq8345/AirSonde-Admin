@@ -28,7 +28,10 @@ const hasWarn = (r, c) => wcodes(r).some((x) => x.endsWith(":" + c) || x === c);
 const GOOD = {
   slug: "desktop-16in1-monitor",
   name: "16-in-1 Desktop Air Quality Monitor",
-  model: "AS-D16",
+  // ⚠️ 与契约真源的示例保持一致（v1.3 起真源写的是 AK101）。
+  //    留着 AS-D16 的话，「示例数据零 warning」这条会红 —— 而红的原因是**样例过时**，
+  //    不是被测对象有问题。样例必须是一份"完全正确"的数据，否则它证明不了任何事。
+  model: "AK101",
   category: "desktop",
   sensors: ["CO2", "PM2.5", "PM10", "HCHO", "TVOC", "temperature", "humidity"],
   highlights: ["7-inch TFT display", "USB-C powered"],
@@ -73,14 +76,34 @@ for (const f of ["slug", "name", "model", "category", "sensors", "status", "imag
   check("③ name 是空白串必须报 required（不是「填了」）", hasErr(r, "required"), JSON.stringify(codes(r)));
 }
 
-// ════════ 硬规则 3：我方型号 ════════
+// ════════ 硬规则 3（契约 v1.3）：model 必填，前缀只吼不拦 ════════
+//
+// 🔴 v1.3 之前这里是 `^AS-` 硬闸。作废的理由不是"太严"，是**它守的那个前缀是编的** ——
+//    冻结契约时并不知道我方真实编码，`AS-` 是当时造出来的；真实编码是 `AK`+数字。
+//    一个照着编造值去拦真实值的闸，拦下的全是对的东西。
 {
-  const r = mut((p) => { p.model = "JT-168"; });   // 供应商型号形态
-  check("④ 供应商型号必须被拒", hasErr(r, "must_be_our_model"), JSON.stringify(codes(r)));
+  const r = mut((p) => { p.model = "AK101"; });
+  check("④ 真实编码 AK101 通过，零 error", r.ok && r.errors.length === 0, JSON.stringify(codes(r)));
+  check("④ 且不吼（AK 在已知系列表里）",
+    !r.warnings.some((w) => w.code === "unknown_series_prefix"), JSON.stringify(r.warnings.map((w) => w.code)));
 }
 {
-  const r = mut((p) => { p.model = "AS-W7"; });
-  check("④ 正对照：AS- 前缀必须放行", r.ok, JSON.stringify(codes(r)));
+  // 🔴 存量那 23 个产品全是 AS-xxx。改闸**不能把它们变成不可保存** ——
+  //    那会把"闸放宽了"变成"一批产品打不开了"，而症状完全不像是改闸引起的。
+  const r = mut((p) => { p.model = "AS-D16"; });
+  check("④ 关键：存量 AS-D16 仍然通过（改闸不许弄坏存量数据）", r.ok, JSON.stringify(codes(r)));
+  check("④ 但要吼一声（不在已知系列表里）",
+    r.warnings.some((w) => w.code === "unknown_series_prefix"), JSON.stringify(r.warnings.map((w) => w.code)));
+}
+{
+  // 供应商痕迹仍是**硬拒** —— 放开前缀不等于放开这条红线
+  const r = mut((p) => { p.model = "alibaba.com/JT-168"; });
+  check("④ 关键：model 里的供应商痕迹仍被硬拒", hasErr(r, "supplier_leak"), JSON.stringify(codes(r)));
+}
+{
+  // 反向自证：不是把整条闸拆了 —— 必填还在
+  const r = mut((p) => { p.model = "   "; });
+  check("④ 反向自证：空 model 仍被拒", hasErr(r, "required"), JSON.stringify(codes(r)));
 }
 
 // ════════ 枚举 ════════
@@ -173,7 +196,7 @@ const ALIBABA = "https://www.alibaba.com/product-detail/16-in-1-Air-Quality_1601
 {
   const { merged, cleared, touched } = mergeProduct(GOOD, { name: "New Name", model: undefined });
   check("⑩ 补丁里 undefined 的字段必须保持原样（「我没收到」≠「要清空」）",
-    merged.model === "AS-D16" && merged.name === "New Name", JSON.stringify({ model: merged.model, name: merged.name }));
+    merged.model === "AK101" && merged.name === "New Name", JSON.stringify({ model: merged.model, name: merged.name }));
   check("⑩ touched 只记真的变了的", touched.length === 1 && touched[0] === "name", JSON.stringify(touched));
   check("⑩ 没有东西被清空", cleared.length === 0, JSON.stringify(cleared));
 }

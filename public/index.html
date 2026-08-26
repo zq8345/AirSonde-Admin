@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=5">
+<link rel="stylesheet" href="/style.css?v=6">
 </head>
 <body>
 
@@ -239,84 +239,91 @@
 
         <!-- ⚠️ 分组顺序按 Joe 的真实用途排：他要做的是"上传产品图 + 填标题"。
              ⇒ 图片面板常驻右栏顶部、name 是左栏第一个字段，其余全部给这条主路让路。
-                原先把图片排在第 4 位是错的 —— 那把他最常做的两件事分别放到了中间和最后。 -->
+
+             ══ A10：新建态与编辑态分开 ══
+             🔴 **仍然只有一张表**，靠 #editPane 上的 .is-new / .is-edit 决定展开程度。
+                复制成两张表的话，以后加一个字段就要在两处加，而第二处一定会漏 ——
+                那种漏法的症状是"新建的产品少一个字段"，要很久才有人发现。
+             ⇒ 选填项全部收进 <details>：新建时收起（默认），编辑时由 JS 打开。
+                **编辑态不做任何简化**：人是冲着某个具体字段来的，全展开才对。
+             ⚠️ 用原生 <details> 而不是自己写展开逻辑：零 JS 也能开合，键盘天然可达。 -->
         <div class="edit-grid">
         <div class="edit-col-main">
 
         <section class="card">
-          <h3>基本信息 <span class="h3sub">标题与型号</span></h3>
+          <h3>基本信息</h3>
         <div class="field">
-          <label for="f_name">产品标题 <b class="req">必填</b><span class="h3sub"> name</span></label>
+          <label for="f_name">产品标题 <b class="req">必填</b></label>
           <input id="f_name" name="name" placeholder="16-in-1 Desktop Air Quality Monitor">
+          <!-- ⭐ 保留的两条常驻说明之一：这一条在校验器里**只是 warning**，闸不会拦，
+               人看不到就真的会照抄供应商标题。其余说明全部撤下交给校验器命中才吼。 -->
           <p class="hint">⚠️ 不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。</p>
-        </div>
-
-        <div class="field">
-          <label for="f_slug">slug <b class="req">必填</b></label>
-          <input id="f_slug" name="slug" spellcheck="false">
-          <p class="hint">小写字母/数字/连字符。<b>文件名即 slug</b>，两者必须一致。改名＝改文件名，本阶段不支持。</p>
         </div>
 
         <div class="row2">
           <div class="field">
-            <label for="f_model">model <b class="req">必填</b></label>
-            <input id="f_model" name="model" placeholder="AS-D16" spellcheck="false">
-            <p class="hint">我方型号，<code>AS-</code> 前缀。贴牌生意，型号是我们的资产。</p>
+            <label for="f_model">型号 <b class="req">必填</b><span class="h3sub"> model</span></label>
+            <!-- ⛔ 不自动派生（Joe 当面定：「型号 model 我们自己填写就可以了」）。
+                 不预填、不建议、不猜 —— 编一个型号比留空更坏，因为它看起来像是真的。 -->
+            <input id="f_model" name="model" placeholder="AK101" spellcheck="false">
           </div>
           <div class="field">
-            <label for="f_category">category <b class="req">必填</b></label>
+            <label for="f_category">机型 <b class="req">必填</b><span class="h3sub"> category</span></label>
             <select id="f_category" name="category"></select>
           </div>
+        </div>
+
+        <div class="field">
+          <label for="f_slug">slug <span class="h3sub">网址，自动由标题生成</span></label>
+          <!-- ⚠️ 自动值**必须看得见且可改**，不许藏起来：slug 是 URL，而且本阶段**不支持改名**
+               （改名 = 改文件名）。藏起来的话，人是在提交之后才第一次看到这个网址。 -->
+          <input id="f_slug" name="slug" spellcheck="false">
         </div>
 
         </section>
 
         <section class="card">
-          <h3>传感器 <span class="h3sub">sensors · 至少选一个</span></h3>
+          <h3>传感器 <span class="h3sub">至少选一个</span></h3>
           <div class="chips" id="f_sensors"></div>
         </section>
 
-        <section class="card">
-          <h3>商务 <span class="h3sub">上架状态与起订量</span></h3>
-          <div class="row2">
-            <div class="field">
-              <label for="f_status">status <b class="req">必填</b></label>
-              <select id="f_status" name="status"></select>
-              <p class="hint"><code>draft</code> 的产品绝不允许出现在构建产物里。</p>
-            </div>
-            <div class="field">
-              <label for="f_moq">moq</label>
-              <input id="f_moq" name="moq" type="number" min="1" step="1" placeholder="留空 = 面议">
-              <p class="hint">⚠️ 想表达「面议」就<b>留空</b>，不要填 0。</p>
-            </div>
+        <!-- 上架状态：**新建时整块不出现**（JS 控制），固定写 draft。
+             新建的东西必然还没核过图 —— 给一个只有一个正确答案的下拉框 = 制造一次无谓的决策。 -->
+        <section class="card" id="statusCard">
+          <h3>上架状态</h3>
+          <div class="field">
+            <label for="f_status">status <b class="req">必填</b></label>
+            <select id="f_status" name="status"></select>
           </div>
         </section>
 
-        <section class="card">
-          <h3>文案 <span class="h3sub">卖点与参数表</span></h3>
+        <!-- ══ 更多（选填）══ 新建时收起，编辑时展开 -->
+        <details class="more" id="moreFields">
+          <summary>更多（选填）<span class="h3sub">卖点 · 参数表 · 内部字段</span></summary>
+
           <div class="field">
-            <label>highlights</label>
+            <label>卖点 <span class="h3sub">highlights</span></label>
             <div class="repeat" id="f_highlights"></div>
             <button type="button" class="add" data-add="highlights">+ 加一条</button>
-            <p class="hint">短句。详情页参数表用 specs，别塞进这里。</p>
           </div>
 
           <div class="field">
-            <label>specs</label>
+            <label>参数表 <span class="h3sub">specs</span></label>
             <div class="kv" id="f_specs"></div>
             <button type="button" class="add" data-add="specs">+ 加一行</button>
-            <p class="hint">自由键值，值必须是字符串。单位和写法自己写全，别让渲染层去猜。</p>
           </div>
-        </section>
 
-        <section class="card card-internal">
-          <h3>内部字段 <span class="h3sub">绝不上站</span></h3>
+          <!-- A10-E：从红框独立卡降成这里的一行。
+               🔴 红色留给**真正会阻断**的东西 —— 一个选填的内部字段顶着红框排在主列，
+                  是在稀释红色的意义，久了人就不把红当回事了。
+               ⭐ 但说明文字保留（另一条常驻）：它是红线，且校验器只在**粘错地方**时才吼，
+                  "只能放这里"这件事本身没有任何闸会主动告诉你。 -->
           <div class="field">
             <label for="f_supplier">supplierRef <b class="internal">内部字段</b></label>
             <input id="f_supplier" name="supplierRef" spellcheck="false">
-            <p class="hint">🔴 绝不允许出现在构建产物里。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
+            <p class="hint">🔴 绝不上站。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
           </div>
-        </section>
+        </details>
 
         </div><!-- /edit-col-main -->
 
@@ -332,19 +339,16 @@
                 <p class="hint" id="mainImgNote"></p>
               </div>
             </div>
-            <!-- ⚠️ 路径由 slug 与 status 决定，不给人手填：手填等于让人去维护一条服务端已经在维护的规则 -->
+            <!-- ⚠️ 路径由 slug 与 status 决定，不给人手填：手填等于让人去维护一条服务端已经在维护的规则。
+                 说明文字已撤：路径是只读的、自动的，讲它的生成规则对填表的人没有用。 -->
             <input id="f_imgmain" name="images.main" placeholder="products/xxx.webp" spellcheck="false" readonly>
-            <p class="hint">
-              自动转 WebP、≤2MB。放在官网仓 <code>src/assets/products/</code> 下。
-              <br>⚠️ <b>draft 的图放 <code>products/_draft/</code></b> —— 那个子目录不会被打包，draft 图从物理上进不了产物。
-            </p>
           </div>
 
-          <div class="field">
-            <label>更多图片（gallery）</label>
+          <details class="more" id="moreImages">
+            <summary>更多图片<span class="h3sub"> gallery</span></summary>
             <div class="gallery" id="galleryBox"></div>
             <label class="add filebtn">+ 加一张<input type="file" id="f_galfile" accept="image/*" hidden></label>
-          </div>
+          </details>
         </section>
         </div><!-- /edit-col-side -->
         </div><!-- /edit-grid -->
@@ -359,7 +363,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=5"></script>
+<script src="/app.js?v=6"></script>
 </body>
 </html>
 

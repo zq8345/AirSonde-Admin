@@ -16,6 +16,8 @@ const state = {
   loaded: null,     // 当前产品的服务端原始响应
   draft: null,      // 编辑中的对象
   isNew: false,
+  /** 人是否动过 slug。⚠️ 显式标记，不靠比值猜 —— 见 f_slug 的 input 监听。 */
+  slugTouched: false,
   // 🔴 写能力是**服务端告诉我们的事实**，不是前端的一个开关。
   //    null = 还没问到。在问到之前界面不该假装知道自己能不能写。
   write: null,      // { enabled, gateOpen, tokenConfigured }
@@ -335,12 +337,45 @@ async function select(slug) {
   renderView(p);
   state.draft = JSON.parse(JSON.stringify(p));
   fillForm(state.draft);
+  // 编辑一个已存在的产品：**不简化**，全部展开。slug 也不再跟随标题（它已经是 URL 了）。
+  state.slugTouched = true;
+  setFormMode(false);
   renderList();
+}
+
+/**
+ * 新建态 / 编辑态的**唯一开关**（A10-A）。
+ *
+ * 🔴 只有一张表，靠这里决定展开程度 —— 不复制成两张：
+ *    复制的话，以后加一个字段要在两处加，而第二处一定会漏，
+ *    症状是"新建出来的产品少一个字段"，很久都不会有人发现。
+ *
+ * · 新建：选填项收起（<details> 关着）、**status 整块不出现**（固定 draft）
+ * · 编辑：全部展开 —— 人是冲着某个具体字段来的，简化反而害他
+ */
+function setFormMode(isNew) {
+  const pane = $("#editPane");
+  pane.classList.toggle("is-new", isNew);
+  pane.classList.toggle("is-edit", !isNew);
+  // status 只在编辑态出现：新建的东西必然还没核过图，
+  // 给一个只有一个正确答案的下拉框 = 制造一次无谓的决策。
+  $("#statusCard").hidden = isNew;
+  // 编辑态把折叠区**打开**（不是删掉 details —— 结构一份，状态两种）
+  document.querySelectorAll("#editPane details.more").forEach((d) => { d.open = !isNew; });
+}
+
+/** 标题 → slug。⚠️ 只做能确定的事：小写、非法字符换连字符、去掉首尾与重复连字符。 */
+function slugify(s) {
+  return String(s || "").toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
 }
 
 function startNew() {
   state.isNew = true; state.slug = null; state.loaded = null;
   resetPending();
+  state.slugTouched = false;            // 新建时 slug 跟随标题，直到人自己动它
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
   $("#f_slug").readOnly = false;
   $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
@@ -349,6 +384,7 @@ function startNew() {
   renderIssues(null);
   state.draft = { sensors: [], images: {}, status: "draft" };
   fillForm(state.draft);
+  setFormMode(true);
   switchView("edit");
   renderList();
 }
@@ -573,7 +609,8 @@ function fillForm(p) {
   $("#f_model").value = p.model || "";
   $("#f_category").value = p.category || "";
   $("#f_status").value = p.status || "draft";
-  $("#f_moq").value = p.moq == null ? "" : p.moq;
+  // ⚠️ moq 的输入框已撤（A10-C：它是死字段，官网渲染层 0 处引用）。
+  //    **契约字段没动**，现存值也不会被碰 —— 见 readForm 里那段。
   $("#f_imgmain").value = p.images?.main || "";
   $("#f_supplier").value = p.supplierRef || "";
 
@@ -611,7 +648,6 @@ function readForm() {
   })();
 
   const sensors = [...$("#f_sensors").querySelectorAll("input:checked")].map((i) => i.value);
-  const moqRaw = $("#f_moq").value.trim();
   const gallery = galleryFromDraft;
   const main = nz($("#f_imgmain").value);
 
@@ -622,7 +658,10 @@ function readForm() {
     category: nz($("#f_category").value),
     sensors,                                   // 必填，空数组交给校验器报
     status: nz($("#f_status").value),
-    moq: moqRaw === "" ? null : Number(moqRaw),
+    // 🔴 **`moq` 这个键完全不出现** —— 这不是省事，是唯一正确的做法：
+    //    送 `null` 的语义是「显式清空」，那会把现存产品的 moq 静默抹掉；
+    //    键不出现的语义是「我没收到」，mergeProduct 会保持原样。
+    //    输入框撤了 ≠ 数据该被清掉。（A10 验收第 4 条量的就是这件事：diff 里不许有 -"moq"。）
     highlights: list("#f_highlights"),
     specs,
     supplierRef: nz($("#f_supplier").value),
@@ -1474,6 +1513,19 @@ function updateDirty() {
 }
 $("#editPane").addEventListener("input", updateDirty);
 $("#editPane").addEventListener("change", updateDirty);
+
+// ══ A10-B：slug 跟随标题，人一动就停 ══
+//
+// 🔴 「停止跟随」不能靠"值不等于 slugify(标题)"去猜 —— 那样人手改成一个恰好等于
+//    自动值的串之后，跟随会**悄悄复活**，然后在他下一次改标题时把他的 slug 冲掉。
+//    ⇒ 用一个显式的脏标记：**人碰过就是碰过**，与值是什么无关。
+// ⚠️ 只在新建态跟随：已存在的产品 slug 就是它的 URL，本阶段不支持改名。
+$("#f_slug").addEventListener("input", () => { state.slugTouched = true; });
+$("#f_name").addEventListener("input", () => {
+  if (!state.isNew || state.slugTouched) return;
+  $("#f_slug").value = slugify($("#f_name").value);
+  updateDirty();
+});
 
 $("#f_mainfile").onchange = (e) => pickImage(e.target, "main");
 $("#f_galfile").onchange = (e) => pickImage(e.target, "gallery");
