@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=21">
+<link rel="stylesheet" href="/style.css?v=25">
 </head>
 <body>
 
@@ -148,8 +148,15 @@
            分开之后，"这一格里永远只有最近一次提交的结果"是**结构上成立**的，不靠记得去清。 -->
       <div id="catsResult"></div>
       <div class="axiscols">
+        <!-- ⭐ 管理态开关（Joe 2026-08-26 定：改名/删除/新增要点「管理」才出现）。
+             沿用 wanew 后台那一套（manageMode + 🔧 管理 / ✓ 管理中），⛔ 不造第三种交互。
+             🔴 **两栏各有各的开关**：管机型时不该把传感器那栏也解锁。
+             ⚠️ 新增本身不具破坏性、本可常驻 —— 但三个动作收进同一个开关是**一条规则、不留特例**。 -->
         <div class="axisbox">
-          <h2 class="axishead">机型 <span class="h3sub">category · 每个产品一个</span></h2>
+          <h2 class="axishead">机型 <span class="h3sub">category · 每个产品一个</span>
+            <button type="button" class="managebtn" data-axis="categories"
+                    title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
+          </h2>
           <div class="table-wrap">
             <table class="ptable">
               <thead><tr>
@@ -161,7 +168,7 @@
               <tbody id="catsRows"></tbody>
             </table>
           </div>
-          <form class="axisadd" id="addCategories">
+          <form class="axisadd" id="addCategories" hidden>
             <input type="text" name="value" placeholder="取值（英文，如 wall-mounted）" autocomplete="off">
             <input type="text" name="label" placeholder="显示名（官网上显示的，如 Wall-mounted）" autocomplete="off">
             <button type="submit" class="primary">新增机型</button>
@@ -169,7 +176,10 @@
         </div>
 
         <div class="axisbox">
-          <h2 class="axishead">传感器 <span class="h3sub">sensors · 每个产品可多个</span></h2>
+          <h2 class="axishead">传感器 <span class="h3sub">sensors · 每个产品可多个</span>
+            <button type="button" class="managebtn" data-axis="sensors"
+                    title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
+          </h2>
           <div class="table-wrap">
             <table class="ptable">
               <thead><tr>
@@ -180,7 +190,7 @@
               <tbody id="sensorsRows"></tbody>
             </table>
           </div>
-          <form class="axisadd" id="addSensors">
+          <form class="axisadd" id="addSensors" hidden>
             <input type="text" name="value" placeholder="取值（如 PM1.0、NO2）" autocomplete="off">
             <input type="text" name="label" placeholder="显示名（留空就用取值本身）" autocomplete="off">
             <button type="submit" class="primary">新增传感器</button>
@@ -404,7 +414,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=21"></script>
+<script src="/app.js?v=25"></script>
 </body>
 </html>
 

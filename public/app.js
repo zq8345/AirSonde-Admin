@@ -31,6 +31,13 @@ const state = {
   media: null, mediaTab: "all",
   audit: null,
   cats: null,       // /api/taxonomy：两个轴 + 每条的 refs/refCount/canDelete（引用计数由服务端数）
+  /**
+   * 分类页两个轴各自的管理态（Joe 2026-08-26：改名/删除/新增要点「管理」才出现）。
+   * 🔴 **两个键，不是一个布尔**：管机型时不该把传感器那栏也解锁。
+   * ⚠️ 不持久化。破坏性入口的默认态必须是关的 —— 记住上次开着的话，
+   *    下次进来就又是一屏删除按钮，那正是这个开关要解决的事。
+   */
+  axisManage: { categories: false, sensors: false },
   who: null,        // /api/_whoami 的完整响应 —— 设置页整页由它渲染
   // 站点内容：首页/联系方式/SEO 三个视图共用**同一个 JSON**
   site: null,       // 服务端那一版（含 sha —— 保存时当乐观锁）
@@ -1298,8 +1305,12 @@ function renderMedia() {
     tabs.append(b);
   });
 
+  // 🔴 "孤儿"的判据只有一处：服务端盖在每个文件上的 `f.orphan`（media.ts 的 isOrphan）。
+  //    ⛔ 这里**不再**写 `!referencedBy.length` —— 那是第二个真源，而且已经出过事：
+  //       顶部计数排除 originals（说「未被引用 0」），卡片黄标不排除（38 张原图全被标成
+  //       「未被引用」）⇒ 同一个词、同一屏、两个定义。而人会照卡片去删原图。
   const rows = m.files.filter((f) => {
-    if (state.mediaTab === "orphan") return f.referencedBy.length === 0 && f.area !== "originals";
+    if (state.mediaTab === "orphan") return f.orphan;
     if (["published","draft","originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
     return true;
   });
@@ -1307,7 +1318,7 @@ function renderMedia() {
   const grid = $("#mediaGrid"); grid.innerHTML = "";
   rows.forEach((f) => {
     const card = el("div", "gcard mcard");
-    if (!f.referencedBy.length) card.classList.add("is-orphan");
+    if (f.orphan) card.classList.add("is-orphan");
     const t = el("div", "thumb"); setThumb(t, rawUrl(f.rel), f.rel);
     card.append(t);
     card.append(el("span", "gtag", f.rel.replace(/^products\//, "").replace(/^_draft\//, "")));
@@ -1317,9 +1328,15 @@ function renderMedia() {
       // 点一下直接跳到引用它的产品 —— 想删它就得从那里改
       card.style.cursor = "pointer";
       card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
-    } else {
+    } else if (f.orphan) {
       use.textContent = "未被引用";
       use.style.color = "var(--warn)";
+    } else {
+      // 🔴 原图存档也是"零引用"，但它**不是**孤儿 —— 它是整条图片管线的源材料
+      //    （`images:build` 从这里读）。给它自己的标，⛔ 绝不复用「未被引用」那个词：
+      //    那个词已经有主了，而它在这里的含义是"可以删"。
+      use.textContent = "原图存档 · 不参与打包";
+      use.style.color = "var(--muted)";
     }
     card.append(use, el("span", "gtag", `${(f.size / 1024).toFixed(0)}KB · ${f.area}`));
     grid.append(card);
@@ -1778,14 +1795,29 @@ function renderCats() {
   } else {
     // ⚠️ 对账成立时也要**出一行**：什么都不显示的话，"查过了，没问题"和"这个检查根本没跑"
     //    在界面上长得一模一样。
-    const onSite = c.categories.filter((cat) => good.some((p) => p.category === cat.value && p.status === "published")).length;
-    sum.append(mkNotice("ok",
-      `${good.length} 个产品全部落在 ${c.categories.length} 个机型里（对账成立）· ` +
-      `官网筛选栏上会出现 **${onSite}** 个机型 · 真源 ${c.path}`));
+    // 与每一行的「官网筛选栏」同源：都数服务端盖的 `onSite`，不在这里另算一遍。
+    const onSite = c.categories.filter((cat) => cat.onSite).length;
+    // 🔴 有产品读不出来时**不许说"对账成立"**。
+    //    2026-08-26 真出过一次（我自己把匿名配额打满，4 个产品读不出来）：
+    //    逐机型引用之和 19，产品数 23 —— 数字自己就不自洽，而那一行照样写着"对账成立"。
+    //    ⇒ 这一行必须说清它只覆盖了读得出来的那些，否则它是在替一份残缺的统计背书。
+    //    （闸本身当时是对的：unreadable>0 ⇒ 每一条 canDelete 都是 false，一个都删不了。）
+    const partial = c.unreadable > 0;
+    const total = c.productCount ?? good.length;
+    sum.append(mkNotice(partial ? "warn" : "ok",
+      partial
+        // ⚠️ 这句话里**不出现"对账成立"四个字**，哪怕是在否定它。
+        //    我自己的判据刚被这一点骗过：`includes("对账成立")` 在这句上返回 true。
+        //    否定句里嵌着肯定词，对扫字符串的人和工具都是陷阱 —— 换个说法就没有这个洞。
+        ? `⚠️ 这份统计**不完整**：只对上了读得出来的 **${good.length}/${total}** 个产品，` +
+          `另外 ${c.unreadable} 个读不出来，**它们的机型没算进下表**。`
+        : `${good.length} 个产品全部落在 ${c.categories.length} 个机型里（对账成立）· ` +
+          `官网筛选栏上会出现 **${onSite}** 个机型 · 真源 ${c.path}`));
   }
 
   renderAxis("categories", $("#catsRows"), c.categories, good);
   renderAxis("sensors", $("#sensorsRows"), c.sensors, good);
+  syncManageBtns();
 
   const note = $("#catsNote"); note.innerHTML = "";
   const ul = el("ul", "catnote");
@@ -1802,6 +1834,8 @@ function renderCats() {
 function renderAxis(axis, tb, items, good) {
   const isCat = axis === "categories";
   const canWrite = !!state.write?.enabled;
+  // 🔴 **按轴**取管理态，不是一个全局开关：管机型时不该把传感器那栏也解锁。
+  const manage = canWrite && !!state.axisManage[axis];
   tb.innerHTML = "";
   items.forEach((it) => {
     const tr = el("tr");
@@ -1833,10 +1867,12 @@ function renderAxis(axis, tb, items, good) {
     tr.append(tdN);
 
     if (isCat) {
-      // 🔴 判据取自官网自己的规则（lib/products.ts 的 categoriesOf 只收有已上架产品的机型）。
-      const pub = good.filter((p) => p.category === it.value && p.status === "published").length;
+      // 🔴 判据取自官网自己的规则（lib/products.ts 的 categoriesOf 只收有已上架产品的机型），
+      //    而且**由服务端在数引用的同一次扫描里算出来**（`it.onSite`）。
+      //    ⛔ 不在这里拿 state.list 再数一遍：那样这一行上的两个数字会来自两次不同的读取，
+      //       "在用 0"与"筛选栏显示"就可能同时出现，而看的人无从知道为什么。
       const tdOn = el("td", "col-cat");
-      if (pub > 0) tdOn.append(el("span", "badge badge-published", "显示"));
+      if (it.onSite) tdOn.append(el("span", "badge badge-published", "显示"));
       else {
         tdOn.append(el("span", "badge badge-unknown", "不显示"));
         tdOn.append(el("div", "li-sub", "没有已上架产品"));
@@ -1845,7 +1881,10 @@ function renderAxis(axis, tb, items, good) {
     }
 
     const tdAct = el("td", "col-act");
-    if (canWrite) {
+    // 🔴 只读态：**一个操作入口都不出**（不是禁用，是不存在）。
+    //    Joe 定的。理由比"更整洁"硬：默认态原本摆着 28 个红色删除按钮，其中一半点了没反应。
+    //    把破坏性入口从默认态拿掉，"看起来能点其实不能点"这个问题从源头就没有了。
+    if (canWrite && manage) {
       const bEdit = el("button", "linkish", "改名"); bEdit.type = "button";
       bEdit.onclick = () => startRename(tr, tdName, axis, it);
       tdAct.append(bEdit);
@@ -1868,7 +1907,10 @@ function renderAxis(axis, tb, items, good) {
         };
       }
       tdAct.append(bDel);
-    } else tdAct.append(el("span", "li-sub", "只读"));
+    }
+    // ⚠️ 只读态这一格是**空的**，不写"只读"两个字：那一列在只读态本来就没有标题，
+    //    每行印一遍"只读"只是把 14 行都填上同一个不携带信息的词。
+    //    写入闸没开时的说明归「管理」按钮（它会被禁用并带上原因），不归每一行。
     tr.append(tdAct);
     tb.append(tr);
   });
@@ -1896,6 +1938,37 @@ function startRename(tr, tdName, axis, it) {
     await taxonomyOp({ axis, op: "edit", value: it.value, label }, ok);
   };
 }
+
+/** 管理按钮与新增表单的显隐 —— **一个函数说了算**，两处各写一遍迟早对不上。 */
+const ADD_FORM = { categories: "#addCategories", sensors: "#addSensors" };
+function syncManageBtns() {
+  const canWrite = !!state.write?.enabled;
+  ["categories", "sensors"].forEach((axis) => {
+    const on = canWrite && !!state.axisManage[axis];
+    const b = document.querySelector(`.managebtn[data-axis="${axis}"]`);
+    if (b) {
+      b.textContent = on ? "✓ 管理中" : "🔧 管理";
+      b.classList.toggle("on", on);
+      // 写入闸没开时禁用并说明原因 —— 让人点了没反应，正是这一批在修的病。
+      b.disabled = !canWrite;
+      if (!canWrite) b.title = "当前不能保存（写入闸或 token 未就绪），所以也不给管理入口";
+    }
+    // 新增表单跟着同一个开关走（三个动作一条规则，不留特例）。
+    const f = $(ADD_FORM[axis]);
+    if (f) { f.hidden = !on; if (!on) f.reset(); }
+  });
+}
+
+["categories", "sensors"].forEach((axis) => {
+  const b = document.querySelector(`.managebtn[data-axis="${axis}"]`);
+  if (!b) return;
+  b.onclick = () => {
+    state.axisManage[axis] = !state.axisManage[axis];
+    // ⚠️ 退出管理态时要重画：正开着的行内改名输入框必须跟着收掉，
+    //    否则会留下一个能打字、按保存却已经不该存在的框。
+    if (state.cats) renderCats(); else syncManageBtns();
+  };
+});
 
 /** 两个轴的新增表单。⚠️ 绑一次，不在 renderCats 里重绑（那会叠出 N 个提交）。 */
 ["categories", "sensors"].forEach((axis) => {

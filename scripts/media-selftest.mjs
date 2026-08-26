@@ -112,6 +112,33 @@ const P = (r) => "src/assets/" + r;
     r.total === 1 && r.files[0].rel === "products/a.webp", r.files.map((f) => f.rel).join(", "));
 }
 
+// ── ⑨ 🔴 「孤儿」这个词**只能有一个定义**：每个文件身上的 f.orphan ──
+//    这一组防的是真出过的那个事：顶部计数排除 originals（说「未被引用 0」），
+//    卡片黄标不排除（38 张原图全被标成「未被引用」）—— 同一个词、同一屏、两个定义。
+//    而人会照卡片去删原图，删掉的是整条图片管线的源材料。
+{
+  const r = crossReference(
+    [blob(P("products/used.webp")), blob(P("products/lonely.webp")),
+     blob(P("products/_draft/d.webp")), blob(P("products/originals/o1.jpg")), blob(P("products/originals/o2.jpg"))],
+    [{ slug: "x", images: { main: "products/used.webp" } }],
+  );
+  const of = (rel) => r.files.find((f) => f.rel === rel);
+  ck("⑨ 零引用的 published 图 = 孤儿", of("products/lonely.webp").orphan === true);
+  ck("⑨ 零引用的 draft 图 = 孤儿（草稿区也参与判定）", of("products/_draft/d.webp").orphan === true);
+  ck("⑨ 🔴 关键：零引用的 originals **不是**孤儿（它是有意存档的源材料）",
+    of("products/originals/o1.jpg").orphan === false && of("products/originals/o2.jpg").orphan === false,
+    JSON.stringify(r.files.map((f) => f.rel + "=" + f.orphan)));
+  ck("⑨ 被引用的图不是孤儿", of("products/used.webp").orphan === false);
+  ck("⑨ 🔴 计数与逐张的标**同源**：orphans === 数出来的 f.orphan 个数",
+    r.orphans === r.files.filter((f) => f.orphan).length && r.orphans === 2,
+    JSON.stringify({ orphans: r.orphans, counted: r.files.filter((f) => f.orphan).length }));
+  ck("⑨ 对账仍成立", r.reconciled === true,
+    JSON.stringify({ referenced: r.referenced, orphans: r.orphans, liveTotal: r.liveTotal, archived: r.archived, total: r.total }));
+  // 反向自证：判据不是"零引用"本身 —— originals 两张都零引用，却都不是孤儿。
+  ck("⑨ 反向自证：判据不是「零引用」本身（originals 零引用但 orphan=false）",
+    of("products/originals/o1.jpg").referencedBy.length === 0 && of("products/originals/o1.jpg").orphan === false);
+}
+
 console.log(out.join("\n"));
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);

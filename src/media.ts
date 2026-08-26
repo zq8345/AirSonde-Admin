@@ -21,7 +21,26 @@ export interface MediaFile {
   rel: string;
   area: "published" | "draft" | "originals" | "other";
   referencedBy: string[];   // 引用它的产品 slug（可能多个）
+  /**
+   * 🔴 **"孤儿"的判据只有这一个字段**，跟着数据一起走。
+   *
+   * 界面上曾经在渲染层又写了一遍 `!referencedBy.length` ——
+   * 于是同一个词在同一屏上有了两个定义：顶部计数说「未被引用 0」，
+   * 而 38 张 `originals/` 原图每一张都挂着黄色的「未被引用」。
+   * 摘要是对的，卡片在打它的脸。而人会照卡片去删 —— 删掉的是整条图片管线的源材料。
+   *
+   * ⇒ 判据搬进这里，随每个文件发出去。渲染层**只读它，不重算**。
+   *   ⛔ 谁要再在别处写 `!referencedBy.length`，就又开了第二个真源。
+   */
+  orphan: boolean;
 }
+
+/**
+ * 一张图是不是孤儿。**全仓唯一定义。**
+ * `originals/` 是有意存档的供应商原图，从设计上就不会被产品 JSON 引用 ⇒ 永远不是孤儿。
+ */
+export const isOrphan = (f: Pick<MediaFile, "area" | "referencedBy">): boolean =>
+  f.referencedBy.length === 0 && (f.area === "published" || f.area === "draft");
 
 export interface MediaReport {
   files: MediaFile[];
@@ -60,7 +79,8 @@ export function crossReference(
     .filter((b) => b.path.startsWith(PRODUCT_IMG_PREFIX) && /\.(webp|png|jpe?g|avif)$/i.test(b.path))
     .map((b) => {
       const rel = b.path.slice("src/assets/".length);
-      return { path: b.path, size: b.size, sha: b.sha, rel, area: areaOf(rel), referencedBy: [] as string[] };
+      // orphan 先占位；引用收集完之后统一按 isOrphan 盖章（见下面）。
+      return { path: b.path, size: b.size, sha: b.sha, rel, area: areaOf(rel), referencedBy: [] as string[], orphan: false };
     });
   const byRel = new Map(files.map((f) => [f.rel, f]));
 
@@ -85,10 +105,16 @@ export function crossReference(
   //    把它们算进"孤儿"，报出来的是"38 张未被引用" —— 而人看到这个数字的第一反应是清理，
   //    那正好会删掉唯一的原始素材。**一个会让人做出错误动作的正确数字，就是错的报告。**
   //    ⇒ 单列成 archived，不进孤儿。孤儿只统计 published/draft 两个区。
+  // ⭐ 引用收集完了才盖章 —— 盖早了就是拿一份还没填完的 referencedBy 下结论。
+  for (const f of files) f.orphan = isOrphan(f);
+
   const live = files.filter((f) => f.area === "published" || f.area === "draft");
   const archived = files.filter((f) => f.area === "originals").length;
   const referenced = live.filter((f) => f.referencedBy.length > 0).length;
-  const orphans = live.length - referenced;
+  // 🔴 计数也走同一个字段，不再用 `live.length - referenced` 减出来 ——
+  //    减法得到的数**永远**与 reconciled 自洽（那是恒等式），所以它证明不了口径一致。
+  //    数 `f.orphan` 才让下面那条对账真的有可能红。
+  const orphans = files.filter((f) => f.orphan).length;
   return {
     files,
     total: files.length,

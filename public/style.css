@@ -415,16 +415,16 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .axishead { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
 .axisadd { display: flex; gap: 8px; margin-top: 10px; }
 .axisadd input { flex: 1 1 0; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); }
 .axisadd button { white-space: nowrap; }
 /* 行内改名：输入框顶掉那一格的显示名，不跳走、不开弹窗。 */
 .axisedit { display: flex; gap: 6px; align-items: center; }
 .axisedit input { font: inherit; font-size: 13px; padding: 4px 6px; min-width: 0; flex: 1 1 0;
-  border: 1px solid var(--accent); border-radius: 5px; background: var(--card); color: var(--text); }
+  border: 1px solid var(--accent); border-radius: 5px; background: var(--surface); color: var(--text); }
 /* 危险动作要长得像危险动作 —— 与「改名」并排时不能是同一个灰。 */
 .linkish.danger { color: var(--danger); }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
-#bulkCat { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--text); }
+#bulkCat { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); }
 
 
 
@@ -570,3 +570,22 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* 🔴 内部信息区**必须与预览区在视觉上分开** —— 否则"预览"这个词就是假的：
    这里的东西官网上一个都看不到。 */
 .pv-internal { margin-top: 34px; padding-top: 18px; border-top: 2px dashed var(--line); max-width: 760px; }
+
+/* 管理态开关（沿用 wanew 后台：🔧 管理 / ✓ 管理中）。⛔ 不造第三种交互。 */
+.axishead { display: flex; align-items: baseline; gap: 8px; }
+.axishead .h3sub { flex: 1 1 auto; min-width: 0; }
+.managebtn {
+  flex: 0 0 auto; font: inherit; font-size: 12px; font-weight: 400; padding: 4px 10px; cursor: pointer;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.managebtn:hover { color: var(--text); border-color: var(--muted); }
+/* 开着的时候要一眼看出来 —— 否则"我到底在不在管理态"只能靠点一下试试。 */
+.managebtn.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+
+/* 🔴 `--card` 这个变量**从来没被定义过**（:root 里没有它）。用它的声明在计算值阶段
+   直接作废 ⇒ background 退回初始值 transparent。实测：`var(--card)` 算出来是
+   rgba(0,0,0,0)，`var(--surface)` 是 rgb(255,255,255)。
+   症状是几个输入框/下拉没有白底、透出页面灰底 —— 看起来像"设计就这样"，不像 bug。
+   本次把 4 处全换成 --surface（其中 #bulkCat 那处是更早就有的，不是这一批引入的）。
+   ⚠️ 同一类：未定义的自定义属性不会报错，只会**静默什么都不做**。 */

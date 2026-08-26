@@ -931,6 +931,16 @@ app.get("/api/taxonomy", async (c) => {
           refCount: refs.length,
           // 🔴 有产品读不出来时，"0 个在用"**不成立**：那不是"没人用"，是"我没看全"。
           canDelete: refs.length === 0 && unreadable === 0,
+          /**
+           * 官网 /products/ 的筛选栏上会不会出现这一条（机型轴才有意义）。
+           * 🔴 **在这里算，不在界面上算。** 界面原来拿 `state.list` 自己数一遍 published，
+           *    而同一行的「在用 N」出自上面这次扫描 —— 两个数来自**两次不同时刻的读取**。
+           *    2026-08-26 亲眼见过它们分家：那次有 4 个产品读不出来，逐机型引用之和 19，
+           *    产品数 23。同一行上"在用 0"与"筛选栏显示"完全可能同时出现，而没人看得出为什么。
+           *    ⇒ 一行上的两个数字必须出自同一次扫描。
+           */
+          onSite: axis === "categories"
+            && products.some((p: any) => p && !p.error && p.category === it.value && p.status === "published"),
         };
       });
     return c.json({
