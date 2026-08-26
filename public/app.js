@@ -178,6 +178,48 @@ function filteredRows() {
   });
 }
 
+// ══ 状态口径的**单一真源**（A11-4 / A12-2 / A12-④）══
+//
+// 🔴 以前 tab 有一张中文映射表、而行内状态列**直接把枚举原值渲染出来** ——
+//    同一个状态在同一屏上有中英两个名字。两处各写一份的话，将来加一个 status
+//    只会改一处，另一处静默显示英文原值，而那看起来像"数据错了"。
+// ⚠️ `draft` 的显示名是「未上架」不是「草稿箱」：它要同时覆盖两种来源 ——
+//    从没上架过的（新建）和上架后撤下来的。Joe 点了「下架」却在「草稿箱」里找，
+//    正是因为这两个词看起来是两件事。
+//    ⭐ 动词保持「上架/下架」不变：**动词描述动作，tab 描述状态**，本来就不必同词。
+const STATUS_LABEL = { all: "全部", published: "在线", draft: "未上架" };
+/** tab 的显示顺序（Joe 定：全部 / 在线 / 未上架），与契约枚举顺序无关。 */
+const TAB_ORDER = ["published", "draft"];
+/**
+ * ⚠️ 认不出的值**原样显示**，不显示空白也不显示"未知" ——
+ *    一个超出枚举的 status 是**数据出问题的信号**，把它吞成空白等于把信号删掉。
+ */
+const statusLabel = (s) => STATUS_LABEL[s] ?? (s || "?");
+
+/** 官网上这个产品的地址。⚠️ 只有已上架的才有这一页。 */
+const siteUrl = (slug) => `https://airsonde.com/products/${slug}/`;
+
+/**
+ * 产品标题 —— 已上架的做成指向官网的链接，未上架的**不给链接**。
+ *
+ * 🔴 未上架的产品官网上**根本不存在**（getStaticPaths 不产出它）⇒ 点过去是 404。
+ *    给一个必然 404 的链接，会让人以为官网坏了，而不是"这东西还没上架"。
+ * ⚠️ slug 用**已保存的那个**，不跟着输入框实时变：刚改完 slug 还没提交时，
+ *    官网上仍然是旧那页，链接跟着新值走就会指向一个不存在的地址。
+ */
+function siteLink(slug, status, text) {
+  if (status !== "published") {
+    const s = el("span", "", text);
+    s.title = "未上架 —— 官网上还没有这一页";
+    return s;
+  }
+  const a = el("a", "ttl-link", text);
+  a.href = siteUrl(slug);
+  a.target = "_blank"; a.rel = "noopener";
+  a.title = "在官网打开（新标签）";
+  return a;
+}
+
 function renderList() {
   // ── 机型下拉：选项从**真实数据**里长出来，不硬编码 ──
   const cats = [...new Set(state.list.map((i) => i.category).filter(Boolean))].sort();
@@ -193,11 +235,14 @@ function renderList() {
     counts[s] = state.list.filter((i) => i.status === s).length;
   });
   const tabs = $("#statusTabs"); tabs.innerHTML = "";
-  const label = { all: "全部", published: "在线", draft: "草稿箱" };
-  ["all", ...(state.contract?.statuses || [])].forEach((k) => {
+  // ⚠️ tab 顺序由 TAB_ORDER 定，**不跟着契约枚举的顺序走**：
+  //    契约里是 draft|published（数据顺序），而人要的是 全部/在线/未上架（Joe 定）。
+  //    只列契约里真有的状态 —— 枚举将来加一个，这里不会凭空多出一个空 tab。
+  const known = new Set(state.contract?.statuses || []);
+  ["all", ...TAB_ORDER.filter((k) => known.has(k))].forEach((k) => {
     const b = el("button", "stab" + (state.tab === k ? " is-on" : ""));
     b.type = "button";
-    b.append(document.createTextNode(label[k] || k), el("span", "stab-n", String(counts[k] ?? 0)));
+    b.append(document.createTextNode(statusLabel(k)), el("span", "stab-n", String(counts[k] ?? 0)));
     b.onclick = () => { state.tab = k; state.selected.clear(); renderList(); };
     tabs.append(b);
   });
@@ -227,23 +272,32 @@ function renderList() {
       tdName.append(el("div", "li-name", it.slug));
       tdName.append(el("div", "li-sub bad", `🔴 ${it.error}${it.detail ? "：" + it.detail : ""}`));
     } else {
-      const n = el("div", "li-name", it.name || it.slug);
+      const n = el("div", "li-name");
+      n.append(siteLink(it.slug, it.status, it.name || it.slug));
       // 校验有问题的要在列表上就看得见，而不是点进去才发现
       if (!it.valid) n.append(el("span", "flag-bad", `${it.errorCount} 个错误`));
       else if (it.warnCount) n.append(el("span", "flag-warn", `${it.warnCount} 提示`));
-      tdName.append(n, el("div", "li-sub", `${it.slug} · ${it.model || "—"}`));
+      // model 已独立成列，这里只留 slug
+      tdName.append(n, el("div", "li-sub", it.slug));
     }
     tr.append(tdName);
 
     const tdSt = el("td", "col-st");
-    tdSt.append(el("span", `badge badge-${it.status || "unknown"}`, it.status || "?"));
+    // ⚠️ 类名保持 badge-published / badge-draft（它承载颜色，与显示文本无关）——
+    //    ⛔ 不把类名也改成中文。文本走 statusLabel，与 tab **同一张表**。
+    tdSt.append(el("span", `badge badge-${it.status || "unknown"}`, statusLabel(it.status)));
     tr.append(tdSt);
 
+    // A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
+    // 独立一列他扫一眼就知道哪些还是 AS- —— 挤在 slug 后面做不到。
+    tr.append(el("td", "col-model", it.model || "—"));
     tr.append(el("td", "col-cat", it.category || "—"));
 
     const tdAct = el("td", "col-act");
+    // A12-①：按钮说"编辑"就要进编辑态。原来它落在默认的「详情」tab ——
+    // 按钮名与它做的事对不上，是最容易让人以为"点错了"的一种。
     const edit = el("button", "linkish", "编辑"); edit.type = "button";
-    edit.onclick = () => select(it.slug);
+    edit.onclick = () => select(it.slug, { view: "edit" });
     tdAct.append(edit);
     if (!it.error && state.write?.enabled) {
       const to = it.status === "published" ? "draft" : "published";
@@ -325,7 +379,12 @@ async function bulk(slugs, value, op = "status") {
 const cache = new Map();
 
 // ═══════════════ 选中 / 读取 ═══════════════
-async function select(slug) {
+/**
+ * @param opts.view "edit" = 打开后直接停在编辑态（列表的「编辑」按钮走这条）。
+ *   ⚠️ 原来它落在默认的「详情」tab —— 按钮说编辑、进的是详情，
+ *      **按钮名与它做的事对不上**，是最容易让人以为自己点错了的一种。
+ */
+async function select(slug, opts = {}) {
   state.slug = slug; state.isNew = false;
   resetPending();                       // 换产品必须清空待上传，否则上一份的图会跟过来
   $("#deleteBtn").hidden = !state.write?.enabled;
@@ -347,7 +406,10 @@ async function select(slug) {
 
   const p = body.product || {};
   cache.set(slug, p);
-  $("#dTitle").textContent = p.name || slug;
+  // A12-3：详情页标题也链官网。⚠️ 用**已保存的** state.slug，不是输入框里的值 ——
+  //    刚改完 slug 还没提交时，官网上仍是旧那页，跟着新值走会指向一个不存在的地址。
+  $("#dTitle").textContent = "";
+  $("#dTitle").append(siteLink(state.slug, p.status, p.name || slug));
   $("#dPath").textContent = body.path;
 
   const v = body.validation || { ok: true, errors: [], warnings: [] };
@@ -359,6 +421,7 @@ async function select(slug) {
   // 编辑一个已存在的产品：**不简化**，全部展开。slug 也不再跟随标题（它已经是 URL 了）。
   state.slugTouched = true;
   setFormMode(false);
+  if (opts.view === "edit") switchView("edit");
   renderList();
 }
 
