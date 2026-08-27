@@ -767,14 +767,3 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 }
 .senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
 .senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-family: var(--mono); cursor: help; }
-
-/* 上传后逐张说明这张图被怎么处理了（补成 1:1 / 已是 1:1 / 原样）。
-   🔴 两种结果都显示 —— 只在"补了"时才说的话，"没补"就变成沉默，
-      而沉默与"这功能根本没跑"在屏幕上长得一模一样。 */
-.ipad {
-  position: absolute; left: 4px; bottom: 4px; z-index: 2; cursor: help;
-  font-size: 9.5px; line-height: 1.5; padding: 0 5px; border-radius: 999px;
-  background: var(--surface); color: var(--muted); border: 1px solid var(--line);
-  font-family: var(--mono);
-}
-.ipad-done { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }

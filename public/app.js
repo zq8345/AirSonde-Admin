@@ -900,87 +900,22 @@ function renderView(p) {
 //    （Astro 和浏览器多半照样显示），直到某天某个按扩展名解析的工具遇上它。
 const MAX_UPLOAD = 2 * 1024 * 1024;
 
-/**
- * 四条边的底色采样 —— 决定这张图**能不能补白**。
- *
- * 🔴 不能无脑补：站上有两类图。
- *    · **白底产品图**（多数）⇒ 补白，天衣无缝
- *    · **满幅生活场景图**（木桌、卧室那几张）⇒ 补白会在照片两侧糊两条白杠，很难看
- * ⇒ 判据：四条边的像素**是不是同一个颜色**。是 ⇒ 用那个颜色补；不是 ⇒ **原样存**，
- *   让官网那侧的 1:1 框去 letterbox。
- *
- * ⚠️ 容差 `TOL=12`（0–255 每通道）的来历：JPEG 在纯色大片上仍会有 ±5 上下的块效应，
- *    再加一档缩放重采样的误差；12 能容下这些，又明显小于"白底 vs 浅灰底"那种真实色差。
- *    ⛔ 不是拍脑袋的魔数 —— 下面 sampleEdges 会把实测的最大偏差一起返回，可以复核。
- * ⚠️ 跳过最外 1px：很多图边缘有一圈重采样过渡像素，算进去会让判定偏保守。
- */
-const EDGE_TOL = 12;
-function sampleEdges(ctx, w, h) {
-  const inset = Math.min(2, Math.floor(Math.min(w, h) / 20));
-  const pts = [];
-  const N = 16;
-  for (let i = 0; i < N; i++) {
-    const fx = Math.round(inset + (w - 1 - inset * 2) * (i / (N - 1)));
-    const fy = Math.round(inset + (h - 1 - inset * 2) * (i / (N - 1)));
-    pts.push([fx, inset], [fx, h - 1 - inset], [inset, fy], [w - 1 - inset, fy]);
-  }
-  const px = pts.map(([x, y]) => { const d = ctx.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2], d[3]]; });
-  // 半透明边缘不当纯色处理：补出来的底与原图会有可见接缝
-  if (px.some((c) => c[3] < 250)) return { uniform: false, why: "边缘有半透明像素", maxDev: null, color: null };
-  const avg = [0, 1, 2].map((k) => Math.round(px.reduce((s, c) => s + c[k], 0) / px.length));
-  const maxDev = Math.max(...px.map((c) => Math.max(...[0, 1, 2].map((k) => Math.abs(c[k] - avg[k])))));
-  const hex = "#" + avg.map((v) => v.toString(16).padStart(2, "0")).join("");
-  return { uniform: maxDev <= EDGE_TOL, maxDev, color: hex, tol: EDGE_TOL,
-           why: maxDev <= EDGE_TOL ? "四边同色" : `四边不一致（最大偏差 ${maxDev} > 容差 ${EDGE_TOL}）` };
-}
-
-/**
- * 上传预处理：缩到最长边 1600 → **补成 1:1（有条件）** → 转 WebP → 逐档降质进 2MB。
- *
- * 🔴🔴 **绝不裁切。** 裁会丢内容，而那是 Joe 的内容资产 ——
- *    补白最坏是难看，裁掉是**不可逆的损失**。
- * ⚠️ 降质那一档必须在**补完之后**跑：补白会把画布变大、字节数上升，
- *    在补之前判 2MB 等于**判了一个不是最终产物的东西**。
- */
 async function toWebp(file) {
   if (!/^image\//.test(file.type)) throw new Error("这不是图片文件。");
   const bmp = await createImageBitmap(file);
   // 产品图最长边 1600 足够 —— Astro 的 <Image> 会再出响应式尺寸，源图无需更大
   const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-  let cv = document.createElement("canvas");
+  const cv = document.createElement("canvas");
   cv.width = Math.round(bmp.width * scale);
   cv.height = Math.round(bmp.height * scale);
   cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
-
-  // ── 补成 1:1 ──
-  let pad = { done: false, note: "" };
-  if (cv.width === cv.height) {
-    // ⚠️ 已经是方的就**一个像素都不动**（不是"补 0 像素"——那也会重画一遍）
-    pad = { done: false, note: "已经是 1:1，未做改动" };
-  } else {
-    const e = sampleEdges(cv.getContext("2d"), cv.width, cv.height);
-    if (e.uniform) {
-      const side = Math.max(cv.width, cv.height);
-      const sq = document.createElement("canvas");
-      sq.width = sq.height = side;
-      const g = sq.getContext("2d");
-      g.fillStyle = e.color;
-      g.fillRect(0, 0, side, side);
-      // 居中放原图 —— **整幅画进去，一个像素不丢**
-      g.drawImage(cv, Math.round((side - cv.width) / 2), Math.round((side - cv.height) / 2));
-      cv = sq;
-      pad = { done: true, color: e.color, note: `补成 1:1（补色 ${e.color}）`, maxDev: e.maxDev };
-    } else {
-      pad = { done: false, note: `原样（${e.why}，未补）`, maxDev: e.maxDev };
-    }
-  }
 
   // 逐档降质直到进 2MB。⚠️ 降到底仍超标就**报错，不静默上传**——
   //    静默截断或硬传会让服务端那道 2MB 闸来拒，而那时人已经等了一轮上传。
   for (const q of [0.85, 0.7, 0.55, 0.4]) {
     const blob = await new Promise((r) => cv.toBlob(r, "image/webp", q));
     if (!blob) throw new Error("这个浏览器的 canvas 导不出 WebP。");
-    if (blob.size <= MAX_UPLOAD) return { blob, quality: q, w: cv.width, h: cv.height, pad };
+    if (blob.size <= MAX_UPLOAD) return { blob, quality: q, w: cv.width, h: cv.height };
   }
   throw new Error("图片降到最低画质仍超过 2MB，请先自行压缩。");
 }
@@ -1067,19 +1002,6 @@ function renderImages() {
     // i===0 就是主图 —— 角标不是装饰，它是这条规则**唯一**的可见处
     if (i === 0) card.append(el("span", "icover", "封面"));
 
-    // 🔴 这次上传对这张图做了什么，**逐张说出来**。
-    //    ⚠️ 两种结果都要说 —— 只在"补了"时才说的话，"没补"就变成了沉默，
-    //       而沉默与"这功能没跑"在屏幕上长得一模一样。
-    if (it.kind === "new" && it.pad) {
-      const tag = el("span", "ipad" + (it.pad.done ? " ipad-done" : ""));
-      tag.textContent = it.pad.done ? "已补 1:1" : (it.w === it.h ? "已是 1:1" : "原样");
-      tag.title = `${it.srcName || ""} → ${it.w}×${it.h}
-${it.pad.note}` +
-        (it.pad.maxDev != null ? `
-四边最大色差 ${it.pad.maxDev}（容差 ${EDGE_TOL}）` : "");
-      card.append(tag);
-    }
-
     const del = el("button", "idel", "×");
     del.type = "button";
     del.title = i === 0 ? "删除封面" : "删除这张";
@@ -1151,14 +1073,10 @@ async function addImageFiles(files) {
   setTip(`0/${arr.length}`);
   try {
     for (let k = 0; k < arr.length; k++) {
-      const { blob, quality, w, h, pad } = await toWebp(arr[k]);
+      const { blob, quality, w, h } = await toWebp(arr[k]);
       state.imgList.push({
         kind: "new", base64: await blobToBase64(blob),
         url: URL.createObjectURL(blob), size: blob.size, quality, w, h,
-        // 🔴 **必须留着并显示出来**：图被动过没有，人有权当场知道。
-        //    静默处理是这一单最危险的做法 —— 传完不知道发生了什么，
-        //    等他在官网上看出不对时，已经隔了一次构建。
-        pad, srcName: arr[k].name,
       });
       setTip(`${k + 1}/${arr.length}`);
       renderImages();
