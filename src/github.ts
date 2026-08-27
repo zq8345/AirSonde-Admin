@@ -45,6 +45,22 @@ const DEV_WRITABLE_REPOS = new Set(["zq8345/AirSonde-Admin"]);
 /** 永不允许本机写的仓。与上面是**两条独立判据**：白名单写错了，这条仍然挡得住。 */
 const NEVER_DEV_WRITABLE = new Set(["zq8345/AirSonde-Web"]);
 
+/**
+ * 🔴 本机**绝不**写的分支名 —— 第三道闸（AU2 ⑨）。
+ *
+ * 前两道闸只问"写哪个仓"，答对了就放行 ⇒ e2e 打靶子仓，**一路写到靶子仓的 `main`**。
+ * 而靶子仓就是本 worker 自己的仓，`main` 上一个提交 = Workers Builds 一次**生产部署**。
+ * ⇒ 跑一轮 e2e ≈ 11 个提交 ≈ 11 次生产部署。**测试把生产推来推去，而且悄无声息。**
+ *
+ * ⚠️ 这不是理论：仓库历史里那串 `admin: create/update/delete imgorder-e2e (dev-bypass)`
+ *    每一条都进过 main。
+ *
+ * ⛔ 修法不是"记得在 .dev.vars 里改分支" —— 文档不是机制，忘一次就又推一次生产。
+ *    判据挂在出站口：**本机写靶子仓可以，写它的生产分支不行。**
+ * ⚠️ 与仓白名单一样硬编码：做成变量它就是个开关，谁都能把它设回 main。
+ */
+const NEVER_DEV_WRITABLE_BRANCHES = new Set(["main", "master"]);
+
 export function assertEgressAllowed(env: Env, method: string, repo?: string): void {
   const m = method.toUpperCase();
   if (m === "GET" || m === "HEAD") return;
@@ -69,7 +85,17 @@ export function assertEgressAllowed(env: Env, method: string, repo?: string): vo
         `本机只允许写自检靶子仓（${[...DEV_WRITABLE_REPOS].join(", ")}），当前目标是 ${target}。`,
       );
     }
-    // 落到这里 = 目标是靶子仓，放行。⚠️ 生产环境永远走不到这个分支（没有 DEV_BYPASS_AUTH）。
+    // 🔴 第三道：靶子仓对了，还要看写的是哪个分支。
+    //    ⚠️ 这条**只在 dev 分支里**：生产就是要写 main，那是它的本职。
+    const branch = env.GITHUB_BRANCH || "main";
+    if (NEVER_DEV_WRITABLE_BRANCHES.has(branch)) {
+      throw new EgressDenied(
+        `本机不允许写 ${target} 的 \`${branch}\` 分支 —— 那是本 worker 自己的生产分支，` +
+        `往它推一个提交就是一次生产部署（Workers Builds），而跑一轮 e2e 会推十几个。` +
+        `\n⇒ 跑 e2e 前在 .dev.vars 里加一行 GITHUB_BRANCH=e2e-fixtures（那个分支已建好）。`,
+      );
+    }
+    // 落到这里 = 目标是靶子仓的非生产分支，放行。⚠️ 生产环境永远走不到这个分支（没有 DEV_BYPASS_AUTH）。
   }
 }
 

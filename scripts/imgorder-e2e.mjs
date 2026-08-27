@@ -14,6 +14,17 @@ import fs from "fs";
 const B = "http://localhost:8788";
 const SLUG = "imgorder-e2e";
 const TARGET_REPO = "zq8345/AirSonde-Admin";
+
+// 🔴 分支**不写死**，从 /api/_whoami 现取（AU2 ⑨）。
+//    写死 `main` 有两个后果，第二个更毒：
+//      ① 写入现在去 e2e-fixtures 分支了（出站口第三道闸不许本机写生产分支）——
+//         再去 main 上核对，读到的是别人的世界。
+//      ② `commits?per_page=1` 不带 sha 时读的是**仓库默认分支**（main）⇒
+//         "有没有产生提交"这种前后对比会看到"没变"，于是**报告"没写成"，而其实写成了**。
+//         那不是报错，是一个安静的错答案。
+//    ⇒ 分支只有一个来源：被测进程自己说的那个。
+let BRANCH = null;   // ⓪ 里赋值；下面的 URL 都是模板串，取值发生在调用时
+
 const DIR = "fixtures/products";
 
 const TOKEN = (() => {
@@ -33,7 +44,7 @@ const req = async (p, i) => { const r = await fetch(B + p, i); return { status: 
 const put = (env) => req(`/api/products/${SLUG}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(env) });
 
 async function tree() {
-  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1&_=${Date.now()}`, { headers: GH });
+  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/${BRANCH}?recursive=1&_=${Date.now()}`, { headers: GH });
   const t = await r.text();
   if (r.status === 403 && /rate limit/i.test(t)) { console.log("🔴 GitHub 限流（仪器问题）—— 不出结论。"); process.exit(2); }
   const j = JSON.parse(t);
@@ -47,6 +58,18 @@ const who = await req("/api/_whoami").catch(() => null);
 if (!who || who.status !== 200) { console.log("🔴 连不上 dev —— 不出结论。"); process.exit(2); }
 if (who.body.data.repo !== TARGET_REPO || who.body.data.productsDir !== DIR) {
   console.log(`🔴 数据源是 ${who.body.data.repo}/${who.body.data.productsDir}，不是靶子 —— 不出结论。`);
+  process.exit(2);
+}
+
+// 🔴 ⓪ 分支：从被测进程自己那里取，并且**必须不是生产分支**（AU2 ⑨）。
+//    靶子仓就是本 worker 自己的仓 ⇒ 往它的 main 推一个提交 = 一次 Workers Builds 生产部署，
+//    跑一轮这种脚本会推十几个。出站口已经硬拒了，这里再拦一道是为了**早报、报得懂**：
+//    否则症状是跑到一半突然一片 403，看起来像 token 坏了。
+BRANCH = who.body.data.branch;
+if (!BRANCH || BRANCH === "main" || BRANCH === "master") {
+  console.log(`🔴 数据源分支是 \`${BRANCH}\`（生产分支）—— 不出结论。
+` +
+    `   在 .dev.vars 里加一行 GITHUB_BRANCH=e2e-fixtures 再重启 dev。`);
   process.exit(2);
 }
 if (!who.body.data.writeEnabled || !TOKEN) { console.log("🔴 writeEnabled/token 不满足 —— 不出结论。"); process.exit(2); }
@@ -136,7 +159,13 @@ try {
 } finally {
   await req(`/api/products/${SLUG}`, { method: "DELETE" }).catch(() => {});
   const tz = await tree();
-  const left = [...tz.keys()].filter((k) => k.includes(SLUG));
+  // 🔴 只在**这个测试真正会写的两个目录**里找残留。
+  //    原来是全仓 `k.includes(SLUG)` 的子串匹配 —— 而 `scripts/imgorder-e2e.mjs`
+  //    这个脚本**自己**就躺在仓里且包含这个串 ⇒ 这一条**永远红**，报的是它自己。
+  //    一条恒红的判据和一条恒绿的一样没用：它训练人忽略红色，真残留来了没人信。
+  //    （子串匹配假命中，与图片死链扫描那次是同一个病。）
+  const WRITES_TO = ["fixtures/products/", "src/assets/products/"];
+  const left = [...tz.keys()].filter((k) => WRITES_TO.some((d) => k.startsWith(d)) && k.includes(SLUG));
   ck("⑥ 清理干净（仓里无残留）", left.length === 0, left.join(", "));
 }
 

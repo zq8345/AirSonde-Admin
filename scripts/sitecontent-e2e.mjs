@@ -18,6 +18,17 @@
 import fs from "fs";
 const B = "http://localhost:8788";
 const TARGET_REPO = "zq8345/AirSonde-Admin";
+
+// 🔴 分支**不写死**，从 /api/_whoami 现取（AU2 ⑨）。
+//    写死 `main` 有两个后果，第二个更毒：
+//      ① 写入现在去 e2e-fixtures 分支了（出站口第三道闸不许本机写生产分支）——
+//         再去 main 上核对，读到的是别人的世界。
+//      ② `commits?per_page=1` 不带 sha 时读的是**仓库默认分支**（main）⇒
+//         "有没有产生提交"这种前后对比会看到"没变"，于是**报告"没写成"，而其实写成了**。
+//         那不是报错，是一个安静的错答案。
+//    ⇒ 分支只有一个来源：被测进程自己说的那个。
+let BRANCH = null;   // ⓪ 里赋值；下面的 URL 都是模板串，取值发生在调用时
+
 const PATH = "fixtures/site-content.json";
 
 const DEV_VARS = new URL("../.dev.vars", import.meta.url);
@@ -43,11 +54,11 @@ const put = (patch, expectedSha, section) => req("/api/site-content", {
   body: JSON.stringify({ patch, expectedSha, section }),
 });
 const headSha = async () =>
-  (await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?per_page=1&_=${Date.now()}`, { headers: GH })).json())[0].sha;
+  (await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?sha=${BRANCH}&per_page=1&_=${Date.now()}`, { headers: GH })).json())[0].sha;
 
 /** 按 blob sha 读**仓里真实的字节** —— 不看接口自己说了什么。 */
 async function readFromRepo() {
-  const t = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1&_=${Date.now()}`, { headers: GH });
+  const t = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/${BRANCH}?recursive=1&_=${Date.now()}`, { headers: GH });
   const tt = await t.text();
   if (t.status === 403 && /rate limit/i.test(tt)) { console.log("🔴 GitHub 限流（仪器问题）—— 不出结论。"); process.exit(2); }
   const tree = JSON.parse(tt);
@@ -65,6 +76,18 @@ catch (e) { console.log(`🔴 连不上 ${B}（${e.message}）—— 先起 \`np
 if (who.status !== 200) { console.log(`🔴 /api/_whoami → ${who.status}，不出结论。`); process.exit(2); }
 if (who.body.data.repo !== TARGET_REPO) {
   console.log(`🔴 数据源是 ${who.body.data.repo}，不是靶子仓 —— 不出结论，绝不在官网仓上跑写入测试。`);
+  process.exit(2);
+}
+
+// 🔴 ⓪ 分支：从被测进程自己那里取，并且**必须不是生产分支**（AU2 ⑨）。
+//    靶子仓就是本 worker 自己的仓 ⇒ 往它的 main 推一个提交 = 一次 Workers Builds 生产部署，
+//    跑一轮这种脚本会推十几个。出站口已经硬拒了，这里再拦一道是为了**早报、报得懂**：
+//    否则症状是跑到一半突然一片 403，看起来像 token 坏了。
+BRANCH = who.body.data.branch;
+if (!BRANCH || BRANCH === "main" || BRANCH === "master") {
+  console.log(`🔴 数据源分支是 \`${BRANCH}\`（生产分支）—— 不出结论。
+` +
+    `   在 .dev.vars 里加一行 GITHUB_BRANCH=e2e-fixtures 再重启 dev。`);
   process.exit(2);
 }
 if (!who.body.data.writeEnabled) { console.log("🔴 writeEnabled=false —— 不出结论。"); process.exit(2); }

@@ -15,6 +15,17 @@
 const B = "http://localhost:8788";
 const SLUG = "a6-selftest-widget";
 const TARGET_REPO = "zq8345/AirSonde-Admin";
+
+// 🔴 分支**不写死**，从 /api/_whoami 现取（AU2 ⑨）。
+//    写死 `main` 有两个后果，第二个更毒：
+//      ① 写入现在去 e2e-fixtures 分支了（出站口第三道闸不许本机写生产分支）——
+//         再去 main 上核对，读到的是别人的世界。
+//      ② `commits?per_page=1` 不带 sha 时读的是**仓库默认分支**（main）⇒
+//         "有没有产生提交"这种前后对比会看到"没变"，于是**报告"没写成"，而其实写成了**。
+//         那不是报错，是一个安静的错答案。
+//    ⇒ 分支只有一个来源：被测进程自己说的那个。
+let BRANCH = null;   // ⓪ 里赋值；下面的 URL 都是模板串，取值发生在调用时
+
 const DIR = "fixtures/products";
 // 🔴 校验用的 GitHub 读也必须**带 token**。
 //    匿名配额只有 60/h，而这个脚本一轮要读好几次 tree/commit/blob ——
@@ -67,7 +78,7 @@ const del = (slug) => req(`/api/products/${slug}`, { method: "DELETE" });
  */
 async function repoTree() {
   // ⚠️ 加 cache-bust：GitHub 的 API 也会给条件缓存，刚 commit 完立刻读可能拿到旧树
-  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/main?recursive=1&_=${Date.now()}`, { headers: GH });
+  const r = await fetch(`https://api.github.com/repos/${TARGET_REPO}/git/trees/${BRANCH}?recursive=1&_=${Date.now()}`, { headers: GH });
   if (!r.ok) { const t = await r.text(); assertNotRateLimited(r, t); throw new Error(`读靶子仓 tree 失败 ${r.status}：${t.slice(0, 200)}`); }
   const j = await r.json();
   if (j.truncated) throw new Error("tree 被截断，拒绝在不完整基线上判断");
@@ -111,6 +122,18 @@ const d = who.body.data;
 say(`⓪ 进程身份：repo=${d.repo}  dir=${d.productsDir}  writeEnabled=${d.writeEnabled}  isLocalDev=${who.body.request.isLocalDev}`);
 if (d.repo !== TARGET_REPO || d.productsDir !== DIR) {
   console.log(`🔴 数据源不是靶子（期望 ${TARGET_REPO} / ${DIR}）—— 本次不出任何结论，也绝不在别的仓上跑生命周期测试。`);
+  process.exit(2);
+}
+
+// 🔴 ⓪ 分支：从被测进程自己那里取，并且**必须不是生产分支**（AU2 ⑨）。
+//    靶子仓就是本 worker 自己的仓 ⇒ 往它的 main 推一个提交 = 一次 Workers Builds 生产部署，
+//    跑一轮这种脚本会推十几个。出站口已经硬拒了，这里再拦一道是为了**早报、报得懂**：
+//    否则症状是跑到一半突然一片 403，看起来像 token 坏了。
+BRANCH = d.branch;
+if (!BRANCH || BRANCH === "main" || BRANCH === "master") {
+  console.log(`🔴 数据源分支是 \`${BRANCH}\`（生产分支）—— 不出结论。
+` +
+    `   在 .dev.vars 里加一行 GITHUB_BRANCH=e2e-fixtures 再重启 dev。`);
   process.exit(2);
 }
 if (!d.writeEnabled) {
@@ -193,11 +216,11 @@ try {
   ck("③ 往返闭合：JSON 路径回到起点", j3?.images?.main === `products/_draft/${SLUG}.webp`, `读到的 images=${JSON.stringify(j3?.images ?? null)}（null=JSON 不在树里）`);
 
   // ══════════ ④ 契约闸不回归：坏数据必须 422 且**零 commit** ══════════
-  const before = await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?per_page=1`, { headers: GH })).json();
+  const before = await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?sha=${BRANCH}&per_page=1`, { headers: GH })).json();
   const headBefore = before[0].sha;
   const r4 = await put(SLUG, { patch: { specs: { src: "https://www.alibaba.com/x" } } });
   ck("④ 坏数据被拒（422）", r4.status === 422 && r4.body?.wrote === false, `status=${r4.status}`);
-  const after = await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?per_page=1`, { headers: GH })).json();
+  const after = await (await fetch(`https://api.github.com/repos/${TARGET_REPO}/commits?sha=${BRANCH}&per_page=1`, { headers: GH })).json();
   ck("④ **零 commit**：HEAD 一点没动（这才是「被拒」的证据，不是接口说 422）",
     after[0].sha === headBefore, `前=${headBefore.slice(0, 7)} 后=${after[0].sha.slice(0, 7)}`);
 
