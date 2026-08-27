@@ -362,9 +362,27 @@ button:disabled, [disabled] {
 .ptable td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .ptable tr:last-child td { border-bottom: 0; }
 .ptable tbody tr:hover { background: var(--bg); }
+/* ── 反扫结论（2026-08-27）：全文件 9 处裸 `width: Npx`，逐个判过 ──
+   会咬人的判据是「这一格里有**会换行的文字**吗」，不是「有没有写死 px」。
+     .col-st   92px  🔴 有文字（在线/未上架）⇒ **已改**
+     .col-cat 110px  🔴 有文字（Wall-mounted）⇒ **已改**
+     .col-model      ✅ 之前已改
+     .col-act 110px  ✅ 已有 `white-space: nowrap` ⇒ 文字压不成两行，不改
+     .col-ck   34px  ✅ 只有一个 checkbox，没有文字可换行
+     .col-img  54px  ✅ 只有缩略图，没有文字
+     .kvtable th 150px  ⚠️ 有文字（specs 的键）但**允许换行是对的**：
+                        键可能是任意长的英文短语，nowrap 会把值那一列挤没。
+                        ⇒ 有意保留，不属于同一族。
+     .gcard/.mcard/.idel/.featdel  ✅ 是盒子和按钮的尺寸，不是"撑住文字" */
 .ptable .col-ck { width: 34px; }
 .ptable .col-img { width: 54px; }
-.ptable .col-st { width: 92px; }
+/* 🔴 与 col-model **同一种修法**（见下面那段说明）。
+   ⚠️ 那段说明是几天前诊断型号列时写的，结论白纸黑字「表格里的 width 是建议不是下限」——
+      **而我当时只把修法用在型号列，紧挨着的这两列一个字没动。**
+      生产上的后果：24 行的「在线」全部竖排成两行、`Wall-mounted` 折成两截。
+   ⇒ 立一条：**"我搞懂了这类写法为什么错" ≠ "我把它用在了所有适用的地方"。**
+     领悟之后必须**同层全量反扫**，而不是修好眼前那一处就收工。 */
+.ptable .col-st { width: 1%; white-space: nowrap; }
 /* 🔴 型号是**标识符，不是句子** —— 绝不允许换行：`AK34-1` 折成 `AK34-` / `1` 之后
    看起来像两个东西，而型号正是 Joe 在逐个核对的那一列。
    ⚠️ 原来写的是 `width: 116px`，而**表格里的 width 是建议不是下限**：
@@ -375,7 +393,7 @@ button:disabled, [disabled] {
      改成 **nowrap + 宽度由内容决定**：`width: 1%` 在表格里的含义是"尽量窄"，
      而 nowrap 把"尽量窄"的下限抬到 max-content ⇒ **正好是最长型号的宽度**。 */
 .ptable .col-model { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
-.ptable .col-cat { width: 110px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.ptable .col-cat { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .ptable .col-act { width: 110px; text-align: right; white-space: nowrap; }
 .ptable input[type=checkbox] { width: auto; margin: 0; }
 .row-bad { background: var(--danger-soft); }
