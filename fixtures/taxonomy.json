@@ -1,0 +1,27 @@
+{
+  "$comment": "测试材料，不是官网数据。官网真源是 zq8345/AirSonde-Web 的 src/data/taxonomy.json。🔴 label 一律带 [FIXTURE] 后缀是**故意的判别式**：两份文件如果长得一样，任何『读到了轴』的断言都分不清读的是哪一份 —— 而 A13 之后写入路径硬依赖 taxonomy，一旦有人把 TAXONOMY_PATH 忘在官网仓上，测试会照常通过并悄悄读生产的轴。带上后缀，读错了当场看得出来。value 必须与 fixtures/products/*.json 里实际用到的取值一致，否则那些样本过不了校验。",
+  "categories": [
+    { "value": "desktop", "label": "Desktop [FIXTURE]", "order": 1 },
+    { "value": "portable", "label": "Portable [FIXTURE]", "order": 2 },
+    { "value": "wall-mounted", "label": "Wall-mounted [FIXTURE]", "order": 3 },
+    { "value": "wearable", "label": "Wearable [FIXTURE]", "order": 4 },
+    { "value": "industrial", "label": "Industrial [FIXTURE]", "order": 5 },
+    { "value": "other", "label": "Other [FIXTURE]", "order": 6 }
+  ],
+  "sensors": [
+    { "value": "CO2", "label": "CO2 [FIXTURE]", "order": 1 },
+    { "value": "CO", "label": "CO [FIXTURE]", "order": 2 },
+    { "value": "PM1.0", "label": "PM1.0 [FIXTURE]", "order": 3 },
+    { "value": "PM2.5", "label": "PM2.5 [FIXTURE]", "order": 4 },
+    { "value": "PM10", "label": "PM10 [FIXTURE]", "order": 5 },
+    { "value": "HCHO", "label": "HCHO [FIXTURE]", "order": 6 },
+    { "value": "TVOC", "label": "TVOC [FIXTURE]", "order": 7 },
+    { "value": "temperature", "label": "temperature [FIXTURE]", "order": 8 },
+    { "value": "humidity", "label": "humidity [FIXTURE]", "order": 9 },
+    { "value": "AQI", "label": "AQI [FIXTURE]", "order": 10 },
+    { "value": "radiation", "label": "radiation [FIXTURE]", "order": 11 },
+    { "value": "alcohol", "label": "alcohol [FIXTURE]", "order": 12 },
+    { "value": "WBGT", "label": "WBGT [FIXTURE]", "order": 13 },
+    { "value": "combustible-gas", "label": "combustible-gas [FIXTURE]", "order": 14 }
+  ]
+}
