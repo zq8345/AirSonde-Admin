@@ -7,18 +7,31 @@
   --surface: #ffffff;
   --line: #e2e5ea;
   --text: #1a1d21;
-  --muted: #6b7280;
-  --accent: #0b6bcb;
+  /* ══ 前景色按 7:1 收（Joe 2026-08-26 定）══
+     🔴 **先算再改**：每个 token 都逐个量了它**实际用在哪些底色上**（全站扫描出来的，
+        不是我假设的），然后沿"朝黑缩放"保色相降明度，取**仍然满足 7:1 的最亮那一档** ——
+        比必要更暗的话层次会塌，而正文墨是 ~17:1，次要色必须明显浅于它。
+     实测改前 → 改后（底色依次为 白 / --bg / --accent-soft / --warn-soft）：
+       --muted  #6b7280 → #4b505a   4.83/4.51/4.24/4.56 → 8.12/7.57/7.12/7.66
+       --accent #0b6bcb → #085098   5.28/4.63           → 8.01/7.03
+       --ok     #0f7b3f → #0c5f31   5.35/4.84           → 7.82/7.08
+       --warn   #8a5a00 → #754d00   5.93/5.59           → 7.48/7.06
+       --danger #b42318 → #a22016   6.57/6.05           → 7.64/7.03
+     ⚠️ **禁用态是显式例外**：它带 `opacity:.5 + grayscale(1)`，实际上屏对比度必然被拉低。
+        7:1 不适用于"不可用"的东西 —— 那正是"不可用"的正确表达方式。⛔ 但不是静默跳过：
+        这一条写在这里，而且下面的禁用规则一个字没动。 */
+  --muted: #4b505a;
+  --accent: #085098;
   --accent-soft: #e8f1fc;
-  --danger: #b42318;
+  --danger: #a22016;
   --danger-soft: #fef3f2;
-  --warn: #8a5a00;
+  --warn: #754d00;
   --warn-soft: #fff8e6;
-  --ok: #0f7b3f;
+  --ok: #0c5f31;
   --ok-soft: #e9f7ef;
-  --add: #0f7b3f;
+  --add: #0c5f31;
   --add-soft: #e9f7ef;
-  --del: #b42318;
+  --del: #a22016;
   --del-soft: #fef3f2;
   --radius: 8px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -325,7 +338,7 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 .tabs-status { display: flex; gap: 2px; background: var(--bg); padding: 2px; border-radius: 7px; }
 .stab { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border: 0; background: none; border-radius: 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
 .stab.is-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.stab-n { font-family: var(--mono); font-size: 11px; opacity: .8; }
+.stab-n { font-family: var(--mono); font-size: 11px; }   /* ⚠️ 原来带 opacity:.8 —— 与 .shint 同一个病，上屏只有 4.54:1。降权交给色值。 */
 
 .batchbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 10px;
   background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 7px; font-size: 13px; }
@@ -448,7 +461,11 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .sv-list { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
 .sv-list .chip { font-family: var(--mono); font-size: 11.5px; }
 /* 说明句：默认在的，不是 hover 才出现的 —— 这一页的每一行都需要"为什么" */
-.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: 2px 0 9px; border-bottom: 1px solid var(--line); margin-top: -1px; opacity: .92; }
+/* ⚠️ 这里原来还有 `opacity: .92`（我在设置页那批里加的"降权"手法）。**删掉。**
+   用 opacity 压文字是把对比度悄悄拉低：色值上算是 8.12:1，实际上屏只有 6.51:1，
+   而报告里如果只看声明色，报出来的是一个**屏幕上不存在的数**。
+   降权已经由 --muted 这个色值本身承担了，不需要再叠一层。 */
+.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: 2px 0 9px; border-bottom: 1px solid var(--line); margin-top: -1px; }
 .shint b { color: var(--text); }
 .shint code { font-family: var(--mono); font-size: 11px; }
 
@@ -704,3 +721,9 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .cnt-empty { color: var(--muted); font-style: italic; }
 .cnt-ok    { color: var(--ok); }
 .cnt-over  { color: var(--warn); font-weight: 600; }
+
+/* 🔴 placeholder 是**最容易漏的一处**：它不是文字节点，按元素扫文本的那套查不到它，
+   而且浏览器给的默认色（实测 #757575 on #f6f7f9 = **4.3:1**）根本不到 7。
+   ⇒ 显式指定。用 --muted（7.57:1 on --bg）——
+   ⚠️ 它与真值仍然分得开：真值走 --text，约 17:1，比 placeholder 明显重。 */
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
