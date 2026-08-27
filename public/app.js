@@ -1095,6 +1095,11 @@ function renderImages() {
 
   const note = $("#mainImgNote");
   if (note) note.textContent = list.length ? "" : "还没有图片。第一张会成为封面（主图）。";
+
+  // 🔴 图片增 / 删 / 拖动换位**全都**要经过这里 ⇒ 这一处就守住了图片那一路。
+  //    ⚠️ Joe 撞的正是这条路：删完图，面板还写着「图片无改动」。
+  //    ⛔ 别改成在每个 onclick 里各调一次 —— 拖动那条路会被忘掉（它不是按钮）。
+  invalidatePreviewIfStale();
 }
 
 /** 把一批文件转成 WebP 并追加到列表末尾。多选、拖文件进来都走这里。 */
@@ -1283,6 +1288,65 @@ function buildEnvelope(extra = {}) {
   return { patch, uploads, ...extra };
 }
 
+/**
+ * 🔴 `wouldChange` **只有一种读法**。
+ *
+ * ⚠️ 这个函数存在的唯一理由，是 P0-1 的病根曾经原样复活过一次：
+ *    同一个字段，`nothingToDo` 缺失时恒 false（不降级），`canCommit` 缺失时降级到 identical，
+ *    两个消费者隔着 76 行各写各的判断 ⇒ 字段一缺，两边说的话互相矛盾。
+ * ⇒ **一个字段只有一处降级**。要改降级方式，改这里，两个消费者一起跟着变。
+ *
+ * 缺失时退回旧判据（`!identical`）：它只看数据文件、看不见图片操作 ——
+ * ⛔ 所以调用方**必须**同时把 `missing` 吼出来（见 `renderPreview()` 开头）。
+ */
+function readWouldChange(r) {
+  const missing = r.change?.wouldChange === undefined;
+  return { missing, wouldChange: missing ? !r.change.identical : r.change.wouldChange };
+}
+
+/**
+ * 「这块确认面板算的是哪一份内容」的指纹。
+ *
+ * ⚠️ ⛔ 不直接用 `JSON.stringify(buildEnvelope())`：新图的 `base64` 在里面，
+ *    每次按键都要把几 MB 的串拼出来比一遍。
+ * 🔴 新图用 `it.url`（每个 blob URL 唯一）当身份，⛔ 不用 `it.size` ——
+ *    两张不同的图大小可能一样，那样换图会**比不出差别**，闸就瞎了。
+ *    （我第一版差点写成 `it.name`，而 imgList 的新图项**根本没有 name 字段** ⇒
+ *      恒为 undefined ⇒ 所有新图指纹相同。写之前去数据结构里核了一遍才发现。）
+ */
+function previewFingerprint() {
+  try {
+    return JSON.stringify({
+      patch: readForm(),
+      // 顺序也算：第一张就是封面，拖动换位是**真改动**
+      imgs: (state.imgList || []).map((it) => (it.kind === "have" ? "h:" + it.path : "n:" + it.url)),
+    });
+  } catch { return null; }
+}
+
+/**
+ * 🔴 内容变了就不许再把上一次的确认结果摆在屏幕上。
+ *
+ * ⚠️ 真事（Joe 2026-08-27）：他删掉一张图后问「**我刚刚删了一张图片，怎么又保存不了**」——
+ *    屏幕上是删完的 5 格，而面板还写着「图片**无改动**」「什么都不会改」。
+ *    **他看到的是一句已经不成立的断言，于是以为系统坏了。**
+ *    这块面板出现在按下提交之前的最后一眼，**正是最该说真话的位置**。
+ *
+ * ⛔ 不做成"一动就清空"：那样什么都没改时面板也会消失，结论永远看不到（见反向自证判据）。
+ *    ⇒ 判据是**指纹变了没有**，不是"有没有事件发生"。
+ * ⛔ 不做成"自动重算"：那会变成每次按键发一个 dry-run 请求。
+ */
+function invalidatePreviewIfStale() {
+  const box = $("#preview");
+  if (!box || box.hidden || !state.previewOf) return;   // 没有面板，就无所谓过时
+  const now = previewFingerprint();
+  if (now === null || now === state.previewOf) return;  // 🔴 反向自证：没变 ⇒ 面板留着
+  state.previewOf = null;
+  box.innerHTML = "";
+  box.append(mkNotice("warn",
+    "**内容已改变**，上面那份确认结果已经过期 —— 请重新点「保存」，再确认一次。"));
+}
+
 // ═══════════════ 预览（dry-run）═══════════════
 /**
  * 主按钮的文案（A12 追加③）。
@@ -1302,6 +1366,10 @@ async function doPreview(e) {
   const btn = $("#previewBtn");
   const slug = state.isNew ? ($("#f_slug").value.trim() || "unnamed") : state.slug;
   btn.disabled = true; btn.textContent = "检查中…";
+  // 🔴 **发请求之前**记下指纹，⛔ 不是渲染之后 ——
+  //    请求飞在路上时人还能接着改；那种情况下面板一渲染出来就已经是过时的，
+  //    此刻记下的指纹才对得上"这块面板算的是哪一份内容"。
+  state.previewOf = previewFingerprint();
   try {
     const { body } = await api(`/api/products/${encodeURIComponent(slug)}/preview`, {
       method: "POST",
@@ -1310,6 +1378,8 @@ async function doPreview(e) {
     });
     renderPreview(body);
     renderIssues(body.validation);
+    // 请求飞在路上的这段时间里人可能已经改过了 ⇒ 渲染完立刻自查一次
+    invalidatePreviewIfStale();
   } catch (err) {
     renderIssues({ ok: false, errors: [{ field: "(请求)", code: "failed", message: err.message }], warnings: [] });
     $("#preview").hidden = true;
@@ -1331,7 +1401,7 @@ function renderPreview(r) {
   //    ⇒ 退回可以，静默不行。退回时屏幕上必须有话说。
   //
   // ⛔ 不做成"缺失就不给按钮"：那会把一个还能用的兜底变成新的卡死。**要的是吼，不是拒。**
-  const wouldChangeMissing = r.change?.wouldChange === undefined;
+  const { missing: wouldChangeMissing, wouldChange } = readWouldChange(r);
   if (wouldChangeMissing) {
     // ⚠️ 写成一段：`.notice` 没有 `white-space: pre-wrap`，换行会被折叠成空格。
     //    ⛔ 不为这一条去给 `.notice` 加 pre-wrap —— 那会让别处多行模板串里的缩进也被渲染出来。
@@ -1353,7 +1423,12 @@ function renderPreview(r) {
   //    ⇒ 判据换成服务端算的 `wouldChange`（JSON 变了 **或** 有图片操作），
   //      与真实写入路径判的是同一件事。
   const imgOnly = r.change.identical && (r.imageOps?.length || 0) > 0;
-  const nothingToDo = r.change?.wouldChange === false;
+  // 🔴 与下面的 `canCommit` **读的是同一个值**（`readWouldChange()`），⛔ 不再各写各的降级。
+  //    原来这行是 `r.change?.wouldChange === false` —— 字段缺失时它恒为 false，**不降级**；
+  //    而 76 行之外的 `canCommit` 缺失时**降级到 identical**。
+  //    ⇒ 同一个字段两个消费者两种读法，于是字段一缺，面板会对一个逐字节没变的产品说
+  //      「以下是**将要写入的改动**」。这正是 P0-1 的病根原样复活：**两边判的不是同一件事。**
+  const nothingToDo = !wouldChange;
   if (nothingToDo) {
     wrap.append(mkNotice("warn", "内容与现有文件**逐字节相同**，也没有图片变动 —— 这次即使真的保存，也什么都不会改。"));
   } else if (imgOnly) {
@@ -1429,7 +1504,9 @@ function renderPreview(r) {
   // ⚠️ 它在 `change` 里（它是"这次改动"的属性），⛔ 不在顶层 ——
   //    我第一版读成了 `r.wouldChange`，于是恒为 undefined、恒退回旧判据。
   //    **写完就量**才抓到：文案分支没按预期走。
-  const canCommit = r.change?.wouldChange !== undefined ? r.change.wouldChange : !r.change.identical;
+  // 🔴 降级逻辑现在只有 `readWouldChange()` 一处，上面的 `nothingToDo` 读的是同一个值 ——
+  //    所以 `nothingToDo === !canCommit` 恒成立，⛔ 不可能出现"面板说什么都不会改、按钮却可点"。
+  const canCommit = wouldChange;
   if (state.write?.enabled && r.validation.ok && canCommit) {
     const bar = el("div", "commit-bar");
     // ⚠️ 这一步**没有被去掉**，只是名字从"提交"改成"确认保存并上线" ——
@@ -2738,6 +2815,16 @@ $("#f_status").addEventListener("change", () => {
   const dir = $("#f_status").value === "published" ? "products/" : "products/_draft/";
   $("#mainImgNote").textContent = `⚠️ status 改为 ${$("#f_status").value} ⇒ 保存时图片会搬到 ${dir}（在同一个 commit 里）。`;
 });
+
+// ── 过时的确认面板：内容一变，上一次的结论就不许再摆着 ──
+// 🔴 **一处委托，⛔ 不在每个字段上各挂一个** —— 挂五处的话，第六个字段就是下一个漏网的。
+//    `#editPane` 是整张表单，`input`/`change` 都冒泡 ⇒ 连动态加出来的
+//    specs / highlights 行也一并覆盖到，不用在新增行时补绑。
+// ⚠️ 覆盖完整性的依据：`buildEnvelope()` 只读两样东西 —— `readForm()` 与 `state.imgList`。
+//    表单这一路由下面这个委托守住，图片那一路由 `renderImages()` 守住（每次增删拖动都会调它）。
+//    **两处合起来正好是全集**，不是"我能想到的几个地方"。
+$("#editPane").addEventListener("input", invalidatePreviewIfStale);
+$("#editPane").addEventListener("change", invalidatePreviewIfStale);
 
 // ── 删除：二次确认要求打出 slug 本身 ──
 // ⚠️ 不用"你确定吗"那种确认框：它训练人闭着眼睛点确定。要求打出名字，是让手停一下。
