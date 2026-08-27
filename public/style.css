@@ -365,7 +365,16 @@ button:disabled, [disabled] {
 .ptable .col-ck { width: 34px; }
 .ptable .col-img { width: 54px; }
 .ptable .col-st { width: 92px; }
-.ptable .col-model { width: 116px; font-family: var(--mono); font-size: 12px; }
+/* 🔴 型号是**标识符，不是句子** —— 绝不允许换行：`AK34-1` 折成 `AK34-` / `1` 之后
+   看起来像两个东西，而型号正是 Joe 在逐个核对的那一列。
+   ⚠️ 原来写的是 `width: 116px`，而**表格里的 width 是建议不是下限**：
+      `table-layout: auto` 下，容器一窄浏览器就会把它压下去 ——
+      实测容器 1200px 时列宽 116、1000px 时**压到 53**，9 格当场折行。
+      所以"我设了宽度"与"它就有这个宽度"是两回事（又一次"我以为在控制的 ≠ 真正在控制的"）。
+   ⇒ 不写死 px（型号还在迁移，9 个 `AS-` 还没换，写死的数会过时），
+     改成 **nowrap + 宽度由内容决定**：`width: 1%` 在表格里的含义是"尽量窄"，
+     而 nowrap 把"尽量窄"的下限抬到 max-content ⇒ **正好是最长型号的宽度**。 */
+.ptable .col-model { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
 .ptable .col-cat { width: 110px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .ptable .col-act { width: 110px; text-align: right; white-space: nowrap; }
 .ptable input[type=checkbox] { width: auto; margin: 0; }
