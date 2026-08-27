@@ -743,3 +743,27 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
       把那段 30 字的说明抄到七行里，是把一块噪音拆成七块。 */
 .repeat-row { align-items: center; }
 .rowcnt { flex: 0 0 auto; padding: 0; border: 0; margin: 0 0 0 8px; font-size: 11px; white-space: nowrap; cursor: help; }
+
+/* ══ 列表行：标题与缩略图【上】对齐、传感器与缩略图【下】对齐（Joe 2026-08-27）══
+   ⛔ 对齐**不用固定 px 去凑**：`min-height` 撑到缩略图那么高、`space-between` 顶开两端。
+      写死数字的话，字号或缩略图尺寸一改那个数就错，而且没有症状 ——
+      `.topbar{top:40px}` 与批量条的 `margin-top` 都是这么坏的。 */
+.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 64px; }
+
+/* 🔴 标题**恒占 2 行**：短的补足（min-height）、长的截断带省略号（line-clamp）。
+   两边都要 —— 只截不补，短标题那行会矮一截，等高就没了。
+   ⚠️ 2 行的高度由 line-height 算出来（2 × 1.35em），不写死像素。 */
+.ptable .li-name {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; line-height: 1.35; min-height: 2.7em;
+}
+
+/* 传感器行：**绝不换行**（换行会顶高行高，等高当场就没了）。
+   放不下的收成 `+N` —— N 是**被藏起来的个数**，「…」说不出数量。 */
+.senrow { display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; min-width: 0; }
+.senchip {
+  flex: 0 0 auto; font-size: 10.5px; line-height: 1.6; padding: 0 6px; border-radius: 999px;
+  background: var(--bg); color: var(--muted); border: 1px solid var(--line); font-family: var(--mono);
+}
+.senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
+.senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-family: var(--mono); cursor: help; }

@@ -283,6 +283,15 @@ const statusLabel = (s) => STATUS_LABEL[s] ?? (s || "?");
  * ⚠️ 认不出的取值**原样显示 value**（与 statusLabel 同一条规矩）：
  *    轴里没有的机型是**数据脏了的信号**，吞成空白等于把信号删掉。
  */
+/**
+ * 传感器显示名。与下面的 catLabel **同一条规矩**：唯一来源是 /api/contract
+ * （它转发 taxonomy.json 的 label）。
+ * ⛔ 绝不在前端写死一份 value→label —— Joe 在分类页改完显示名，那份会立刻过期，
+ *    而且**没有任何症状**：下拉框照常有值，只是写着旧名字。
+ * ⚠️ 认不出的取值**原样显示 value**：轴里没有的传感器是数据脏了的信号，吞掉等于删信号。
+ */
+const sensorLabel = (v) => state.contract?.sensors?.find((x) => x.value === v)?.label ?? (v || "?");
+
 const catLabel = (v) => state.contract?.categories?.find((c) => c.value === v)?.label ?? (v || "?");
 
 /** 官网上这个产品的地址。⚠️ 只有已上架的才有这一页。 */
@@ -378,7 +387,27 @@ function renderList() {
       //      · 标题本身就是链接（A12-3）⇒ "这个产品的网址是什么"仍然回答得出
       //      · 编辑页的 slug 输入框、详情页内部信息区的 slug **都保留**
       //      · 数据里的 slug 一个字节不动
-      tdName.append(n);
+      // ⭐ 文字列分成两块并**撑满缩略图高度**（Joe 2026-08-27）：
+      //    标题与缩略图【上】对齐、传感器与缩略图【下】对齐。
+      //    ⛔ 对齐靠 `min-height + space-between` 撑，**不用固定 px 去凑** ——
+      //      字号一跳档那个数就错，而且没有症状（`.topbar` 的 top:40px、
+      //      批量条的 margin-top 都是这么坏的）。
+      // ⚠️ 标题**恒占 2 行**：短的补足、长的截断带省略号 —— 高度才可能行行相等。
+      const stack = el("div", "namestack");
+      stack.append(n);
+      // 传感器：**显示 label 不是 value**（与机型同一条规矩，走 sensorLabel）。
+      const sens = el("div", "senrow");
+      (it.sensors || []).forEach((v) => {
+        const c = el("span", "senchip", sensorLabel(v));
+        c.dataset.v = v;
+        sens.append(c);
+      });
+      if (!(it.sensors || []).length) sens.append(el("span", "senchip sen-none", "未填传感器"));
+      // `+N` 由布局量出来（见 fitSensorRows）——先放个空壳，值等测量后再填。
+      const more = el("span", "senmore"); more.hidden = true;
+      sens.append(more);
+      stack.append(sens);
+      tdName.append(stack);
     }
     tr.append(tdName);
 
@@ -423,6 +452,10 @@ function renderList() {
     empty.hidden = false;
     empty.textContent = state.list.length ? "没有匹配的产品。" : "目录是空的（存在，但里面没有产品 JSON）。";
   } else empty.hidden = true;
+
+  // ⚠️ 必须在**表格已经在文档里、且列宽定下来之后**才量 —— 量早了 clientWidth 是 0，
+  //    收出来的结果是"每行只显示 1 个 +N"，而且看起来像功能坏了。
+  fitSensorRows(tb);
 }
 
 function syncCkAll() {
@@ -431,6 +464,53 @@ function syncCkAll() {
   const some = rows.some((r) => state.selected.has(r.slug));
   const ck = $("#ckAll");
   ck.checked = all; ck.indeterminate = !all && some;
+}
+
+/**
+ * 传感器行放不下时收尾成 `+N`。
+ *
+ * 🔴 为什么要量而不是按字数估：chip 宽度取决于**每个 label 的实际渲染宽度**
+ *    （`PM2.5` 与 `temperature` 差一倍），按字符数估必然在某些行上估错，
+ *    而估错的表现是**换行** —— 一换行行高就被顶起来，等高当场就没了。
+ * ⛔ 不换行是硬要求，所以这里必须真量。
+ * ⚠️ `+N` 里的 N 是**被藏起来的个数**，不是"还有更多"——「…」说不出数量，`+3` 说得出。
+ *
+ * ⚠️ 一次性读完所有几何、再一次性写 DOM：边读边写会把布局抖成 N 次回流。
+ */
+function fitSensorRows(root) {
+  const rows = [...(root || document).querySelectorAll(".senrow")];
+  // ① 先全部复位成"都显示"，否则第二次调用会在上一次的结果上继续收
+  rows.forEach((r) => {
+    r.querySelectorAll(".senchip").forEach((c) => { c.hidden = false; });
+    const m = r.querySelector(".senmore"); if (m) { m.hidden = true; m.textContent = ""; }
+  });
+  // ② 读：每行的可用宽 + 每个 chip 的宽
+  const plan = rows.map((r) => {
+    const chips = [...r.querySelectorAll(".senchip")];
+    return { r, chips, avail: r.clientWidth, w: chips.map((c) => c.getBoundingClientRect().width) };
+  });
+  // ③ 写
+  const GAP = 4;
+  plan.forEach(({ r, chips, avail, w }) => {
+    if (!chips.length || !avail) return;
+    const more = r.querySelector(".senmore");
+    let used = 0, shown = 0;
+    for (let i = 0; i < chips.length; i++) {
+      const next = used + (shown ? GAP : 0) + w[i];
+      // 还有没显示完的话要给 `+N` 留位置（估 34px，宁可少显示一个也不许换行）
+      const reserve = i < chips.length - 1 ? 38 : 0;
+      if (next + reserve > avail) break;
+      used = next; shown++;
+    }
+    if (shown === 0) shown = 1;           // 一个都放不下也至少露一个，否则那一格是空的
+    const hidden = chips.length - shown;
+    chips.forEach((c, i) => { c.hidden = i >= shown; });
+    if (more) {
+      more.hidden = hidden <= 0;
+      more.textContent = hidden > 0 ? `+${hidden}` : "";
+      if (hidden > 0) more.title = chips.slice(shown).map((c) => c.textContent).join("、");
+    }
+  });
 }
 
 function renderBatch() {
@@ -2413,6 +2493,10 @@ $("#deleteBtn").onclick = async () => {
     btn.disabled = false; btn.textContent = "删除这个产品…";
   }
 };
+
+// ⚠️ 列宽随视口变 ⇒ 能放下几个传感器也跟着变。不重收的话，
+//    窗口拉宽之后那个 `+3` 会一直挂着，而旁边明明空着一大片。
+addEventListener("resize", () => { try { fitSensorRows(); } catch {} });
 
 // ── 起步 ──
 (async () => {
