@@ -546,7 +546,7 @@ function setFormMode(isNew) {
   const pane = $("#editPane");
   // ⚠️ 进入某一态时就把主按钮文案设对 —— 只在校验完才更新的话，
   //    人第一眼看到的是上一态的词（新建页写着"保存"、编辑页写着"保存草稿"）。
-  const sb = $("#previewBtn"); if (sb) sb.textContent = isNew ? "保存草稿" : "保存";
+  const sb = $("#previewBtn"); if (sb) sb.textContent = saveBtnLabel();
   pane.classList.toggle("is-new", isNew);
   pane.classList.toggle("is-edit", !isNew);
   // status 只在编辑态出现：新建的东西必然还没核过图，
@@ -590,7 +590,7 @@ function setPreviewTabEnabled(on) {
   const t = document.querySelector('.tab[data-view="view"]');
   if (!t) return;
   t.disabled = !on;
-  t.title = on ? "" : "新建的产品还没有内容可预览 —— 先保存草稿";
+  t.title = on ? "" : "新建的产品还没有内容可预览 —— 先保存一次";
 }
 
 // ═══════════════ 校验结果 ═══════════════
@@ -1084,7 +1084,10 @@ function buildEnvelope(extra = {}) {
  *    而且新建时根本没有 diff 可言（新文件），"预览 diff"这个概念对新建态本就不成立。
  * ⚠️ 新建与编辑**各说各的**，⛔ 不用同一句话硬套两种情形。
  */
-const saveBtnLabel = () => (state.isNew ? "保存草稿" : "保存");
+// 🔴 两态都叫「保存」（Joe 2026-08-27：「不要出现"保存草稿"这种按钮」）。
+//    **草稿/上架是 `status` 字段的事，按钮不该替它说话** —— 按钮说"保存草稿"，
+//    而表单里 status 明明可以是"在线"，两处就开始互相矛盾。
+const saveBtnLabel = () => "保存";
 
 async function doPreview(e) {
   e.preventDefault();
@@ -1111,14 +1114,9 @@ function renderPreview(r) {
   const box = $("#preview"); box.hidden = false; box.innerHTML = "";
   const wrap = el("div", "preview");
 
-  const head = el("div", "preview-head");
-  head.append(el("strong", null, r.target.exists ? "将要改动" : "将要新建"));
-  head.append(el("code", null, r.target.path));
-  const stat = el("span", "stat");
-  stat.append(el("span", "plus", `+${r.change.added}`), document.createTextNode(" "), el("span", "minus", `−${r.change.removed}`));
-  head.append(stat);
-  head.append(el("span", "stat", `${r.wouldWrite.bytes}B`));
-  wrap.append(head);
+  // ⚠️ 这里原来是「将要改动 <完整仓内路径> +38 −0 1234B」。
+  //    Joe 2026-08-27：「也不要出现下面的代码」。⇒ 路径全文、diff 计数、字节数全部撤掉。
+  //    ⛔ **确认这一步本身保留** —— 他指的是"代码"，不是"确认"（按最小范围理解那句话）。
 
   // 🔴 三种结论要说不同的话。混成一句"预览完成"，最危险的那种（什么也没变）会被当成成功。
   if (r.change.identical) {
@@ -1137,43 +1135,47 @@ function renderPreview(r) {
     wrap.append(mkNotice("warn", `会被**清空**的字段：${r.change.cleared.join("、")}`));
   }
 
-  // 🔴 图片动作必须显式列出来。它们和 JSON 在**同一个 commit** 里，
-  //    不列出来的话，人以为自己只改了一个 status，实际上还搬动了几个文件。
-  if (r.imageOps?.length) {
-    const box = el("div", "notice notice-warn");
-    box.append(el("b", null, `图片文件会有 ${r.imageOps.length} 项改动（与 JSON 同一个 commit）：`));
-    const ul = el("div");
-    const label = { upsert: "写入", copy: "搬动", delete: "删除" };
-    r.imageOps.forEach((o) => {
-      ul.append(el("div", null, `· ${label[o.op] || o.op} ${o.path.replace(/^src\/assets\//, "")}` +
-        (o.fromPath ? ` ← ${o.fromPath.replace(/^src\/assets\//, "")}` : "") + `  —— ${o.why}`));
-    });
-    box.append(ul);
-    wrap.append(box);
-  }
+  // ══ 人话摘要（Joe 2026-08-27：「不要出现下面的代码」）══
+  //
+  // 这里原来是：38 行 `+` 开头的**原始 JSON**（转义字符串、路径全文）
+  // + 一份逐条列文件路径的图片清单 + 一个「完整内容（可复制走）」的折叠区。
+  // ⇒ 全部撤掉。
+  //
+  // ⛔ **但确认这一步没有撤** —— Joe 说的是"代码"，不是"确认"（按最小范围理解他的话）。
+  // 🔴 而且确认区里有**表单上根本看不到的信息**，其中一条只在这里出现：
+  //    · **这次会动几个图片文件** —— 图片操作在表单里完全不可见。
+  //      它是唯一能让人发现"我以为只改了标题，其实还搬了 9 个文件"的地方。
+  //    · 文件会落到哪个区（草稿图不进官网构建）
+  //    · 这次保存会触发一次官网重建
+  {
+    const sum = el("div", "savesum");
+    const name = ($("#f_name")?.value || "").trim() || r.target.path.split("/").pop();
+    sum.append(el("div", "savesum-t", (r.target.exists ? "将更新产品「" : "将新建产品「") + name + "」"));
+    const ul = el("ul");
+    const li = (t) => ul.append(appendMd(el("li"), t));
 
-  if (!r.change.identical) {
-    const d = el("pre", "diff");
-    r.diff.forEach((l) => {
-      const row = el("div", l.type === "add" ? "l-add" : l.type === "del" ? "l-del" : "");
-      const sign = l.type === "add" ? "+" : l.type === "del" ? "−" : " ";
-      row.append(el("span", "no", `${l.oldNo ?? ""}  ${l.newNo ?? ""}`));
-      row.append(el("span", "tx", `${sign} ${l.text}`));
-      d.append(row);
-    });
-    wrap.append(d);
-  }
+    li(`数据文件 **1 个**`);
 
-  // ⚠️ 完整内容必须可取走：万一保存失败或写能力没开，如果连内容都拿不出来，
-  //    人编辑了半小时的东西就真的没了。
-  const det = el("details", "raw");
-  // 🔴 原来这里写的是「本阶段存不了，可以复制走」—— 那是写入还没开启时的话，
-  //    **早就过时了**（现在写得了）。界面上一句过时的话比没有更坏：
-  //    人会照着它调整自己的做法（"那我复制出去手动改吧"）。
-  det.append(el("summary", null, "完整内容（可复制走）"));
-  const pre = el("pre", null, r.wouldWrite.text);
-  det.append(pre);
-  wrap.append(det);
+    if (r.imageOps?.length) {
+      // ⚠️ 这个数必须留着，而且要与真实 imageOps 长度**相等** —— 不是"约"、不是取整。
+      const n = r.imageOps.length;
+      const draft = r.imageOps.filter((o) => /\/_draft\//.test(o.path)).length;
+      const dels = r.imageOps.filter((o) => o.op === "delete").length;
+      let t = `图片 **${n} 项改动**`;
+      const bits = [];
+      // ⚠️ 用破折号不用括号：里层那句本身带括号，套起来会出现「（…（…））」这种双层。
+      if (draft) bits.push(`其中 ${draft} 张进草稿区，**草稿图不会进官网构建**`);
+      if (dels) bits.push(`${dels} 张会被删除`);
+      if (bits.length) t += ` —— ${bits.join("；")}`;
+      li(t);
+    } else {
+      li("图片 **无改动**");
+    }
+
+    li("这次保存会产生一次 commit 并触发 airsonde.com 重建，**约 1 分钟后站上可见**");
+    sum.append(ul);
+    wrap.append(sum);
+  }
 
   // ── 提交按钮：**只在真能写、且这份内容确实该写的时候才出现** ──
   // ⚠️ 不做成"永远显示但 disabled"：一个灰着的提交按钮会让人以为"再试试就能点"，

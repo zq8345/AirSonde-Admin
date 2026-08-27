@@ -248,22 +248,16 @@ button:disabled, [disabled] {
 
 /* ── 预览 ── */
 .preview { margin-top: 20px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.preview-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; padding: 9px 12px; background: var(--bg); border-bottom: 1px solid var(--line); font-size: 13px; }
-.preview-head strong { font-size: 13px; }
-.stat { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.stat .plus { color: var(--add); }
-.stat .minus { color: var(--del); }
+/* ⚠️ 这里原来有 `.preview-head` / `.stat` / `.diff` / `details.raw` 四组规则 ——
+   服务于确认区里那段裸 JSON diff 和「完整内容（可复制走）」折叠区。
+   Joe 2026-08-27 让撤掉那段"代码"，⇒ 规则**跟着删**，不留着。
+   本仓的死规则是会复活的：`.topbar` 那条一加顶栏就当场覆盖了我的 padding。 */
 
-.diff { margin: 0; overflow-x: auto; font-family: var(--mono); font-size: 12px; line-height: 1.5; }
-.diff div { display: flex; white-space: pre; }
-.diff .no { flex: 0 0 74px; text-align: right; padding: 0 10px 0 6px; color: var(--muted); opacity: .7; user-select: none; }
-.diff .tx { flex: 1 1 auto; padding-right: 12px; }
-.diff .l-add { background: var(--add-soft); color: var(--add); }
-.diff .l-del { background: var(--del-soft); color: var(--del); }
-
-details.raw { border-top: 1px solid var(--line); }
-details.raw summary { padding: 8px 12px; cursor: pointer; font-size: 12.5px; color: var(--muted); }
-details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family: var(--mono); font-size: 12px; }
+/* 保存前的人话摘要：这次会动什么、动到哪、多久生效。 */
+.savesum { padding: 12px 14px; }
+.savesum-t { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.savesum ul { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.9; color: var(--text); }
+.savesum b { font-weight: 600; }
 
 /* ═══════════ A7 外壳：左导航 + 主区 ═══════════ */
 /* 内容区吃掉剩余高度；min-height:0 是必须的 —— 没有它，flex 子项不肯缩到内容以下，
