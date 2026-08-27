@@ -1876,48 +1876,63 @@ function renderFeatured(form) {
   }
 
   const byStatus = new Map((f?.items || []).map((x) => [x.slug, x]));
-  const ul = el("div", "featlist");
+  // ⭐ 卡片网格，**4 列**（Joe 2026-08-27）。
+  //    🔴 4 不是随便挑的：官网首页就是 4 列 ⇒ **后台看到的排列 == 首页看到的排列**，
+  //       排序时不用在脑子里做一次转换。这才是这一块改成可视化的价值。
+  //    ⛔ 不显示 slug（Joe 前面刚让列表撤掉它，这里同理）。
+  const ul = el("div", "featgrid");
   list.forEach((slug, i) => {
     const st = byStatus.get(slug);
     const bad = st && !st.ok;
-    const row = el("div", "featrow" + (bad ? " is-bad" : ""));
-    row.draggable = true;
-    row.append(el("span", "featno", String(i + 1)));
-    const t = el("div", "feattext");
-    t.append(el("div", "li-name", st?.name || slug));
-    t.append(el("div", "li-sub", slug));
-    row.append(t);
+    const cardEl = el("div", "featcard" + (bad ? " is-bad" : ""));
+    cardEl.draggable = true;
+
+    const t = el("div", "thumb featthumb");
+    // 🔴 坏条目**没有图也没有型号** ⇒ 必须有一个明确的"坏卡"样子，
+    //    ⛔ 绝不因为取不到图就静默跳过它 —— 那样他永远不知道列表里有坏的。
+    setThumb(t, st?.image ? rawUrl(st.image) : null, st?.name || slug);
+    cardEl.append(t);
+    cardEl.append(el("span", "featno", String(i + 1)));
+
+    const body = el("div", "featbody");
+    // 型号**醒目**（Joe 点名要的），取自真源 model 字段 —— ⛔ 不是从标题里截的
+    body.append(el("div", "featmodel", st?.model || (bad ? "—" : "（无型号）")));
+    body.append(el("div", "feattitle", st?.name || slug));
+    cardEl.append(body);
+
     if (bad) {
-      // 🔴 说清是哪一种坏 —— "不存在"与"已下架"的修法完全不同
-      row.append(el("span", "badge badge-draft",
-        st.exists ? `已下架（${statusLabel(st.status)}）` : "产品不存在"));
-      row.append(appendMd(el("div", "hint hint-tight"),
-        st.exists
-          ? "**它现在没有官网页面** —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
-          : "**真源里找不到这个产品** —— 多半是被删了或改过 slug。"));
+      // 🔴 分得清是哪一种：「不存在」与「已下架」的修法完全不同
+      const tag = el("span", "featbad", st.exists ? `已下架` : "产品不存在");
+      tag.title = st.exists
+        ? "它现在没有官网页面 —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
+        : "真源里找不到这个产品 —— 多半是被删了或改过 slug。";
+      cardEl.append(tag);
+      cardEl.append(el("div", "featslug", slug));   // ⚠️ 坏卡才显示 slug：这时它是**唯一**能指认是谁的东西
     }
-    const rm = el("button", "linkish danger", "移除"); rm.type = "button";
+
+    const rm = el("button", "featdel", "×"); rm.type = "button";
+    rm.title = "从首页精选里移除（不删产品）";
     rm.onclick = () => {
       state.siteDraft.home.featuredSlugs = list.filter((_, k) => k !== i);
       renderSite(true);
     };
-    row.append(rm);
+    cardEl.append(rm);
 
     // 拖拽换序 —— 与图片列表同一套
-    row.addEventListener("dragstart", (e) => {
-      state.featDrag = i; row.classList.add("is-dragging");
+    cardEl.addEventListener("dragstart", (e) => {
+      state.featDrag = i; cardEl.classList.add("is-dragging");
       e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i));
     });
-    row.addEventListener("dragend", () => { row.classList.remove("is-dragging"); state.featDrag = null; });
-    row.addEventListener("dragover", (e) => { if (state.featDrag == null) return;
-      e.preventDefault(); row.classList.add("is-over"); });
-    row.addEventListener("dragleave", () => row.classList.remove("is-over"));
-    row.addEventListener("drop", (e) => {
+    cardEl.addEventListener("dragend", () => { cardEl.classList.remove("is-dragging"); state.featDrag = null; });
+    cardEl.addEventListener("dragover", (e) => { if (state.featDrag == null) return;
+      e.preventDefault(); cardEl.classList.add("is-over"); });
+    cardEl.addEventListener("dragleave", () => cardEl.classList.remove("is-over"));
+    cardEl.addEventListener("drop", (e) => {
       if (state.featDrag == null) return;
-      e.preventDefault(); e.stopPropagation(); row.classList.remove("is-over");
+      e.preventDefault(); e.stopPropagation(); cardEl.classList.remove("is-over");
       moveFeatured(state.featDrag, i);
     });
-    ul.append(row);
+    ul.append(cardEl);
   });
   card.append(ul);
 
@@ -1926,7 +1941,7 @@ function renderFeatured(form) {
   const add = el("div", "featadd");
   const sel = el("select");
   sel.append(new Option(`＋ 加一个产品（可选 ${pool.length} 个）`, ""));
-  pool.forEach((p) => sel.append(new Option(`${p.name || p.slug}`, p.slug)));
+  pool.forEach((p) => sel.append(new Option(`${p.model ? p.model + " · " : ""}${p.name || p.slug}`, p.slug)));
   sel.onchange = () => {
     const v = sel.value; if (!v) return;
     state.siteDraft.home.featuredSlugs = [...list, v];

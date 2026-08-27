@@ -884,12 +884,16 @@ app.get("/api/site-content", async (c) => {
         checked: true,
         items: list.map((slug) => {
           const p = by.get(slug);
+          // ⚠️ 卡片要画缩略图和型号 ⇒ 一并发过去。
+          //    坏条目这两样**必然是 null**（产品不存在或读不出来）——
+          //    界面要能靠这个画出"坏卡"，⛔ 而不是取不到图就跳过它。
           return { slug, exists: !!p, status: p?.status ?? null, name: p?.name ?? null,
+                   image: p?.image ?? null, model: p?.model ?? null,
                    ok: !!p && p.status === "published" };
         }),
         // 可选清单：**只有已上架的**。未上架的选了等于选了一个官网上不存在的页面。
         选得到的: products.filter((p: any) => p && !p.error && p.status === "published")
-          .map((p: any) => ({ slug: p.slug, name: p.name, image: p.image })),
+          .map((p: any) => ({ slug: p.slug, name: p.name, image: p.image, model: p.model })),
       };
     } catch (e) {
       featured = { checked: false, why: `产品清单读失败：${String(e)}`, items: null, 选得到的: [] };

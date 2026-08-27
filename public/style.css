@@ -796,20 +796,52 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
 }
 
-/* ══ 首页精选产品（Joe 2026-08-27）══ */
-.card-featured .featlist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; }
-.featrow {
-  display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: grab;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+/* ══ 首页精选产品：卡片网格（Joe 2026-08-27「像官网一样可视化」）══
+   🔴 **4 列不是随便挑的**：官网首页就是 4 列 ⇒ 后台看到的排列 == 首页看到的排列，
+      排序时不用在脑子里做一次转换。这才是这一块的价值。
+   ⚠️ 窄屏才降列数 —— 降的是列数不是"改成另一种排布"，那样两边就对不上了。 */
+.card-featured .featgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 10px 0 0; }
+@media (max-width: 1100px) { .card-featured .featgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px)  { .card-featured .featgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .card-featured .featgrid { grid-template-columns: minmax(0, 1fr); } }
+
+.featcard {
+  position: relative; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; cursor: grab; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
 }
-.featrow.is-dragging { opacity: .4; }
-.featrow.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
-/* 🔴 坏条目要**看得见**：静默过滤掉的话，Joe 永远不知道列表里有坏的，
-   而首页会安静地少一张卡（官网构建只打印警告、不失败）。 */
-.featrow.is-bad { border-color: var(--danger); background: var(--danger-soft); }
-.featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.feattext { flex: 1 1 auto; min-width: 0; }
-.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.featcard.is-dragging { opacity: .4; }
+.featcard.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* 🔴 坏卡要一眼看得出来。它**没有图也没有型号** ——
+   ⛔ 绝不能因为取不到图就不渲染这张卡：那样 Joe 永远不知道列表里有坏的，
+      而首页会安静地少一张（官网构建只打印警告、不失败）。 */
+.featcard.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+
+/* 缩略图正方 —— 与官网首页那个 1:1 框一致 */
+.featthumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 6px; }
+.featcard .featno {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  min-width: 18px; padding: 0 5px; border-radius: 999px; text-align: center;
+  background: rgba(0,0,0,.62); color: #fff; font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+}
+.featbody { min-width: 0; }
+/* 型号**醒目**（Joe 点名要的），取自真源 model 字段 */
+.featmodel { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 标题次要权重：两行封顶，不让它把卡撑得高矮不齐 */
+.feattitle { font-size: 11.5px; color: var(--muted); line-height: 1.35;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.7em; }
+.featbad { align-self: flex-start; font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-family: var(--mono); cursor: help; }
+/* ⚠️ 只有坏卡显示 slug —— 这时它是**唯一**能指认"坏的是谁"的东西 */
+.featslug { font-family: var(--mono); font-size: 10px; color: var(--danger); word-break: break-all; }
+.featdel {
+  position: absolute; top: 6px; right: 6px; z-index: 2; width: 20px; height: 20px; padding: 0;
+  border-radius: 999px; border: 0; cursor: pointer; line-height: 1;
+  background: rgba(0,0,0,.62); color: #fff; font-size: 13px;
+}
+.featdel:hover { background: var(--danger); }
+.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .featadd select {
   font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%;
   border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
