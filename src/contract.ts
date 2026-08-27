@@ -22,15 +22,29 @@
  *       而症状是"我明明加了这个分类却存不了"，没有人会想到是校验器还在看一份旧副本。
  *    ⇒ 所以 axes 是**必填参数**，不做默认回退。
  */
-export const SAMPLE_CATEGORIES = ["desktop", "portable", "wall-mounted", "wearable", "industrial", "other"] as const;
+/**
+ * 🔴🔴 **这些值是故意与真源不同的（AU2 ⑧：把陷阱变成绊线）。**
+ *
+ * 它们只给自检当"一份不会随官网改动而漂的固定轴"用，**不是运行时的取值来源** ——
+ * 运行时每次校验都从 taxonomy.json 现读（src/index.ts 的 loadAxes）。
+ *
+ * ⚠️ 以前它们与真源**逐字相同**（desktop/portable/…）。那样不是 bug，但很危险：
+ *    我自己就差点把「/api/contract 返回的 6 个机型与 taxonomy.json 一致」当成
+ *    "它确实读了 taxonomy.json"的证据 —— 而那条观测在两种成因下**完全同形**
+ *    （真读了 / 回落到了这份常量），所以它什么都证明不了。
+ * ⇒ 改成 `sample-*` 这种真源里绝不会出现的值：
+ *    **任何误用它们的代码或测试会立刻红，而不是静默通过。**
+ *    观测值不同形了，它才开始携带信息。
+ */
+export const SAMPLE_CATEGORIES = ["sample-desktop", "sample-portable", "sample-other"] as const;
 
 // ⚠️ `CO` 是契约 v1.1 §① 新增的（2026-08-10，总工批准）：素材里有家用 CO 报警器，
 //    而枚举里原本只有 `CO2` 和 `combustible-gas`，两个都不是它。
 //    🔴 这一行漏掉的话，后果不是"少个选项"，是**带 CO 的产品在后台根本存不了**
 //       —— 而报出来的会是"sensors 含契约外的值"，看起来像数据错了，其实是校验器过时了。
+/** 同上：**故意与真源不同**。真源里没有任何一个 `SAMPLE-` 开头的传感器。 */
 export const SAMPLE_SENSORS = [
-  "CO2", "CO", "PM1.0", "PM2.5", "PM10", "HCHO", "TVOC",
-  "temperature", "humidity", "AQI", "radiation", "alcohol", "WBGT", "combustible-gas",
+  "SAMPLE-CO2", "SAMPLE-PM2.5", "SAMPLE-TVOC", "SAMPLE-temperature",
 ] as const;
 
 export const STATUSES = ["draft", "published"] as const;

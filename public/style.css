@@ -41,7 +41,7 @@
 * { box-sizing: border-box; }
 
 /* 🔴 全局兜底：`hidden` 属性必须真的隐藏（A10-R3-a，实测出来的 bug）。
-   浏览器默认样式表里的 `[hidden]{display:none}` 与作者样式表里的 `.batchbar{display:flex}`
+   浏览器默认样式表里的 `[hidden]{display:none}` 与作者样式表里的 ``.batchbar{display:flex}``
    **特异性相同 ⇒ 作者表恒赢** ⇒ 那个元素的 `hidden` 属性**从来没生效过**：
    代码写着 `hidden = n===0`、注释写着"选中才出现"，而生产上它一直显示着一排点不动的按钮。
    —— 这是「我以为在控制的 ≠ 真正在控制的」的标本：源码、注释、意图三者一致，产出是反的。
@@ -225,7 +225,7 @@ input.bad, select.bad { border-color: var(--danger); background: var(--danger-so
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
 button.primary { background: var(--accent); color: #fff; border: 0; padding: 8px 15px; border-radius: 6px; font: inherit; font-weight: 550; cursor: pointer; }
 /* 🔴 禁用外观是**全局**的，不挑类名 —— 这是第三次栽在同一个形状上了：
-   ① 批量条的 `hidden` 被 `.batchbar{display:flex}` 顶掉（属性对、屏幕反）
+   ① 批量条的 `hidden` 被 ``.batchbar{display:flex}`` 顶掉（属性对、屏幕反）
    ② `.thumb-sm{40px}` 写在 `.thumb{110px}` 前面，同特异性 ⇒ 后者赢，40 从没生效
    ③ 分类页 14 个 `disabled` 的删除按钮 —— 全表唯一的禁用样式是 `button.primary:disabled`，
       而它们是 `.linkish.danger` ⇒ **红边红字、cursor:pointer，与能点的一模一样**。
@@ -340,9 +340,24 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 .stab.is-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .stab-n { font-family: var(--mono); font-size: 11px; }   /* ⚠️ 原来带 opacity:.8 —— 与 .shint 同一个病，上屏只有 4.54:1。降权交给色值。 */
 
-.batchbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 10px;
+/* 🔴 吸底（AU2 ④）。它原来在表格**之前**且占文档流 ⇒ 勾选一行，正在看的那行当场下移
+   **145px**（1440 档实测 y 278 → 423）。人一勾选，要操作的那行就跑了。
+   ⇒ HTML 里挪到表格**之后**（增加的高度落在表格下面，上面的行一动不动），
+     再吸底，列表长时也不会滚出视野。
+   ⛔ 没用固定 margin-top 硬顶：批量条会换行变高（窄屏实测能到 535px），那个数当场就错。
+   ⚠️ `bottom: 0` 的参照是滚动容器 .main 的下边，**不依赖"上面有什么"** ——
+      与旧 `.editbar{top:40px}` 那种偏移假设不是一回事。 */
+.batchbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 12px;
+  margin: 10px 0 0; position: sticky; bottom: 0; z-index: 14;
   background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 7px; font-size: 13px; }
-.batchbar button { padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
+/* 🔴 `:not(.linkish)` 不是特例，是把这条规则的**意图**写准（AU2 ⑥）。
+   原来是 `.batchbar button`（特异性 0,1,1）⇒ 它把批量条里的 `.linkish`（0,1,0）也吃了，
+   于是「取消选择」与旁边的「批量上架」**逐属性完全相同**（实测 74x31 / 12.5px / 黑字白底 /
+   1px 边框 / 6px 圆角 —— 一个字节都不差），而行内的「编辑」是 38x24 / 13px / 蓝字 / 无边框。
+   ⇒ **一个撤销动作被渲染成与批量操作同等权重**，而且是同一个类名渲染出两种控件。
+   这条规则想说的从来是"批量条里那几个**操作按钮**长这样"，不是"里面所有 button"。
+   ⇒ 写准之后 `.linkish` 全站只剩一种长相，撤销动作也回到它该有的分量。 */
+.batchbar button:not(.linkish) { padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer;
   background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--text); }
 .batchbar button:hover { border-color: var(--accent); color: var(--accent); }
 .batch-note { margin-left: auto; font-size: 11.5px; color: var(--muted); }

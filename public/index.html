@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=36">
+<link rel="stylesheet" href="/style.css?v=41">
 </head>
 <body>
 
@@ -64,7 +64,9 @@
   <aside class="sidenav">
 
     <div class="nav-sec">目录</div>
-    <button class="nav-item is-on" data-nav="products">产品<span class="cnt" id="navCount"></span></button>
+    <!-- ⚠️ aria-current 必须**在 HTML 里就有**：起步时 showNav() 还没跑过，
+         只在切换时设的话，刚打开后台的那一刻读屏软件读不出"我在哪一页"。 -->
+    <button class="nav-item is-on" data-nav="products" aria-current="page">产品<span class="cnt" id="navCount"></span></button>
     <button class="nav-item" data-nav="cats" title="机型 / 传感器两个轴：增删改 + 谁在用">分类</button>
 
     <div class="nav-sec">内容</div>
@@ -102,18 +104,6 @@
         </div>
       </div>
 
-      <!-- 选中后才出现：不选就不该看到一排点不动的批量按钮 -->
-      <div class="batchbar" id="batchBar" hidden>
-        <span id="batchCount"></span>
-        <button type="button" data-bulk="published">批量上架</button>
-        <button type="button" data-bulk="draft">批量下架</button>
-        <!-- 机型是产品的**归属**，不是轴本身。两件事都在写入范围内，但是两个文件：
-             归属在产品 JSON，轴本身在 src/data/taxonomy.json（分类页）。 -->
-        <select id="bulkCat"><option value="">批量改机型…</option></select>
-        <button type="button" class="linkish" id="batchClear">取消选择</button>
-        <span class="batch-note">一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
-      </div>
-
       <div class="table-wrap">
         <table class="ptable">
           <thead><tr>
@@ -129,6 +119,26 @@
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
+      </div>
+      <!-- 选中后才出现：不选就不该看到一排点不动的批量按钮。
+           🔴 **位置在表格之后 + 吸底**（AU2 ④）。原来它在表格**之前**且占文档流 ⇒
+              勾选一行，正在看的那一行**当场下移 145px**（实测 1440 档：y 278 → 423）。
+              人一勾选，要操作的那行就跑了。
+           ⛔ 不用固定 margin-top 硬顶：批量条会换行变高（窄屏实测能到 535px），
+              那个数当场就错，而且没人会发现 —— `.topbar` 那条 `top:40px` 就是这么坏的。
+           ⇒ 挪到表格之后：它出现时增加的高度落在**表格下面**，上面的行一动不动。
+              再加 `sticky; bottom: 0`，列表很长时它也不会滚出视野。
+           ⚠️ 顺带把键盘 tab 序也理顺了：先在表格里勾选，再 tab 到操作 ——
+              原来是先经过一排还没启用的按钮。 -->
+      <div class="batchbar" id="batchBar" hidden>
+        <span id="batchCount"></span>
+        <button type="button" data-bulk="published">批量上架</button>
+        <button type="button" data-bulk="draft">批量下架</button>
+        <!-- 机型是产品的**归属**，不是轴本身。两件事都在写入范围内，但是两个文件：
+             归属在产品 JSON，轴本身在 src/data/taxonomy.json（分类页）。 -->
+        <select id="bulkCat"><option value="">批量改机型…</option></select>
+        <button type="button" class="linkish" id="batchClear">取消选择</button>
+        <span class="batch-note">一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
       </div>
       <div class="empty" id="listEmpty" hidden></div>
     </section>
@@ -154,7 +164,7 @@
              ⚠️ 新增本身不具破坏性、本可常驻 —— 但三个动作收进同一个开关是**一条规则、不留特例**。 -->
         <div class="axisbox">
           <h2 class="axishead">机型 <span class="h3sub">category · 每个产品一个</span>
-            <button type="button" class="managebtn" data-axis="categories"
+            <button type="button" class="managebtn" aria-pressed="false" data-axis="categories"
                     title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
           </h2>
           <div class="table-wrap">
@@ -177,7 +187,7 @@
 
         <div class="axisbox">
           <h2 class="axishead">传感器 <span class="h3sub">sensors · 每个产品可多个</span>
-            <button type="button" class="managebtn" data-axis="sensors"
+            <button type="button" class="managebtn" aria-pressed="false" data-axis="sensors"
                     title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
           </h2>
           <div class="table-wrap">
@@ -422,7 +432,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=36"></script>
+<script src="/app.js?v=41"></script>
 </body>
 </html>
 

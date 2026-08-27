@@ -43,8 +43,11 @@ const GOOD = {
   //    留着 AS-D16 的话，「示例数据零 warning」这条会红 —— 而红的原因是**样例过时**，
   //    不是被测对象有问题。样例必须是一份"完全正确"的数据，否则它证明不了任何事。
   model: "AK101",
-  category: "desktop",
-  sensors: ["CO2", "PM2.5", "PM10", "HCHO", "TVOC", "temperature", "humidity"],
+  // ⚠️ 机型/传感器用 SAMPLE_* 里的值 —— 它们**故意与官网真源不同**（AU2 ⑧）。
+  //    看起来"不像真数据"正是要的效果：这份样本测的是校验器，不是官网的轴，
+  //    而"样本长得像真数据"曾经让我把一次同形观测误当成证据。
+  category: SAMPLE_CATEGORIES[0],
+  sensors: [SAMPLE_SENSORS[0], SAMPLE_SENSORS[1]],
   highlights: ["7-inch TFT display", "USB-C powered"],
   specs: { display: "7-inch TFT", power: "USB-C / built-in battery", connectivity: "Wi-Fi + mobile app" },
   moq: 1000,
@@ -67,7 +70,8 @@ const mut = (fn) => { const p = clone(GOOD); fn(p); return validateProduct(p); }
 // 只留必填字段也必须通过（选填字段缺失 ≠ 错误）
 {
   const minimal = { slug: "portable-co2", name: "Portable CO2 Meter", model: "AS-P02",
-    category: "portable", sensors: ["CO2"], images: { main: "products/portable-co2.webp" }, status: "draft" };
+    category: SAMPLE_CATEGORIES[1], sensors: [SAMPLE_SENSORS[0]],
+    images: { main: "products/portable-co2.webp" }, status: "draft" };
   const r = validateProduct(minimal);
   check("② 只有必填字段也必须通过（选填缺失不是错）", r.ok, JSON.stringify(codes(r)));
 }

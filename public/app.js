@@ -316,6 +316,7 @@ function renderList() {
   const known = new Set(state.contract?.statuses || []);
   ["all", ...TAB_ORDER.filter((k) => known.has(k))].forEach((k) => {
     const b = el("button", "stab" + (state.tab === k ? " is-on" : ""));
+    b.setAttribute("aria-pressed", String(state.tab === k));
     b.type = "button";
     b.append(document.createTextNode(statusLabel(k)), el("span", "stab-n", String(counts[k] ?? 0)));
     b.onclick = () => { state.tab = k; state.selected.clear(); renderList(); };
@@ -1257,7 +1258,12 @@ function switchView(v) {
   const t = document.querySelector(`.tab[data-view="${v}"]`);
   if (t && t.disabled) return;
   state.activeView = v;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.view === v));
+  document.querySelectorAll(".tab").forEach((t) => {
+    const on = t.dataset.view === v;
+    t.classList.toggle("is-on", on);
+    // 它们是**互斥的开关按钮** ⇒ aria-pressed 才是准确的语义。
+    t.setAttribute("aria-pressed", String(on));
+  });
   $("#viewPane").hidden = v !== "view";
   $("#editPane").hidden = v !== "edit";
   // 「保存」住在顶部那一行里（表单外，靠 form="editPane" 归属）⇒ 显隐要跟着 tab 走。
@@ -2109,6 +2115,7 @@ function syncManageBtns() {
     if (b) {
       b.textContent = on ? "✓ 管理中" : "🔧 管理";
       b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));   // 管理态是个开关，语义上就是 pressed
       // 写入闸没开时禁用并说明原因 —— 让人点了没反应，正是这一批在修的病。
       b.disabled = !canWrite;
       if (!canWrite) b.title = "当前不能保存（写入闸或 token 未就绪），所以也不给管理入口";
@@ -2218,7 +2225,15 @@ function showNav(which) {
   $("#settingsView").hidden = which !== "settings";
   $("#siteView").hidden = !SITE_SECTIONS[which];
   $("#detailView").hidden = true;
-  document.querySelectorAll(".nav-item[data-nav]").forEach((b) => b.classList.toggle("is-on", b.dataset.nav === which));
+  document.querySelectorAll(".nav-item[data-nav]").forEach((b) => {
+    const on = b.dataset.nav === which;
+    b.classList.toggle("is-on", on);
+    // ⚠️ 选中态原来**只有 class** —— 读屏软件读到的是一排一模一样的按钮，
+    //    "我现在在哪一页"这个信息只存在于颜色里。
+    //    ⛔ 没用 role="tab"：那会带来方向键导航的契约，而我们没实现 ——
+    //      挂一个履行不了的 ARIA 角色比不挂更糟。aria-current 没有这层义务。
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   if (which === "media" && !state.media) loadMedia();
   if (which === "audit" && !state.audit) loadAudit();
   // ⚠️ 分类页的计数每次都要重算（列表可能刚被批量改过），但接口只在第一次拉。
