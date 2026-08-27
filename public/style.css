@@ -29,11 +29,63 @@
   --warn-soft: #fff8e6;
   --ok: #0c5f31;
   --ok-soft: #e9f7ef;
-  --add: #0c5f31;
-  --add-soft: #e9f7ef;
-  --del: #a22016;
-  --del-soft: #fef3f2;
+  /* ⛔ `--add / --add-soft / --del / --del-soft` 已删（A14③）：
+     全仓 `var(--x)` 引用数为 **0**（css/html/js 都扫过；反向自证：同一支 grep 对 `var(--line)` 命中 55），
+     而且它们的值与 `--ok / --ok-soft / --danger / --danger-soft` **逐字节相同**。
+     📌 本仓有前科：`.topbar` 那条死规则躺了很久，一加顶栏当场复活并覆盖了 padding。**用不上就删。** */
+
   --radius: 8px;
+
+  /* ══ 颜色：角色层 ══
+     🔴 代码里永远不写"这是什么颜色"，只写"**这是什么用途**"。
+     ⚠️ 下面很多角色此刻**指向同一个色值** —— 那是对的，重点不是让它们长得不一样，
+        而是**将来改其中一个不会误伤另外几个**。
+        改动前 `--accent` 一个令牌同时承担 8 种语义：想让聚焦环更明显一点，
+        就会连着改掉 10 处强调文字和 3 处链接。现在它们是 6 个独立的名字。
+     ⛔ 只建**实际用到**的 30 个（脚本从真实声明里统计出来，不是照 Polaris 抄的清单）。 */
+
+  /* 文字 */
+  --text-primary:   var(--text);
+  --text-secondary: var(--muted);
+  --text-link:      var(--accent);
+  --text-accent:    var(--accent);
+  --text-critical:  var(--danger);
+  --text-success:   var(--ok);
+  --text-caution:   var(--warn);
+
+  /* 描边 */
+  --border:            var(--line);
+  --border-subtle:     var(--muted);
+  --border-accent:     var(--accent);
+  --border-focus:      var(--accent);
+  --border-focus-soft: var(--accent-soft);
+  --border-critical:   var(--danger);
+  --border-caution:    var(--warn);
+  --border-success:    var(--ok);
+
+  /* 底色 */
+  --bg-app:           var(--bg);
+  --bg-surface:       var(--surface);
+  --bg-selected:      var(--accent-soft);
+  --bg-accent:        var(--accent);
+  --bg-critical:      var(--danger);
+  --bg-critical-soft: var(--danger-soft);
+  --bg-success-soft:  var(--ok-soft);
+  --bg-caution-soft:  var(--warn-soft);
+
+  /* 压在深色/强调色上的文字 */
+  --on-accent: #fff;
+
+  /* 阴影与遮罩 —— 原来是 5 处硬编码色值，现在各有名字（⚠️ 值一个字节没改） */
+  --shadow-sm:        rgba(0,0,0,.06);
+  --shadow-md:        rgba(0,0,0,.08);
+  --shadow-accent:    var(--accent);
+  --ring-accent-soft: var(--accent-soft);
+  /* ⚠️ `--scrim` 是压在**Joe 的产品图**上的那层半透明黑（序号角标/删除键的底）。
+     它当前让白字对比度只有 6.2:1（低于 7:1 的标准）——
+     ⛔ 但调它会改变产品图上遮罩的观感，**已单独报总工，等定夺后再动**。 */
+  --scrim:      rgba(0,0,0,.62);
+  --scrim-weak: rgba(0,0,0,.55);
 
   /* ══ 间距：刻度层 ══
      全部 4 的倍数；1/2/6 是允许的小档（发丝级微调与胶囊内边距要用）。
@@ -90,8 +142,8 @@
    ⚠️ 用 dvh：移动端浏览器地址栏收起/展开时 vh 会跳，dvh 不会。 */
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--bg-app);
+  color: var(--text-primary);
   font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   height: 100vh; height: 100dvh;
   display: flex; flex-direction: column; overflow: hidden;
@@ -106,7 +158,7 @@ body {
 .topbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-12);
   padding: var(--space-16) var(--space-12);
-  background: var(--surface); border-bottom: 1px solid var(--line);
+  background: var(--bg-surface); border-bottom: 1px solid var(--border);
 }
 /* 左格正对侧栏：208 − 顶栏左 padding 12 = 196，加回 12 才与侧栏 208 对齐 */
 .topbar-left { flex: 0 0 196px; display: flex; align-items: center; padding-left: var(--space-6); }
@@ -114,9 +166,9 @@ body {
 /* 与 CRM 的 #q 同一组度量值 —— 顶栏高度就是被它撑出来的 */
 .topbar-right #q {
   width: 240px; min-width: 110px; padding: var(--space-8) var(--space-12); font: inherit; font-size: 13px;
-  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px;
 }
-.topbar-right #q:focus { outline: 2px solid var(--accent-soft); outline-offset: 1px; border-color: var(--accent); }
+.topbar-right #q:focus { outline: 2px solid var(--border-focus-soft); outline-offset: 1px; border-color: var(--border-focus); }
 @media (max-width: 860px) {
   .topbar-left { flex: 0 0 auto; }
   .topbar-right #q { width: 100%; }
@@ -128,25 +180,25 @@ body {
   flex: 0 0 auto; z-index: 20;
   display: flex; flex-wrap: wrap; gap: var(--space-8) var(--space-16); align-items: baseline;
   padding: var(--space-8) var(--space-20);
-  background: var(--warn-soft);
-  border-bottom: 1px solid var(--line);
-  color: var(--warn);
+  background: var(--bg-caution-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-caution);
   font-size: 13px;
 }
 /* 写入已开启时换成"这是生产"的颜色 —— 同一条横幅两种含义，颜色必须跟着变，
    否则人会靠位置记忆去读它，而位置记忆读不出内容变了。 */
-.banner-live { background: var(--danger-soft); color: var(--danger); }
+.banner-live { background: var(--bg-critical-soft); color: var(--text-critical); }
 .banner strong { letter-spacing: .02em; }
 .banner b { color: inherit; }
-.banner-why { color: var(--muted); font-size: 12px; }
+.banner-why { color: var(--text-secondary); font-size: 12px; }
 
 /* ⚠️ 这里原本还有一条 `.topbar { … }`（旧设计的遗留，HTML 里当时没有任何元素用它）。
    它排在上面那条新 `.topbar` 之后 ⇒ 我一加顶栏，这条死规则**当场复活并覆盖**了
    我的 padding / justify-content。删掉。
    —— 这就是"同名重定义会静默继承"那一类：写的人以为自己在控制，真正生效的是后面那条。
    同时删掉 `.brand` / `.brand span`：字标已搬进顶栏，它们跟着失效。 */
-.who { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-align: right; }
-.who b { color: var(--text); font-weight: 600; }
+.who { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); text-align: right; }
+.who b { color: var(--text-primary); font-weight: 600; }
 
 .layout {
   display: grid; grid-template-columns: minmax(240px, 320px) 1fr;
@@ -154,19 +206,19 @@ body {
 }
 @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
 
-.pane { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.pane { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .pane-list { position: sticky; top: 56px; max-height: calc(100vh - 76px); display: flex; flex-direction: column; }
 @media (max-width: 880px) { .pane-list { position: static; max-height: none; } }
 .pane-detail { padding: var(--space-20); min-width: 0; }
 
 .pane-head { display: flex; justify-content: space-between; align-items: baseline; padding: var(--space-12) var(--space-16) var(--space-8); }
 .pane-head h2 { margin: 0; font-size: 14px; }
-.count { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.count { font-size: 12px; color: var(--text-secondary); font-family: var(--mono); }
 
-.filters { display: flex; gap: var(--btn-gap); padding: 0 var(--space-16) var(--space-12); border-bottom: 1px solid var(--line); }
+.filters { display: flex; gap: var(--btn-gap); padding: 0 var(--space-16) var(--space-12); border-bottom: 1px solid var(--border); }
 .filters input, .filters select {
   flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-8); font: inherit; font-size: 13px;
-  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
 }
 .filters select { flex: 0 0 auto; }
 
@@ -176,32 +228,32 @@ body {
   display: block; width: 100%; text-align: left; padding: var(--space-8) var(--space-12); margin: var(--space-1) 0;
   background: none; border: 0; border-radius: 6px; color: inherit; font: inherit; cursor: pointer;
 }
-.list button:hover { background: var(--bg); }
-.list button.is-on { background: var(--accent-soft); }
+.list button:hover { background: var(--bg-app); }
+.list button.is-on { background: var(--bg-selected); }
 .list .li-top { display: flex; justify-content: space-between; gap: var(--space-8); align-items: baseline; }
 .list .li-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list .li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .badge { flex: 0 0 auto; font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; font-family: var(--mono); }
-.badge-published { background: var(--ok-soft); color: var(--ok); }
-.badge-draft { background: var(--warn-soft); color: var(--warn); }
-.badge-unknown { background: var(--bg); color: var(--muted); }
+.badge-published { background: var(--bg-success-soft); color: var(--text-success); }
+.badge-draft { background: var(--bg-caution-soft); color: var(--text-caution); }
+.badge-unknown { background: var(--bg-app); color: var(--text-secondary); }
 
-.empty { padding: var(--space-20) var(--space-16); color: var(--muted); font-size: 13px; }
+.empty { padding: var(--space-20) var(--space-16); color: var(--text-secondary); font-size: 13px; }
 .empty code { font-family: var(--mono); font-size: 12px; }
 
-.placeholder { padding: var(--space-40) var(--space-12); text-align: center; color: var(--text); }
+.placeholder { padding: var(--space-40) var(--space-12); text-align: center; color: var(--text-primary); }
 .placeholder p { margin: var(--space-6) 0; }
-.muted { color: var(--muted); }
-.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.muted { color: var(--text-secondary); }
+.link { background: none; border: 0; padding: 0; color: var(--text-link); cursor: pointer; font: inherit; text-decoration: underline; }
 
 .detail-head { display: flex; justify-content: space-between; gap: var(--space-16); align-items: flex-start; flex-wrap: wrap; }
 .detail-head h2 { margin: 0 0 var(--space-2); font-size: 17px; }
 .path { font-family: var(--mono); font-size: 11.5px; }
 
-.tabs { display: flex; gap: var(--space-2); background: var(--bg); padding: var(--space-2); border-radius: 6px; }
-.tab { padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
-.tab.is-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.tabs { display: flex; gap: var(--space-2); background: var(--bg-app); padding: var(--space-2); border-radius: 6px; }
+.tab { padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.tab.is-on { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px var(--shadow-md); }
 
 /* ── 校验结果 ── */
 .issues { margin: var(--space-16) 0 0; }
@@ -210,19 +262,19 @@ body {
   padding: var(--space-8) var(--space-12); border-radius: 6px; margin: var(--space-4) 0; font-size: 13px;
   border: 1px solid transparent;
 }
-.issue-error { background: var(--danger-soft); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
-.issue-warn { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 25%, transparent); }
-.issue-ok { background: var(--ok-soft); color: var(--ok); }
+.issue-error { background: var(--bg-critical-soft); color: var(--text-critical); border-color: color-mix(in srgb, var(--border-critical) 25%, transparent); }
+.issue-warn { background: var(--bg-caution-soft); color: var(--text-caution); border-color: color-mix(in srgb, var(--border-caution) 25%, transparent); }
+.issue-ok { background: var(--bg-success-soft); color: var(--text-success); }
 .issue-field { font-family: var(--mono); font-size: 11.5px; flex: 0 0 auto; opacity: .85; }
 
 /* ── 详情视图 ── */
 .kvtable { width: 100%; border-collapse: collapse; margin-top: var(--space-16); font-size: 13.5px; }
-.kvtable th, .kvtable td { text-align: left; vertical-align: top; padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--line); }
-.kvtable th { width: 150px; font-weight: 550; color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.kvtable th, .kvtable td { text-align: left; vertical-align: top; padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); }
+.kvtable th { width: 150px; font-weight: 550; color: var(--text-secondary); font-family: var(--mono); font-size: 12px; }
 .kvtable td code { font-family: var(--mono); font-size: 12.5px; }
 .taglist { display: flex; flex-wrap: wrap; gap: var(--space-4); }
-.tag { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: var(--space-1) var(--space-8); font-family: var(--mono); font-size: 11.5px; }
-.internal-row td, .internal-row th { background: var(--danger-soft); }
+.tag { background: var(--bg-app); border: 1px solid var(--border); border-radius: 4px; padding: var(--space-1) var(--space-8); font-family: var(--mono); font-size: 11.5px; }
+.internal-row td, .internal-row th { background: var(--bg-critical-soft); }
 
 /* ── 表单 ── */
 form { margin-top: var(--space-16); }
@@ -230,33 +282,33 @@ form { margin-top: var(--space-16); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); }
 @media (max-width: 620px) { .row2 { grid-template-columns: 1fr; } }
 label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: var(--space-4); }
-.req { color: var(--danger); font-size: 10.5px; font-weight: 600; margin-left: var(--space-4); }
-.internal { color: var(--danger); background: var(--danger-soft); font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
+.req { color: var(--text-critical); font-size: 10.5px; font-weight: 600; margin-left: var(--space-4); }
+.internal { color: var(--text-critical); background: var(--bg-critical-soft); font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
 input, select, textarea {
   width: 100%; padding: var(--space-8) var(--space-8); font: inherit; font-size: 13.5px;
-  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-input.bad, select.bad { border-color: var(--danger); background: var(--danger-soft); }
-.hint { margin: var(--space-4) 0 0; font-size: 12px; color: var(--muted); }
-.hint code, code { font-family: var(--mono); font-size: 12px; background: var(--bg); padding: 0 var(--space-4); border-radius: 3px; }
-.field-internal { border-left: 3px solid var(--danger); padding-left: var(--space-12); }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--border-focus); outline-offset: -1px; }
+input.bad, select.bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
+.hint { margin: var(--space-4) 0 0; font-size: 12px; color: var(--text-secondary); }
+.hint code, code { font-family: var(--mono); font-size: 12px; background: var(--bg-app); padding: 0 var(--space-4); border-radius: 3px; }
+.field-internal { border-left: 3px solid var(--border-critical); padding-left: var(--space-12); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-6); }
-.chip { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; font-size: 12.5px; font-family: var(--mono); background: var(--bg); }
+.chip { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 12.5px; font-family: var(--mono); background: var(--bg-app); }
 .chip input { width: auto; margin: 0; }
-.chip:has(input:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip:has(input:checked) { background: var(--bg-selected); border-color: var(--border-accent); color: var(--text-accent); }
 
 .repeat, .kv { display: flex; flex-direction: column; gap: var(--space-6); }
 .repeat-row, .kv-row { display: flex; gap: var(--space-6); }
 .kv-row .k { flex: 0 0 32%; }
-.del-row { flex: 0 0 auto; width: 30px; padding: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
-.del-row:hover { color: var(--danger); border-color: var(--danger); }
-.add { margin-top: var(--space-6); padding: var(--space-4) var(--space-12); font: inherit; font-size: 12.5px; background: var(--bg); border: 1px dashed var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; }
-.add:hover { color: var(--accent); border-color: var(--accent); }
+.del-row { flex: 0 0 auto; width: 30px; padding: 0; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; font-size: 15px; line-height: 1; }
+.del-row:hover { color: var(--text-critical); border-color: var(--border-critical); }
+.add { margin-top: var(--space-6); padding: var(--space-4) var(--space-12); font: inherit; font-size: 12.5px; background: var(--bg-app); border: 1px dashed var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; }
+.add:hover { color: var(--text-accent); border-color: var(--border-accent); }
 
-.actions { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; margin-top: var(--space-20); padding-top: var(--space-16); border-top: 1px solid var(--line); }
-button.primary { background: var(--accent); color: #fff; border: 0; padding: var(--space-8) var(--space-16); border-radius: 6px; font: inherit; font-weight: 550; cursor: pointer; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; margin-top: var(--space-20); padding-top: var(--space-16); border-top: 1px solid var(--border); }
+button.primary { background: var(--bg-accent); color: var(--on-accent); border: 0; padding: var(--space-8) var(--space-16); border-radius: 6px; font: inherit; font-weight: 550; cursor: pointer; }
 /* 🔴 禁用外观是**全局**的，不挑类名 —— 这是第三次栽在同一个形状上了：
    ① 批量条的 `hidden` 被 ``.batchbar{display:flex}`` 顶掉（属性对、屏幕反）
    ② `.thumb-sm{40px}` 写在 `.thumb{110px}` 前面，同特异性 ⇒ 后者赢，40 从没生效
@@ -276,11 +328,11 @@ button.primary { background: var(--accent); color: #fff; border: 0; padding: var
 button:disabled, [disabled] {
   opacity: .5 !important; filter: grayscale(1) !important; cursor: not-allowed !important;
 }
-.actions button:not(.primary) { background: var(--bg); border: 1px solid var(--line); color: var(--text); padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; }
-.actions-note { font-size: 12px; color: var(--muted); }
+.actions button:not(.primary) { background: var(--bg-app); border: 1px solid var(--border); color: var(--text-primary); padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; }
+.actions-note { font-size: 12px; color: var(--text-secondary); }
 
 /* ── 预览 ── */
-.preview { margin-top: var(--space-20); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.preview { margin-top: var(--space-20); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 /* ⚠️ 这里原来有 `.preview-head` / `.stat` / `.diff` / `details.raw` 四组规则 ——
    服务于确认区里那段裸 JSON diff 和「完整内容（可复制走）」折叠区。
    Joe 2026-08-27 让撤掉那段"代码"，⇒ 规则**跟着删**，不留着。
@@ -289,7 +341,7 @@ button:disabled, [disabled] {
 /* 保存前的人话摘要：这次会动什么、动到哪、多久生效。 */
 .savesum { padding: var(--space-12) var(--space-16); }
 .savesum-t { font-size: 14px; font-weight: 600; margin-bottom: var(--space-6); }
-.savesum ul { margin: 0; padding-left: var(--space-20); font-size: 13px; line-height: 1.9; color: var(--text); }
+.savesum ul { margin: 0; padding-left: var(--space-20); font-size: 13px; line-height: 1.9; color: var(--text-primary); }
 .savesum b { font-weight: 600; }
 
 /* ═══════════ A7 外壳：左导航 + 主区 ═══════════ */
@@ -305,7 +357,7 @@ button:disabled, [disabled] {
 .sidenav {
   /* 自己滚，不再 sticky —— 页面已经不滚了 */
   height: 100%; overflow-y: auto;
-  background: var(--surface); border-right: 1px solid var(--line); padding: var(--space-16) var(--space-12) var(--space-12);
+  background: var(--bg-surface); border-right: 1px solid var(--border); padding: var(--space-16) var(--space-12) var(--space-12);
   display: flex; flex-direction: column; gap: var(--space-1);
 }
 /* 品牌块：绿版字标独占一行，**没有 "Admin" 后缀**（Joe 定：放大、去掉 Admin）。
@@ -317,32 +369,32 @@ button:disabled, [disabled] {
 /* height 定死、width:auto ⇒ 比例由图自己决定，我不去算宽度（算错就变形）。
    max-width 是安全绳：万一将来换了更宽的字标，它会缩而不是把侧栏顶破。 */
 .brand-logo { height: 32px; width: auto; max-width: 100%; display: block; }
-.nav-sec { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: var(--space-12) var(--space-8) var(--space-4); }
+.nav-sec { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); padding: var(--space-12) var(--space-8) var(--space-4); }
 .nav-item {
   display: flex; align-items: center; gap: var(--space-6); width: 100%; text-align: left;
-  padding: var(--space-6) var(--space-8); border: 0; border-radius: 6px; background: none; color: var(--text);
+  padding: var(--space-6) var(--space-8); border: 0; border-radius: 6px; background: none; color: var(--text-primary);
   font: inherit; font-size: 13.5px; cursor: pointer; text-decoration: none;
 }
-.nav-item:hover { background: var(--bg); }
-.nav-item.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 550; }
+.nav-item:hover { background: var(--bg-app); }
+.nav-item.is-on { background: var(--bg-selected); color: var(--text-accent); font-weight: 550; }
 /* ⛔ SOON 项不可点：光变灰不够，还要 cursor:default，否则手会去点 */
-.nav-item.soon { color: var(--muted); cursor: default; }
+.nav-item.soon { color: var(--text-secondary); cursor: default; }
 .nav-item.soon:hover { background: none; }
-.soon-tag { font-size: 9.5px; letter-spacing: .06em; padding: var(--space-1) var(--space-4); border-radius: 999px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
-.nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.nav-item .ext { margin-left: auto; color: var(--muted); font-size: 11px; }
-.nav-foot { margin-top: auto; padding: var(--space-12) var(--space-8) 0; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--muted); word-break: break-all; }
-.nav-foot b { color: var(--text); font-weight: 600; }
+.soon-tag { font-size: 9.5px; letter-spacing: .06em; padding: var(--space-1) var(--space-4); border-radius: 999px; background: var(--bg-app); border: 1px solid var(--border); color: var(--text-secondary); }
+.nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
+.nav-item .ext { margin-left: auto; color: var(--text-secondary); font-size: 11px; }
+.nav-foot { margin-top: auto; padding: var(--space-12) var(--space-8) 0; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 10.5px; color: var(--text-secondary); word-break: break-all; }
+.nav-foot b { color: var(--text-primary); font-weight: 600; }
 /* 登出：挨着"当前是谁"，换人这件事在同一个地方看和做。
    ⚠️ 字号不跟 .nav-foot 的 10.5px —— 那是给身份串用的等宽小字，
       一个**可点的动作**用 10.5px 等宽既不像按钮也点不准。 */
 .logoutbtn {
   margin-top: var(--space-8); padding: var(--space-4) var(--space-12); cursor: pointer;
   font: inherit; font-family: inherit; font-size: 12px;
-  background: var(--surface); color: var(--muted);
-  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-surface); color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 6px;
 }
-.logoutbtn:hover { color: var(--danger); border-color: var(--danger); }
+.logoutbtn:hover { color: var(--text-critical); border-color: var(--border-critical); }
 
 /* 正文区是**真正的滚动容器**（页面不滚）。里面那些 sticky 的 top 因此
    相对的是这个盒子的顶边，不是视口 ⇒ 它们的偏移都归 0 起算，见下面 .editbar。 */
@@ -358,14 +410,14 @@ button:disabled, [disabled] {
 .toolbar { display: flex; flex-wrap: wrap; gap: var(--space-12); justify-content: space-between; align-items: center; margin-bottom: var(--space-12); }
 .toolbar-right { display: flex; gap: var(--btn-gap); }
 .toolbar-right input, .toolbar-right select {
-  padding: var(--space-6) var(--space-8); font: inherit; font-size: 13px; background: var(--surface);
-  color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: var(--space-6) var(--space-8); font: inherit; font-size: 13px; background: var(--bg-surface);
+  color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
 }
 .toolbar-right input { min-width: 200px; }
 
-.tabs-status { display: flex; gap: var(--space-2); background: var(--bg); padding: var(--space-2); border-radius: 7px; }
-.stab { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
-.stab.is-on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.tabs-status { display: flex; gap: var(--space-2); background: var(--bg-app); padding: var(--space-2); border-radius: 7px; }
+.stab { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.stab.is-on { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px var(--shadow-md); }
 .stab-n { font-family: var(--mono); font-size: 11px; }   /* ⚠️ 原来带 opacity:.8 —— 与 .shint 同一个病，上屏只有 4.54:1。降权交给色值。 */
 
 /* 🔴 吸底（AU2 ④）。它原来在表格**之前**且占文档流 ⇒ 勾选一行，正在看的那行当场下移
@@ -377,7 +429,7 @@ button:disabled, [disabled] {
       与旧 `.editbar{top:40px}` 那种偏移假设不是一回事。 */
 .batchbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-12);
   margin: var(--space-12) 0 0; position: sticky; bottom: 0; z-index: 14;
-  background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 7px; font-size: 13px; }
+  background: var(--bg-selected); border: 1px solid var(--border-accent); border-radius: 7px; font-size: 13px; }
 /* 🔴 `:not(.linkish)` 不是特例，是把这条规则的**意图**写准（AU2 ⑥）。
    原来是 `.batchbar button`（特异性 0,1,1）⇒ 它把批量条里的 `.linkish`（0,1,0）也吃了，
    于是「取消选择」与旁边的「批量上架」**逐属性完全相同**（实测 74x31 / 12.5px / 黑字白底 /
@@ -386,16 +438,16 @@ button:disabled, [disabled] {
    这条规则想说的从来是"批量条里那几个**操作按钮**长这样"，不是"里面所有 button"。
    ⇒ 写准之后 `.linkish` 全站只剩一种长相，撤销动作也回到它该有的分量。 */
 .batchbar button:not(.linkish) { padding: var(--space-4) var(--space-12); font: inherit; font-size: 12.5px; cursor: pointer;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--text); }
-.batchbar button:hover { border-color: var(--accent); color: var(--accent); }
-.batch-note { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); }
+.batchbar button:hover { border-color: var(--border-accent); color: var(--text-accent); }
+.batch-note { margin-left: auto; font-size: 11.5px; color: var(--text-secondary); }
 
-.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.table-wrap { overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
 .ptable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.ptable th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--line); white-space: nowrap; }
-.ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--line); vertical-align: middle; }
+.ptable th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--border); vertical-align: middle; }
 .ptable tr:last-child td { border-bottom: 0; }
-.ptable tbody tr:hover { background: var(--bg); }
+.ptable tbody tr:hover { background: var(--bg-app); }
 /* ── 反扫结论（2026-08-27）：全文件 9 处裸 `width: Npx`，逐个判过 ──
    会咬人的判据是「这一格里有**会换行的文字**吗」，不是「有没有写死 px」。
      .col-st   92px  🔴 有文字（在线/未上架）⇒ **已改**
@@ -427,29 +479,29 @@ button:disabled, [disabled] {
      改成 **nowrap + 宽度由内容决定**：`width: 1%` 在表格里的含义是"尽量窄"，
      而 nowrap 把"尽量窄"的下限抬到 max-content ⇒ **正好是最长型号的宽度**。 */
 .ptable .col-model { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
-.ptable .col-cat { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.ptable .col-cat { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
 .ptable .col-act { width: 110px; text-align: right; white-space: nowrap; }
 .ptable input[type=checkbox] { width: auto; margin: 0; }
-.row-bad { background: var(--danger-soft); }
+.row-bad { background: var(--bg-critical-soft); }
 .li-name { font-weight: 550; display: flex; align-items: center; gap: var(--space-8); }
 /* 标题链官网：默认不加下划线（一行里已经有够多的视觉噪音），hover 才提示可点 */
 .ttl-link { color: inherit; text-decoration: none; }
-.ttl-link:hover { color: var(--accent); text-decoration: underline; }
-.li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
-.li-sub.bad { color: var(--danger); }
-.flag-bad { font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; background: var(--danger-soft); color: var(--danger); }
+.ttl-link:hover { color: var(--text-link); text-decoration: underline; }
+.li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
+.li-sub.bad { color: var(--text-critical); }
+.flag-bad { font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; background: var(--bg-critical-soft); color: var(--text-critical); }
 /* ⛔ `.flag-warn` 已删（黄色「N 提示」角标撤掉，2026-08-26）。
    留一条没人用的规则不是"以防万一"，是给下一个人埋雷：`.topbar` 那条死规则在这个仓里
    躺了很久，我一加顶栏它当场复活并覆盖了我的 padding。用不上就删。 */
-.linkish { background: none; border: 0; padding: var(--space-2) var(--space-6); color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; }
+.linkish { background: none; border: 0; padding: var(--space-2) var(--space-6); color: var(--text-link); cursor: pointer; font: inherit; font-size: 13px; }
 .linkish:hover { text-decoration: underline; }
 
 /* ── 图片 ── */
 .imgrow { display: flex; gap: var(--space-12); align-items: flex-start; }
 .imgrow-side { flex: 1 1 auto; min-width: 0; }
 .thumb {
-  flex: 0 0 auto; width: 110px; height: 110px; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden;
+  flex: 0 0 auto; width: 110px; height: 110px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-app); display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 .thumb img { width: 100%; height: 100%; object-fit: contain; }
 /* 🔴 列表缩略图（A11-3）。**必须排在 `.thumb` 之后**：
@@ -460,30 +512,30 @@ button:disabled, [disabled] {
       （审计记录有被判死的图仍在生产上，含一张可辨识儿童照出现在 16 个 URL），
       列表缩略图还要承担"一眼看出这张图有问题"的职责，40px 做不到。 */
 .thumb-sm { width: 64px; height: 64px; border-radius: 5px; }
-.thumb-empty { color: var(--muted); font-size: 12px; }
+.thumb-empty { color: var(--text-secondary); font-size: 12px; }
 .filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 12.5px; font-weight: 500; cursor: pointer;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--text); margin: 0 0 var(--space-6); }
-.filebtn:hover { border-color: var(--accent); color: var(--accent); }
+  background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); margin: 0 0 var(--space-6); }
+.filebtn:hover { border-color: var(--border-accent); color: var(--text-accent); }
 .gallery { display: flex; flex-wrap: wrap; gap: var(--space-8); }
 .gcard { position: relative; width: 92px; }
 .gcard .thumb { width: 92px; height: 92px; }
 .gcard .gdel { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
-  border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer; line-height: 1; font-size: 14px; }
-.gcard .gdel:hover { color: var(--danger); border-color: var(--danger); }
+  border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; line-height: 1; font-size: 14px; }
+.gcard .gdel:hover { color: var(--text-critical); border-color: var(--border-critical); }
 .gcard.is-removed .thumb { opacity: .35; filter: grayscale(1); }
-.gcard .gtag { display: block; font-size: 10.5px; color: var(--muted); text-align: center; margin-top: var(--space-4);
+.gcard .gtag { display: block; font-size: 10.5px; color: var(--text-secondary); text-align: center; margin-top: var(--space-4);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
-.gcard.is-new .gtag { color: var(--ok); }
-button.danger { background: var(--danger-soft); border: 1px solid var(--danger); color: var(--danger);
+.gcard.is-new .gtag { color: var(--text-success); }
+button.danger { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
   padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; margin-left: auto; }
 
-.commit-bar { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; padding: var(--space-12); border-top: 1px solid var(--line); background: var(--bg); }
-.commit-bar .actions-note { font-size: 12px; color: var(--muted); }
+.commit-bar { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; padding: var(--space-12); border-top: 1px solid var(--border); background: var(--bg-app); }
+.commit-bar .actions-note { font-size: 12px; color: var(--text-secondary); }
 .notice a { color: inherit; }
 .notice { padding: var(--space-8) var(--space-12); font-size: 12.5px; }
-.notice-ok { background: var(--ok-soft); color: var(--ok); }
-.notice-warn { background: var(--warn-soft); color: var(--warn); }
-.notice-bad { background: var(--danger-soft); color: var(--danger); }
+.notice-ok { background: var(--bg-success-soft); color: var(--text-success); }
+.notice-warn { background: var(--bg-caution-soft); color: var(--text-caution); }
+.notice-bad { background: var(--bg-critical-soft); color: var(--text-critical); }
 
 /* ═══ 设置页：只读口径卡片 ═══
    两栏（宽屏）：每张卡是一个独立的问题（能不能写 / 谁能进 / 落到哪 / 哪一版 / 契约），
@@ -512,15 +564,15 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .sumbar {
   display: flex; flex-wrap: wrap; gap: var(--space-12) var(--space-24); align-items: flex-start;
   padding: var(--space-12) var(--space-16); margin: 0 0 var(--space-16);
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
 }
 .sumitem { display: flex; flex-direction: column; gap: var(--space-4); }
 /* 摘要里的徽章要比行内的大一档 —— 它是这一页的结论，不是行末的注脚 */
 .sumbar .badge { font-size: 12px; padding: var(--space-4) var(--space-8); }
-.sumlabel { font-size: 10.5px; color: var(--muted); letter-spacing: .02em; }
-.srow { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-16); padding: var(--space-8) 0; border-bottom: 1px solid var(--line); }
+.sumlabel { font-size: 10.5px; color: var(--text-secondary); letter-spacing: .02em; }
+.srow { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-16); padding: var(--space-8) 0; border-bottom: 1px solid var(--border); }
 .srow:last-child { border-bottom: 0; }
-.sk { color: var(--muted); font-size: 12.5px; flex: 0 0 auto; }
+.sk { color: var(--text-secondary); font-size: 12.5px; flex: 0 0 auto; }
 /* ── C：值加重、说明降权 ──
    实测改前：值 13px/400/rgb(26,29,33)，说明 11.5px/400/rgb(107,114,128) ——
    **只差 1.5px、粗细一模一样**，而说明占了约 70% 的面积 ⇒ 值根本跳不出来。
@@ -538,13 +590,13 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* ⚠️ `margin-top: -1px` **不是间距值**，它是用来抵消上面那条 1px 描边的 ——
    吸附成 0 会出现双线。⛔ 它跟着 `border-bottom: 1px` 走，不跟间距刻度走。
    （padding 的 9→8 与它无关，可以照常吸附。）*/
-.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: var(--space-2) 0 var(--space-8); border-bottom: 1px solid var(--line); margin-top: -1px; }
-.shint b { color: var(--text); }
+.shint { font-size: 11px; color: var(--text-secondary); line-height: 1.65; padding: var(--space-2) 0 var(--space-8); border-bottom: 1px solid var(--border); margin-top: -1px; }
+.shint b { color: var(--text-primary); }
 .shint code { font-family: var(--mono); font-size: 11px; }
 
 /* 分类页脚注。列表比一整段话读得快。 */
-.catnote { margin: var(--space-12) 0 0; padding-left: var(--space-20); font-size: 12.5px; color: var(--muted); line-height: 1.8; }
-.catnote b { color: var(--text); }
+.catnote { margin: var(--space-12) 0 0; padding-left: var(--space-20); font-size: 12.5px; color: var(--text-secondary); line-height: 1.8; }
+.catnote b { color: var(--text-primary); }
 
 /* 两个轴并排。⚠️ minmax(0,1fr) 而不是 1fr：1fr 的最小尺寸是 auto，表格里一个长取值
    就会把那一列撑出去、把另一列挤没。窄屏塌成一列。 */
@@ -553,28 +605,28 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .axishead { margin: 0 0 var(--space-8); font-size: 14px; font-weight: 600; }
 .axisadd { display: flex; gap: var(--space-8); margin-top: var(--space-12); }
 .axisadd input { flex: 1 1 0; min-width: 0; font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8);
-  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); }
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 .axisadd button { white-space: nowrap; }
 /* 行内改名：输入框顶掉那一格的显示名，不跳走、不开弹窗。 */
 .axisedit { display: flex; gap: var(--space-6); align-items: center; }
 .axisedit input { font: inherit; font-size: 13px; padding: var(--space-4) var(--space-6); min-width: 0; flex: 1 1 0;
-  border: 1px solid var(--accent); border-radius: 5px; background: var(--surface); color: var(--text); }
+  border: 1px solid var(--border-accent); border-radius: 5px; background: var(--bg-surface); color: var(--text-primary); }
 /* 危险动作要长得像危险动作 —— 与「改名」并排时不能是同一个灰。 */
-.linkish.danger { color: var(--danger); }
+.linkish.danger { color: var(--text-critical); }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
-#bulkCat { font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); }
+#bulkCat { font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 
 
 
 /* ═══ A9 编辑页：卡片分组 + sticky 保存条 + 宽屏双栏 ═══
    照 admin.wanew.com 的做法（实测其结构：card + <h3> 分组、edit-bar position:sticky）。
    Joe 的原话是「整页是一根裸的纵向表单」—— 缺的正是这三样。 */
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--card-padding); margin: 0 0 var(--section-gap); }
-.card > h3 { margin: 0 0 var(--space-12); font-size: 13px; font-weight: 650; display: flex; align-items: baseline; gap: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--line); }
-.card > h3 .h3sub { font-weight: 400; font-size: 11.5px; color: var(--muted); }
+.card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--card-padding); margin: 0 0 var(--section-gap); }
+.card > h3 { margin: 0 0 var(--space-12); font-size: 13px; font-weight: 650; display: flex; align-items: baseline; gap: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--border); }
+.card > h3 .h3sub { font-weight: 400; font-size: 11.5px; color: var(--text-secondary); }
 /* 内部字段那张卡整体压红边 —— 它承载的是绝不能上站的东西 */
-.card-internal { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
-.card-internal > h3 { color: var(--danger); }
+.card-internal { border-color: color-mix(in srgb, var(--border-critical) 45%, var(--border)); }
+.card-internal > h3 { color: var(--text-critical); }
 
 /* 宽屏双栏：左边填字段、右边图片，减少纵向滚动 */
 /* 🔴 这里原来是**两栏**：`minmax(0,1fr) minmax(300px,380px)`，右栏放图片模块。
@@ -600,8 +652,8 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .imglist { --tile: 120px; display: flex; flex-wrap: wrap; gap: var(--space-12); margin-bottom: var(--space-12); }
 .imglist:empty { margin-bottom: 0; }
 .icard {
-  position: relative; width: var(--tile); height: var(--tile); border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--bg); padding: var(--space-6); cursor: grab; user-select: none;
+  position: relative; width: var(--tile); height: var(--tile); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-app); padding: var(--space-6); cursor: grab; user-select: none;
 }
 .icard:active { cursor: grabbing; }
 /* 🔴 内框照 `.featthumb` 的写法（`aspect-ratio: 1/1`）——
@@ -609,22 +661,22 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
    原来是 `height: 82px`：这是全文件**唯一一个不方的** thumb 覆盖
    （基类 110×110、.thumb-sm 64、.gcard 92、.mcard 150、.featthumb 1/1 全是方的）。 */
 .icard .thumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 5px; }
-.icard.is-new { border-color: var(--ok); background: var(--ok-soft); }
+.icard.is-new { border-color: var(--border-success); background: var(--bg-success-soft); }
 .icard.is-dragging { opacity: .4; }
 /* 拖到谁身上，谁左边亮一条 —— 只是一个 class，不重绘（wanew 那边在 dragover 里整块重绘） */
-.icard.is-over { box-shadow: -3px 0 0 var(--accent); border-color: var(--accent); }
+.icard.is-over { box-shadow: -3px 0 0 var(--shadow-accent); border-color: var(--border-accent); }
 .icover {
   position: absolute; top: 10px; left: 10px; z-index: 2;
-  background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 600;
+  background: var(--bg-accent); color: var(--on-accent); font-size: 10.5px; font-weight: 600;
   padding: var(--space-2) var(--space-8); border-radius: 999px; letter-spacing: .02em;
 }
 .idel {
   position: absolute; top: 8px; right: 8px; z-index: 2; width: 20px; height: 20px; line-height: 1;
-  border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; font-size: 13px;
+  border: 0; border-radius: 50%; background: var(--scrim-weak); color: var(--on-accent); cursor: pointer; font-size: 13px;
 }
-.idel:hover { background: var(--danger); }
+.idel:hover { background: var(--bg-critical); }
 .itag {
-  display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 10.5px; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* A12-5：添加入口 = 网格里的最后一格，尺寸与缩略图一致，就一个「＋」。
@@ -638,21 +690,21 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
      而写死的数字还会在将来卡片改高时**再错一次**，且没人会想到回来改这里。 */
   height: var(--tile);
   display: flex; align-items: center; justify-content: center;
-  border: 1.5px dashed var(--line); border-radius: var(--radius);
-  background: var(--bg); cursor: pointer; color: var(--muted);
+  border: 1.5px dashed var(--border); border-radius: var(--radius);
+  background: var(--bg-app); cursor: pointer; color: var(--text-secondary);
 }
-.iadd:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.iadd:hover { border-color: var(--border-accent); background: var(--bg-selected); color: var(--text-accent); }
 .iadd-plus { font-size: 26px; line-height: 1; font-weight: 300; }
-.iadd[data-busy] { border-color: var(--accent); color: var(--accent); }
+.iadd[data-busy] { border-color: var(--border-accent); color: var(--text-accent); }
 .iadd[data-busy] .iadd-plus { font-size: 15px; font-family: var(--mono); }
 /* 拖文件进来时整个网格高亮 —— 投放区是整个网格，不只那一格 */
-.imglist.is-over { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: var(--radius); }
+.imglist.is-over { outline: 2px dashed var(--border-accent); outline-offset: 4px; border-radius: var(--radius); }
 .imglimits { margin-top: var(--space-8); }
 
 /* ══ A10：「更多（选填）」折叠区 ══
    新建时收起、编辑时由 JS 打开。用原生 <details>：零 JS 也能开合，键盘天然可达。 */
 .more {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 0 var(--space-16); margin: 0 0 var(--space-16);
 }
 .more > summary {
@@ -662,21 +714,21 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .more > summary::-webkit-details-marker { display: none; }
 /* 自己画三角：原生 marker 在各浏览器里长得不一样，而这是主路上的一个控件 */
 .more > summary::before {
-  content: "▸"; color: var(--muted); font-size: 11px; transition: transform .15s ease; display: inline-block;
+  content: "▸"; color: var(--text-secondary); font-size: 11px; transition: transform .15s ease; display: inline-block;
 }
 .more[open] > summary::before { transform: rotate(90deg); }
-.more > summary:hover { color: var(--accent); }
-.more[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: var(--space-16); }
+.more > summary:hover { color: var(--text-accent); }
+.more[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: var(--space-16); }
 .more > *:last-child { margin-bottom: var(--space-16); }
 /* 折叠区里的图片那一份挨着主图，不要再套一层卡片边框 */
 #moreImages { border: 0; padding: 0; background: none; margin-top: var(--space-6); }
 
 /* sticky 保存条：改动计数 + 提交入口常驻，不用滚到底才找得到 */
 .editbar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12);
-  padding: var(--space-12) var(--space-16); margin: 0 0 var(--space-16); background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: 0 2px 6px rgba(0,0,0,.06); }
-.editbar .dirty { font-size: 12.5px; color: var(--muted); }
-.editbar .dirty b { color: var(--accent); }
+  padding: var(--space-12) var(--space-16); margin: 0 0 var(--space-16); background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 2px 6px var(--shadow-sm); }
+.editbar .dirty { font-size: 12.5px; color: var(--text-secondary); }
+.editbar .dirty b { color: var(--text-accent); }
 .editbar .spacer { margin-left: auto; }
 .card .field:last-child { margin-bottom: 0; }
 
@@ -686,7 +738,7 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .mcard .thumb { width: 150px; height: 150px; }
 .mcard .gtag { white-space: normal; line-height: 1.35; }
 /* 未被引用的压黄边 —— 但**只是提示**，界面不提供一键删除 */
-.mcard.is-orphan .thumb { border-color: var(--warn); background: var(--warn-soft); }
+.mcard.is-orphan .thumb { border-color: var(--border-caution); background: var(--bg-caution-soft); }
 
 /* ══ A12：详情/编辑页顶部并成一行 ══
    原来「← 返回列表」在左、「详情|编辑」在右、标题另起一整块 —— 三样东西占三行高度，
@@ -708,7 +760,7 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
         而那种歪没人会归因到 CSS。
      ⇒ `.main{padding:20px 24px 40px}` · 出血 `-20px -24px` · 本条自身 `padding` 的 24 三者同源。 */
   margin: calc(-1 * var(--main-pad-y)) calc(-1 * var(--main-pad-x)) var(--space-12); padding: var(--space-12) var(--main-pad-x);
-  background: var(--bg); border-bottom: 1px solid var(--line);
+  background: var(--bg-app); border-bottom: 1px solid var(--border);
 }
 /* 「保存」「删除」在这一行的右端（Joe 2026-08-26）。
    ⭐ 不用 sticky、不算偏移：body 不滚、.main 内部滚 ⇒ 顶部这一行天然停在原地。
@@ -718,55 +770,55 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* 🔴 权重拉开：主动作实心，不可逆动作**描边**。
    同一处并排两个实心按钮，误点只是时间问题 —— 而这两个的后果不对称到没法比。 */
 .detail-actions .danger {
-  background: none; color: var(--danger); border: 1px solid var(--danger);
+  background: none; color: var(--text-critical); border: 1px solid var(--border-critical);
   padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer;
 }
-.detail-actions .danger:hover { background: var(--danger-soft); }
+.detail-actions .danger:hover { background: var(--bg-critical-soft); }
 .detail-bar h2 { margin: 0; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 字段级提示：贴在它所属的输入框正下方，而不是堆在顶部 */
-.field-issue { color: var(--warn); margin-top: var(--space-4); }
+.field-issue { color: var(--text-caution); margin-top: var(--space-4); }
 
 /* ══ A12-4：预览态 —— 接近官网产品页，不是字段表 ══
    ⚠️ 目标是"看得出是不是对的"，不是"看起来一样"（官网样式会变，追了也守不住）。 */
 /* 预览排版：比正文读起来舒服的宽度略宽一点，但仍**有上限** ——
    它模拟的是官网产品页，而那一页本来就不是通栏。760 → 980（1440 档实测右侧不再空一大片）。 */
 .pv { max-width: 980px; }
-.pv-hero { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pv-hero { width: 100%; height: 320px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-app); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .pv-hero img { width: 100%; height: 100%; object-fit: contain; }
 .pv-strip { display: flex; gap: var(--space-8); margin-top: var(--space-8); flex-wrap: wrap; }
-.pv-thumb { width: 72px; height: 72px; border: 1px solid var(--line); border-radius: 5px;
-  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pv-thumb { width: 72px; height: 72px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg-app); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .pv-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.pv-noimg { padding: var(--space-28); text-align: center; color: var(--warn); background: var(--warn-soft);
+.pv-noimg { padding: var(--space-28); text-align: center; color: var(--text-caution); background: var(--bg-caution-soft);
   border-radius: var(--radius); font-size: 13px; }
 .pv-title { font-size: 24px; margin: var(--space-20) 0 var(--space-6); line-height: 1.3; }
 .pv-meta { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); }
-.pv-cat { font-size: 11.5px; padding: var(--space-2) var(--space-8); border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
-.pv-model { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.pv-cat { font-size: 11.5px; padding: var(--space-2) var(--space-8); border-radius: 999px; background: var(--bg-selected); color: var(--text-accent); }
+.pv-model { font-family: var(--mono); font-size: 12.5px; color: var(--text-secondary); }
 .pv-sec { margin-top: var(--space-24); }
-.pv-h3 { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em;
+.pv-h3 { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: .04em;
   text-transform: uppercase; margin: 0 0 var(--space-8); }
 .pv-list { margin: 0; padding-left: var(--space-20); line-height: 1.8; }
 .pv-specs { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.pv-specs th { text-align: left; font-weight: 500; color: var(--muted); padding: var(--space-8) var(--space-12) var(--space-8) 0;
-  border-bottom: 1px solid var(--line); width: 34%; }
-.pv-specs td { padding: var(--space-8) 0; border-bottom: 1px solid var(--line); }
+.pv-specs th { text-align: left; font-weight: 500; color: var(--text-secondary); padding: var(--space-8) var(--space-12) var(--space-8) 0;
+  border-bottom: 1px solid var(--border); width: 34%; }
+.pv-specs td { padding: var(--space-8) 0; border-bottom: 1px solid var(--border); }
 /* 🔴 内部信息区**必须与预览区在视觉上分开** —— 否则"预览"这个词就是假的：
    这里的东西官网上一个都看不到。 */
-.pv-internal { margin-top: var(--space-36); padding-top: var(--space-20); border-top: 2px dashed var(--line); max-width: 980px; }
+.pv-internal { margin-top: var(--space-36); padding-top: var(--space-20); border-top: 2px dashed var(--border); max-width: 980px; }
 
 /* 管理态开关（沿用 wanew 后台：🔧 管理 / ✓ 管理中）。⛔ 不造第三种交互。 */
 .axishead { display: flex; align-items: baseline; gap: var(--space-8); }
 .axishead .h3sub { flex: 1 1 auto; min-width: 0; }
 .managebtn {
   flex: 0 0 auto; font: inherit; font-size: 12px; font-weight: 400; padding: var(--space-4) var(--space-12); cursor: pointer;
-  background: var(--surface); color: var(--muted);
-  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg-surface); color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 6px;
 }
-.managebtn:hover { color: var(--text); border-color: var(--muted); }
+.managebtn:hover { color: var(--text-primary); border-color: var(--border-subtle); }
 /* 开着的时候要一眼看出来 —— 否则"我到底在不在管理态"只能靠点一下试试。 */
-.managebtn.on { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.managebtn.on { background: var(--bg-accent); color: var(--on-accent); border-color: var(--border-accent); font-weight: 600; }
 
 /* 🔴 `--card` 这个变量**从来没被定义过**（:root 里没有它）。用它的声明在计算值阶段
    直接作废 ⇒ background 退回初始值 transparent。实测：`var(--card)` 算出来是
@@ -782,8 +834,8 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
       ⇒ 下面这些不是装饰，是**让"这三个不是同一种东西"一眼看得出来**。 */
 
 /* 公司简介独立成块，左侧一道色带 —— 它不属于任何一页，视觉上就不该混在页面 meta 里 */
-.card-org { border-left: 3px solid var(--accent); background: var(--accent-soft); }
-.card-org textarea { background: var(--surface); }
+.card-org { border-left: 3px solid var(--border-accent); background: var(--bg-selected); }
+.card-org textarea { background: var(--bg-surface); }
 
 /* 每页一张卡，路径当标题（原来路径是框外一行极小灰字，容易漏） */
 .card-page > h3 { font-family: var(--mono); font-size: 13.5px; }
@@ -794,28 +846,28 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
       做成可编辑的框就是第二个写入口，而这一页刚因为"两个长得一样的框"出过事故。 */
 .inherit {
   margin-top: var(--space-6); padding: var(--space-8) var(--space-12); border-radius: 6px;
-  background: var(--bg); border: 1px dashed var(--line);
+  background: var(--bg-app); border: 1px dashed var(--border);
   font-size: 12.5px; line-height: 1.6;
 }
 .inherit-tag {
   display: inline-block; margin-right: var(--space-8); padding: var(--space-1) var(--space-6); border-radius: 999px;
-  background: var(--surface); border: 1px solid var(--line);
-  font-size: 10.5px; font-family: var(--mono); color: var(--muted);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  font-size: 10.5px; font-family: var(--mono); color: var(--text-secondary);
 }
-.inherit-txt { color: var(--text); }
+.inherit-txt { color: var(--text-primary); }
 
 /* ── 计数器三态 ──
    ⚠️ `0 / 160`（留空）与 `155 / 160`（快到上限）原来长得一模一样：
       "这一页在继承别人的文案" 和 "再写五个字就超了" 用的是同一种灰。 */
-.cnt-empty { color: var(--muted); font-style: italic; }
-.cnt-ok    { color: var(--ok); }
-.cnt-over  { color: var(--warn); font-weight: 600; }
+.cnt-empty { color: var(--text-secondary); font-style: italic; }
+.cnt-ok    { color: var(--text-success); }
+.cnt-over  { color: var(--text-caution); font-weight: 600; }
 
 /* 🔴 placeholder 是**最容易漏的一处**：它不是文字节点，按元素扫文本的那套查不到它，
    而且浏览器给的默认色（实测 #757575 on #f6f7f9 = **4.3:1**）根本不到 7。
    ⇒ 显式指定。用 --muted（7.57:1 on --bg）——
    ⚠️ 它与真值仍然分得开：真值走 --text，约 17:1，比 placeholder 明显重。 */
-input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+input::placeholder, textarea::placeholder { color: var(--text-secondary); opacity: 1; }
 
 /* 卖点每行自己的字数（Joe 2026-08-27：顶部那一整块提示挪到各自那一行）。
    ⚠️ 复用 SEO 页那套三态（.cnt-empty / .cnt-ok / .cnt-over），⛔ 不造第二套。
@@ -843,28 +895,28 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .senrow { display: flex; align-items: center; gap: var(--space-4); overflow: hidden; white-space: nowrap; min-width: 0; }
 .senchip {
   flex: 0 0 auto; font-size: 10.5px; line-height: 1.6; padding: 0 var(--space-6); border-radius: 999px;
-  background: var(--bg); color: var(--muted); border: 1px solid var(--line); font-family: var(--mono);
+  background: var(--bg-app); color: var(--text-secondary); border: 1px solid var(--border); font-family: var(--mono);
 }
 .senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
-.senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-family: var(--mono); cursor: help; }
+.senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--text-secondary); font-family: var(--mono); cursor: help; }
 
 /* ══ 首页精选产品 ══ */
 .card-featured .featlist { display: flex; flex-direction: column; gap: var(--space-6); margin: var(--space-8) 0 0; }
 .featrow {
   display: flex; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-12); cursor: grab;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 7px;
 }
 .featrow.is-dragging { opacity: .4; }
-.featrow.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.featrow.is-over { border-color: var(--border-accent); box-shadow: 0 0 0 2px var(--ring-accent-soft); }
 /* 🔴 坏条目要**看得见**：静默过滤掉的话，Joe 永远不知道列表里有坏的，
    而首页会安静地少一张卡。 */
-.featrow.is-bad { border-color: var(--danger); background: var(--danger-soft); }
-.featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.featrow.is-bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
+.featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
 .feattext { flex: 1 1 auto; min-width: 0; }
 .featadd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
 .featadd select {
   font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); max-width: 100%;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary);
 }
 
 /* ══ 首页精选产品：卡片网格（Joe 2026-08-27「像官网一样可视化」）══
@@ -879,33 +931,33 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .featcard {
   position: relative; display: flex; flex-direction: column; gap: var(--space-6);
   padding: var(--space-8); cursor: grab; min-width: 0;
-  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
 }
 .featcard.is-dragging { opacity: .4; }
-.featcard.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.featcard.is-over { border-color: var(--border-accent); box-shadow: 0 0 0 2px var(--ring-accent-soft); }
 /* 🔴 坏卡要一眼看得出来。它**没有图也没有型号** ——
    ⛔ 绝不能因为取不到图就不渲染这张卡：那样 Joe 永远不知道列表里有坏的，
       而首页会安静地少一张（官网构建只打印警告、不失败）。 */
-.featcard.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+.featcard.is-bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 
 /* 缩略图正方 —— 与官网首页那个 1:1 框一致 */
 .featthumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 6px; }
 .featcard .featno {
   position: absolute; top: 6px; left: 6px; z-index: 2;
   min-width: 18px; padding: 0 var(--space-4); border-radius: 999px; text-align: center;
-  background: rgba(0,0,0,.62); color: #fff; font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+  background: var(--scrim); color: var(--on-accent); font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
 }
 .featbody { min-width: 0; }
 /* 型号**醒目**（Joe 点名要的），取自真源 model 字段 */
-.featmodel { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text);
+.featmodel { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 标题次要权重：两行封顶，不让它把卡撑得高矮不齐 */
-.feattitle { font-size: 11.5px; color: var(--muted); line-height: 1.35;
+.feattitle { font-size: 11.5px; color: var(--text-secondary); line-height: 1.35;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.7em; }
 .featbad { align-self: flex-start; font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px;
-  background: var(--danger); color: #fff; font-family: var(--mono); cursor: help; }
+  background: var(--bg-critical); color: var(--on-accent); font-family: var(--mono); cursor: help; }
 /* ⚠️ 只有坏卡显示 slug —— 这时它是**唯一**能指认"坏的是谁"的东西 */
-.featslug { font-family: var(--mono); font-size: 10px; color: var(--danger); word-break: break-all; }
+.featslug { font-family: var(--mono); font-size: 10px; color: var(--text-critical); word-break: break-all; }
 /* ── 移除按钮：**hover 才出现**（Joe 2026-08-27）──
    🔴 用 `opacity` + `pointer-events`，⛔ 不用 `visibility: hidden`：
       `visibility: hidden` 会让按钮**不可聚焦** ⇒ 键盘就再也到不了它了。
@@ -916,7 +968,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .featdel {
   position: absolute; top: 6px; right: 6px; z-index: 2; width: 20px; height: 20px; padding: 0;
   border-radius: 999px; border: 0; cursor: pointer; line-height: 1;
-  background: rgba(0,0,0,.62); color: #fff; font-size: 13px;
+  background: var(--scrim); color: var(--on-accent); font-size: 13px;
   opacity: 0; pointer-events: none; transition: opacity .12s ease;
 }
 .featcard:hover .featdel { opacity: 1; pointer-events: auto; }
@@ -928,7 +980,7 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
         不会让任何情形变坏（那时卡片多半已经 hover 着了）。 */
 .featdel:focus,
 .featdel:focus-visible { opacity: 1; pointer-events: auto; }
-.featdel:hover { background: var(--danger); }
+.featdel:hover { background: var(--bg-critical); }
 /* 🔴 触屏没有 hover ⇒ **常显**，否则删除按钮永远出不来（按不到 = 死路）。
    ⛔ 不为触屏新增长按/常显开关之类的交互分支：那是一条永远没人验的代码路径。
       这里只是把"默认隐藏"这一条在无 hover 的设备上关掉，不引入新行为。 */
@@ -938,5 +990,5 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 .featadd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
 .featadd select {
   font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); max-width: 100%;
-  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary);
 }
