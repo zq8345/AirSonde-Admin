@@ -405,16 +405,50 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* ═══ 设置页：只读口径卡片 ═══
    两栏（宽屏）：每张卡是一个独立的问题（能不能写 / 谁能进 / 落到哪 / 哪一版 / 契约），
    卡内是"名字—值—为什么"三段。值走等宽，方便与配置文件逐字比对。 */
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+/* ══ 设置页排版（Joe 2026-08-26：「改好看一点」）══
+   根本问题不是缺样式，是**三种用途的信息被摊成五张同权重的卡**：
+   状态（要扫一眼）· 口径常量（查阅用）· 说明（读一次就够）。全都得逐字读。
+
+   ── B：消版面空洞 ──
+   🔴 原来是 `grid + auto-fit`：1440 档排成三列，5 张卡 ⇒ 第二行只有两张，
+      右下角**空一格**，加上各卡高度不齐，实测**空洞占网格面积 32.6%**。
+      grid 的行高由该行最高的卡决定，矮卡下面的空白**没有任何东西能填进去**。
+   ⇒ 改用多列（砌体）：卡片按高度自然码放，空洞被后面的卡吃掉。
+   ⚠️ `break-inside: avoid` 是必需的，否则一张卡会被从中间劈到两列去 ——
+      而那种断法在窄一点的屏上才出现，宽屏测不出来。 */
+/* 🔴 列数是**量出来的，不是挑好看的**。同一份内容，在页面上逐个试：
+      3 列 → 空洞 26.1%（各列累计高 402 / 877 / 743 —— 第一列只放得下一张卡）
+      2 列 → 空洞 **15.0%**（741 / 962）
+   ⇒ 2 列。页高 891 → 991（仍远短于改前的 1138），换来空洞减半，
+     而且卡片变宽之后那些长说明读起来也顺。 */
+.settings-grid { columns: 2 440px; column-gap: 14px; }
+.settings-grid > .card { break-inside: avoid; margin-bottom: 14px; }
+@media (max-width: 760px) { .settings-grid { columns: 1; } }
+
+/* ── A：顶部状态摘要 —— 结论压成一行，细节留在下面 ── */
+.sumbar {
+  display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: flex-start;
+  padding: 12px 16px; margin: 0 0 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.sumitem { display: flex; flex-direction: column; gap: 3px; }
+/* 摘要里的徽章要比行内的大一档 —— 它是这一页的结论，不是行末的注脚 */
+.sumbar .badge { font-size: 12px; padding: 3px 9px; }
+.sumlabel { font-size: 10.5px; color: var(--muted); letter-spacing: .02em; }
 .srow { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .srow:last-child { border-bottom: 0; }
 .sk { color: var(--muted); font-size: 12.5px; flex: 0 0 auto; }
-.sv { text-align: right; font-size: 13px; word-break: break-word; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+/* ── C：值加重、说明降权 ──
+   实测改前：值 13px/400/rgb(26,29,33)，说明 11.5px/400/rgb(107,114,128) ——
+   **只差 1.5px、粗细一模一样**，而说明占了约 70% 的面积 ⇒ 值根本跳不出来。
+   ⛔ 说明只降权**不删**：这一页的说明质量很高（尤其「Access 名单本后台看不见」
+      那段讲清了为什么看不见、以及对账办法），删了就把这一页最值钱的东西删了。 */
+.sv { text-align: right; font-size: 13.5px; font-weight: 600; word-break: break-word; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
 .sv code { font-family: var(--mono); font-size: 12px; }
 .sv-list { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
 .sv-list .chip { font-family: var(--mono); font-size: 11.5px; }
 /* 说明句：默认在的，不是 hover 才出现的 —— 这一页的每一行都需要"为什么" */
-.shint { font-size: 11.5px; color: var(--muted); line-height: 1.7; padding: 2px 0 9px; border-bottom: 1px solid var(--line); margin-top: -1px; }
+.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: 2px 0 9px; border-bottom: 1px solid var(--line); margin-top: -1px; opacity: .92; }
 .shint b { color: var(--text); }
 .shint code { font-family: var(--mono); font-size: 11px; }
 

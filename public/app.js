@@ -1715,9 +1715,42 @@ function renderSettings() {
     parent.append(r);
     if (hint) parent.append(appendMd(el("div", "shint"), hint));
   };
-  const yes = (t) => el("span", "badge badge-published", t);
-  const no = (t) => el("span", "badge badge-draft", t);
+  // 🔴 徽章语义**三档**，不是两档（Joe 2026-08-26 重排时定的口径）。
+  //    原来只有 yes/no 两个函数，于是「本后台看不见」被塞进了 no() ⇒ 橙色。
+  //    可那**不是坏事，是一条中性事实**：worker 本来就看不见 Access 的策略列表，
+  //    这是架构决定的，不需要任何人去处理它。橙色会被读成"这里有问题"。
+  //    ⇒ 绿 = 已就绪 · 灰 = 中性事实 · 橙 = 需要注意。**同语义必须同色。**
+  const yes = (t) => el("span", "badge badge-published", t);   // 绿：已就绪
+  const fact = (t) => el("span", "badge badge-unknown", t);    // 灰：中性事实，不需要处理
+  const no = (t) => el("span", "badge badge-draft", t);        // 橙：需要注意
   const grid = el("div", "settings-grid");
+
+  // ══ A：顶部状态摘要 —— 一眼看完，再往下才是细节 ══
+  //
+  // 🔴 这一页存在的理由是回答三个真会发生的问题：
+  //    「为什么保存不了」「为什么他进不来」「生产上跑的是哪一版」。
+  //    原来这三问的答案分散在五张**同权重**的卡里，得逐字读完才拼得出来。
+  //    ⇒ 结论压成一行，细节留在下面。摘要**不是重复**，它是那三问的直接答案。
+  // ⚠️ 每一项都取自同一份 w（/api/_whoami），**不另开数据源** ——
+  //    摘要与下面的卡说的必须是同一件事，否则这一页会自相矛盾，而那比没有摘要更糟。
+  {
+    const sum = el("div", "sumbar");
+    const item = (badge, label) => {
+      const d = el("div", "sumitem");
+      d.append(badge);
+      d.append(el("span", "sumlabel", label));
+      return d;
+    };
+    sum.append(item(w.data.writeEnabled ? yes("可以保存") : no("不能保存"), "写入能力"));
+    const n = (w.access?.allowlist || []).length;
+    sum.append(item(n ? fact(`${n} 人可进`) : no("名单为空 = 拒绝所有"), "后台名单"));
+    sum.append(item(fact(w.git.shortSha || "无 sha"), w.request.isLocalDev ? "本地 dev" : "生产版本"));
+    if (w.git.dirty) sum.append(item(no("部署时工作区是脏的"), "可复现性"));
+    const ct = state.contract;
+    sum.append(item(fact(ct?.version || "—"), "契约"));
+    if (ct) sum.append(item(fact(`${ct.categories?.length ?? "—"} 机型 · ${ct.sensors?.length ?? "—"} 传感器`), "分类轴"));
+    box.append(sum);
+  }
 
   // ── ① 写入能力：把「为什么保存不了」拆成它真正的两个因子 ──
   {
@@ -1729,7 +1762,8 @@ function renderSettings() {
     row(c, "GitHub token", w.data.ghTokenConfigured ? yes("已配置") : no("未配置"),
       "⚠️ 只报**有无**，任何界面和接口都不回显它的值，连前缀也不。");
     if (w.request.isLocalDev) {
-      row(c, "本机额外一道闸", no("本机只能写靶子仓"),
+      // 中性事实：本机就是只能写靶子仓，这是设计如此，不是待办
+      row(c, "本机额外一道闸", fact("本机只能写靶子仓"),
         "🔴 本机**永远**写不到官网数据仓（zq8345/AirSonde-Web 硬编码在出站闸的黑名单里，不是开关）。" +
         "所以本地看到「可以保存」不代表能改官网 —— 真按下去会被这道闸拦住并说明理由。");
     }
@@ -1746,7 +1780,8 @@ function renderSettings() {
     (a.allowlist || []).forEach((e) => list.append(el("span", "chip", e)));
     if (!(a.allowlist || []).length) list.append(el("span", "badge badge-draft", "空 —— 空名单=拒绝所有"));
     row(c, `后台名单（${(a.allowlist || []).length} 人）`, list, a.allowlistSource);
-    row(c, "Access 策略名单", no("本后台看不见"), a.accessPolicyNote);
+    // 中性事实：worker 看不见 Access 的策略列表是架构决定的，没有人需要去"修"它
+    row(c, "Access 策略名单", fact("本后台看不见"), a.accessPolicyNote);
     row(c, "两道门必须一致", "集合相等",
       "Access 放行而这份名单没有 ⇒ 那个人看到 **403**；这份名单有而 Access 没有 ⇒ 那个人**连登录页都过不去**。" +
       "两种症状不同、修的地方也不同，所以不能只补一边。");
