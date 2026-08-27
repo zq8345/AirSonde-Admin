@@ -853,12 +853,29 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   background: var(--danger); color: #fff; font-family: var(--mono); cursor: help; }
 /* ⚠️ 只有坏卡显示 slug —— 这时它是**唯一**能指认"坏的是谁"的东西 */
 .featslug { font-family: var(--mono); font-size: 10px; color: var(--danger); word-break: break-all; }
+/* ── 移除按钮：**hover 才出现**（Joe 2026-08-27）──
+   🔴 用 `opacity` + `pointer-events`，⛔ 不用 `visibility: hidden`：
+      `visibility: hidden` 会让按钮**不可聚焦** ⇒ 键盘就再也到不了它了。
+      `opacity: 0` 不影响可聚焦性，所以下面 `:focus-visible` 那条才真的能生效。
+   🔴 `pointer-events: none` 不只是"顺手加的"，它挡住两件事：
+      ① **误删**：一个看不见的按钮不该还能被点到（右上角 20×20 正好是人抓卡片的地方）；
+      ② **吃拖拽**：卡片 `draggable`，隐藏时按钮完全不参与命中测试 ⇒ 那个角也能起拖。 */
 .featdel {
   position: absolute; top: 6px; right: 6px; z-index: 2; width: 20px; height: 20px; padding: 0;
   border-radius: 999px; border: 0; cursor: pointer; line-height: 1;
   background: rgba(0,0,0,.62); color: #fff; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease;
 }
+.featcard:hover .featdel { opacity: 1; pointer-events: auto; }
+/* 键盘走到它时也得看得见 —— ⛔ 否则 Tab 过去是个隐形的删除键 */
+.featdel:focus-visible { opacity: 1; pointer-events: auto; }
 .featdel:hover { background: var(--danger); }
+/* 🔴 触屏没有 hover ⇒ **常显**，否则删除按钮永远出不来（按不到 = 死路）。
+   ⛔ 不为触屏新增长按/常显开关之类的交互分支：那是一条永远没人验的代码路径。
+      这里只是把"默认隐藏"这一条在无 hover 的设备上关掉，不引入新行为。 */
+@media (hover: none) {
+  .featdel { opacity: 1; pointer-events: auto; }
+}
 .featadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .featadd select {
   font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%;
