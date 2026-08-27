@@ -29,8 +29,22 @@ export interface Env {
    * ⚠️ 后台在官网仓能写的**全部**：PRODUCTS_DIR/*.json + SITE_CONTENT_PATH + 这一个文件。
    */
   TAXONOMY_PATH?: string;
-  /** 逗号分隔。**空 = 拒绝全部**，不是"不限制"。 */
-  ALLOWED_EMAILS?: string;
+  /**
+   * 🔴 Cloudflare Access 的 team 域名（如 `xxx.cloudflareaccess.com`）。
+   *    公钥从 `https://<它>/cdn-cgi/access/certs` 取。**没配 ⇒ 拒绝全部请求。**
+   */
+  ACCESS_TEAM_DOMAIN?: string;
+  /**
+   * 🔴🔴 本 Access 应用的 AUD tag。**没配 ⇒ 拒绝全部请求**，
+   *    ⛔ 绝不是"没配就不校验 aud" —— 同一个 team 下的 4 个应用**共用签名公钥**，
+   *      不校验 aud 等于接受兄弟应用（CRM 等）的令牌，而那些令牌的**签名是有效的**。
+   *    ⇒ 这个洞不会以"验签失败"的形式出现，它没有症状。
+   *
+   * ⚠️ 它不是机密：AUD tag 公开出现在 Access 的登录跳转 URL 里（`?kid=` 参数）。
+   *    放 vars 而不是 secret，是为了**和代码同一次部署** —— 否则会有一段
+   *    "代码已要求 aud、变量还没配"的窗口，那段时间没有人进得来。
+   */
+  ACCESS_AUD?: string;
 
   // ---- scripts/deploy.mjs 在 deploy 时 --var 注入 ----
   GIT_SHA?: string;

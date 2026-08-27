@@ -24,14 +24,22 @@ import {
   serializeTaxonomy, AXIS_LABEL, type Taxonomy, type Axis,
 } from "./taxonomy";
 import { summarizeDiff } from "./diff";
+import { verifyAccessJwt, AccessDenied } from "./access";
 
-const app = new Hono<{ Bindings: Env }>();
+// ⚠️ Variables.operator：身份由鉴权中间件从**验过签的令牌**里取出来放进这里。
+//    下游一律读它，⛔ 不要再去读 `cf-access-authenticated-user-email` 那个明文头 ——
+//    验签之后头仍然在，但它只是"边缘顺手放的一份拷贝"，没有任何东西保证它与令牌一致。
+const app = new Hono<{ Bindings: Env; Variables: { operator: string } }>();
 
-const ALLOW_LIST = (env: Env): string[] =>
-  String(env.ALLOWED_EMAILS || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+/**
+ * 这个请求的操作人。**唯一来源是验过签的 Access 令牌。**
+ * 🔴 它会被写进 commit message 和审计日志 ⇒ 取错来源 = 审计记录指认错人，
+ *    而那种错在事后完全查不出来（日志里就是一个合法邮箱）。
+ * dev 旁路下没有令牌 ⇒ "dev-bypass"，与生产不可能重名。
+ */
+const operatorOf = (c: any): string | null =>
+  c.get("operator") || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+
 
 // ───────────────────────── fail-closed 鉴权 ─────────────────────────
 //
@@ -61,24 +69,40 @@ app.use("*", async (c, next) => {
     return next();
   }
 
-  // ② Access 头必须在（边缘那道门还在不在）
-  const email = c.req.header("cf-access-authenticated-user-email");
-  if (!email) {
-    console.error(JSON.stringify({ evt: "auth_no_access_header", path: c.req.path }));
-    return c.text("此后台需通过 Cloudflare Access 登录（airsonde-admin 应用）。", 403);
+  // ② 🔴 **验 Access JWT 的签名**，不再裸读 `cf-access-authenticated-user-email`。
+  //
+  //    以前这里读那个明文头，再查 worker 自己的 `ALLOWED_EMAILS`。两个问题：
+  //    · 那份名单要与 Access 策略**手工同步**，而 2026-08-27 就因为它们不同步吃了一次
+  //      （Access 四个邮箱、名单三个 ⇒ 同事过了 Access 拿到 403）。
+  //      Joe 要的是「我自己定义谁能登录，不用再找你们加」⇒ Access 成为**唯一名单**。
+  //    · 而"删掉名单、继续裸读那个头"是**不安全的**：那样安全性完全挂在
+  //      `workers_dev:false` + 所有路由都在 Access 后面这两条配置上，而**没有任何东西在检查它们**。
+  //      加一条不经 Access 的路由，那个头就可以随便伪造 —— 且没有症状。
+  //    ⇒ 验签。验过 = 这个请求确实经过了**本应用**的 Access，与路由怎么配无关。
+  //
+  // ⚠️ 配置缺失一律 500 不 403：那是部署错，不是"你没权限"。
+  //    混成一个码，排查的人会去查用户权限，而问题在配置。
+  if (!c.env.ACCESS_TEAM_DOMAIN || !c.env.ACCESS_AUD) {
+    console.error(JSON.stringify({ evt: "auth_access_config_missing",
+      team: !!c.env.ACCESS_TEAM_DOMAIN, aud: !!c.env.ACCESS_AUD }));
+    return c.text("配置错误：ACCESS_TEAM_DOMAIN / ACCESS_AUD 未配置。为安全起见已拒绝全部请求。", 500);
   }
-
-  // ③ 邮箱名单。**空名单 = 拒绝所有**，绝不当成"不限制"——那是 fail-open。
-  //    ⚠️ 但空名单是**部署错**，不是"你没权限"，所以回 500 不回 403：
-  //       混成一个码，排查的人会去查用户权限，而问题在配置。
-  const allow = ALLOW_LIST(c.env);
-  if (!allow.length) {
-    console.error(JSON.stringify({ evt: "auth_allowlist_missing" }));
-    return c.text("配置错误：ALLOWED_EMAILS 未配置。为安全起见已拒绝全部请求——请配置后重新部署。", 500);
-  }
-  if (!allow.includes(email.trim().toLowerCase())) {
-    console.error(JSON.stringify({ evt: "auth_denied", email }));
-    return c.text("此账号不在本后台的允许名单内。", 403);
+  const jwt = c.req.header("cf-access-jwt-assertion");
+  try {
+    const claims = await verifyAccessJwt(jwt || "", {
+      teamDomain: c.env.ACCESS_TEAM_DOMAIN,
+      aud: c.env.ACCESS_AUD,
+    });
+    // 身份取自**验过签的令牌**，不取那个明文头 —— 头可以伪造，令牌不能。
+    c.set("operator", claims.email);
+  } catch (e) {
+    if (e instanceof AccessDenied) {
+      console.error(JSON.stringify({ evt: "auth_denied", why: String(e.message), path: c.req.path }));
+      return c.text(`Cloudflare Access 验证未通过：${e.message}`, 403);
+    }
+    // ⚠️ 非预期错误也拒。"验不了就先放行"是这类闸最常见的死法。
+    console.error(JSON.stringify({ evt: "auth_error", msg: String(e) }));
+    return c.text("鉴权过程出错，已拒绝。", 403);
   }
   return next();
 });
@@ -157,7 +181,10 @@ app.get("/api/_whoami", (c) => {
       writeEnabled: c.env.ALLOW_GITHUB_WRITE === "1" && hasWriteToken(c.env),
       writeGateOpen: c.env.ALLOW_GITHUB_WRITE === "1",
     },
-    operator: c.req.header("cf-access-authenticated-user-email") || (isDev ? "dev-bypass" : null),
+    // 🔴 取**验过签的**身份，不取明文头。这一行尤其要紧：
+    //    /api/_whoami 是"我在跟谁说话"的权威答复，它自己要是读了一个可伪造的头，
+    //    那么每一次"先证身份"的排查都建立在一个伪造得了的值上。
+    operator: operatorOf(c),
     // ───── 两道门。**这里只报得出其中一道，另一道必须明说看不见** ─────
     //
     // ⚠️ Access（边缘那道）的策略名单，这个 worker **看不到**：
@@ -169,15 +196,22 @@ app.get("/api/_whoami", (c) => {
     //    ⚠️ 两道门的名单**必须集合相等**：Access 放进来而这里没有 ⇒ 那个人看到 403；
     //       这里有而 Access 没有 ⇒ 那个人连页面都打不开。两种症状完全不同，修法也不同。
     access: {
-      allowlist: ALLOW_LIST(c.env),
-      // ⚠️ 措辞是有讲究的：不能写"生产值" —— 本地 dev 里这句话就是假的。
-      //    "本进程当前生效的值"在两种环境下都为真，而在生产上跑时它**就是**生产值。
-      allowlistSource: "worker 环境变量 ALLOWED_EMAILS —— 本进程当前生效的值（不是配置文件里写着什么）",
+      // 🔴 **不再有"后台名单"这个东西。** Access 策略是唯一名单（2026-08-27）。
+      //    ⛔ 这里故意不再返回 allowlist 字段：留一个空数组的话，界面会渲染出
+      //       一张"0 人"的名单，而那正是我们要消灭的第二份名单的样子。
+      singleSource: "Cloudflare Access 策略",
+      teamDomain: c.env.ACCESS_TEAM_DOMAIN || "（未配置）",
+      audConfigured: !!c.env.ACCESS_AUD,
       accessPolicyVisible: false,
       accessPolicyNote:
-        "Cloudflare Access 那道门的策略名单本后台看不到（被它挡下的请求根本到不了这里；" +
-        "CF API 在无 Zero Trust 权限时返回的空列表与真·零应用同形，不能据此下结论）。" +
-        "对账办法：让人真去登一次 —— 过不了 Access = 停在登录页；过了 Access 但不在下面这份名单里 = 403。",
+        "谁能进由 **Cloudflare Access 策略**说了算，改它不需要动这个后台、也不需要重新部署。" +
+        "本后台看不到那份名单（被 Access 挡下的请求根本到不了这里；CF API 在无 Zero Trust 权限时" +
+        "返回的空列表与真·零应用同形，不能据此下结论）—— 但**也不需要看到了**：" +
+        "这个 worker 只验令牌的签名与 aud，名单在谁手里就由谁说了算。",
+      // ⚠️ 这一条必须说出来：两份名单意外形成的双层没了。
+      writeImplication:
+        "🔴 统一之后「能进」就等于「能写」—— 写入闸是全局的、不分人。" +
+        "往 Access 策略里加一个人 = 给他改官网产品数据的权限，不只是「给他看看」。",
     },
     warnings,
   });
@@ -364,8 +398,7 @@ app.get("/api/media", async (c) => {
 // ⚠️ 契约闸对**每一个**产品照过；有任何一个不过 ⇒ **整批不写**，并把是谁挡的说清楚。
 //    这条是有意的：批量里混进一个坏数据时，"其余的照常写"会让人以为整批都成了。
 app.post("/api/products/batch", async (c) => {
-  const operator = c.req.header("cf-access-authenticated-user-email")
-    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  const operator = operatorOf(c);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
 
   let body: { slugs?: string[]; op?: string; value?: string };
@@ -642,8 +675,7 @@ interface WriteEnvelope {
 
 app.put("/api/products/:slug", async (c) => {
   const slug = c.req.param("slug");
-  const operator = c.req.header("cf-access-authenticated-user-email")
-    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  const operator = operatorOf(c);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
 
   let env0: WriteEnvelope;
@@ -767,8 +799,7 @@ app.put("/api/products/:slug", async (c) => {
 //    引用扫描漏掉任何一种写法，就会把别人还在用的图删掉，而那是不可逆的。
 app.delete("/api/products/:slug", async (c) => {
   const slug = c.req.param("slug");
-  const operator = c.req.header("cf-access-authenticated-user-email")
-    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  const operator = operatorOf(c);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝删除" }, 403);
 
   try {
@@ -848,8 +879,7 @@ app.get("/api/site-content", async (c) => {
 });
 
 app.put("/api/site-content", async (c) => {
-  const operator = c.req.header("cf-access-authenticated-user-email")
-    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  const operator = operatorOf(c);
   if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
 
   const path = siteContentPath(c.env);
@@ -961,8 +991,7 @@ app.get("/api/taxonomy", async (c) => {
 });
 
 app.put("/api/taxonomy", async (c) => {
-  const operator = c.req.header("cf-access-authenticated-user-email")
-    || (c.env.DEV_BYPASS_AUTH === "1" ? "dev-bypass" : null);
+  const operator = operatorOf(c);
   if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
 
   let body: { axis?: Axis; op?: string; value?: string; label?: string; order?: number; expectedSha?: string };

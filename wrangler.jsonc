@@ -39,22 +39,34 @@
     // 分类轴（机型 / 传感器），契约 v1.4 的真源。官网 content.config.ts 也从它读。
     "TAXONOMY_PATH": "src/data/taxonomy.json",
 
-    // 🔴 允许进入本后台的邮箱（逗号分隔）。**空 = 拒绝全部**，不是"不限制"。
-    // ⚠️ 放在 vars 而不是 secret，是为了**和代码同一次部署**：否则会有一段
-    //    "代码已 fail-closed、变量还没配"的窗口，那段时间没有人进得来。
+    // 🔴🔴 **谁能进由 Cloudflare Access 策略说了算，这里不再有第二份名单。**
     //
-    // 🔴🔴 **这一行的正确状态是「等于 Cloudflare Access 策略的 Include Emails」，不是「够用就行」。**
-    //    改了 Access 策略就回来改这里并重新部署，否则症状是"Access 放行了却仍被拒" ——
-    //    那不是 bug，是这份名单没跟着改。
+    // 这里原来是 `ALLOWED_EMAILS` —— 一份必须与 Access 策略**手工保持一致**的邮箱名单。
+    // 2026-08-27 它第三次咬人：Access 策略里有四个邮箱、这里只有三个 ⇒
+    // 同事过了 Access、却被 worker 回 403。（wanew-admin 同一个病犯过两次，这是第三次。）
+    // Joe 的要求是「我自己定义哪个邮箱能登录，而不是加一个账号还要找你们」。
+    // ⇒ 整份删掉，⛔ 不留回落 —— 留回落等于把两份名单的问题藏起来，而不是解决它。
     //
-    // 2026-08-09 M1 首发时这里只有 zq8345@gmail.com（派单只写了这一个），而 Access 策略里是三个。
-    //    Joe 用 joe@wanew.com 登录 → Access 放行、worker 拒绝 → **他被自己的后台挡在门外**。
-    //    ⚠️ 当时的修法不是"把 joe@wanew.com 加进来"，而是**把三个补齐**：
-    //       只加他这次用的那个，下次他换个邮箱登录还会被挡 —— 那是治症状，这个病治不好。
-    //    （wanew-admin 同一个病犯过两次，见该仓 wrangler.jsonc 注释。第三次在这里。）
-    //
-    // 当前值 = Access 策略 airsonde-admin 的 Include Emails，逐字拉平（2026-08-09 由 Joe 截图核对）。
-    "ALLOWED_EMAILS": "zq8345@gmail.com,zq8345@outlook.com,joe@wanew.com",
+    // 代替它的是**验 Access JWT 的签名**（src/access.ts）。
+    // ⚠️ 只删名单、继续裸读 `cf-access-authenticated-user-email` 是**不安全的**：
+    //    那样安全性完全挂在 `workers_dev:false` + 所有路由都在 Access 后面这两条上，
+    //    而没有任何东西在检查它们。验签把这个保证做进了代码。
+
+    // Access team 域名。公钥从 https://<它>/cdn-cgi/access/certs 取。
+    // 值实测自生产的 Access 登录跳转（302 的 Location），不是抄来的。
+    "ACCESS_TEAM_DOMAIN": "wanewgroup.cloudflareaccess.com",
+
+    // 🔴🔴 本应用的 AUD tag。**没配 = 拒绝全部**，⛔ 绝不是「没配就不校验 aud」。
+    //    同一个 team 下有 4 个 Access 应用，它们**共用同一套签名公钥**：
+    //      admin.airsonde.com  beea7666…（本应用）
+    //      crm.airsonde.com    b7c3296b…
+    //      admin.wanew.com     9198c82b…
+    //      crm.wanew.com       9a9ae044…
+    //    不校验 aud ⇒ 只该进 CRM 的人，拿 CRM 发的**签名有效**的令牌就能进这个能写官网仓的后台。
+    //    ⚠️ 那个洞不会以"验签失败"的形式出现 —— 它没有症状。
+    // ⚠️ AUD 不是机密：它公开出现在 Access 登录跳转的 `?kid=` 参数里。
+    //    放 vars 是为了**和代码同一次部署**，否则会有一段"代码要 aud、变量还没配"的窗口。
+    "ACCESS_AUD": "beea7666916e9368410207758db96c17f5de6cccbe80394fe7be3d1466cbaa90",
 
     // 🔴🔴 写能力总开关。有它 ⇒ 出站口放行非 GET ⇒ 这个 worker **能改官网的数据仓**。
     //

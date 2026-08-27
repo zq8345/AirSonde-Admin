@@ -1742,8 +1742,11 @@ function renderSettings() {
       return d;
     };
     sum.append(item(w.data.writeEnabled ? yes("可以保存") : no("不能保存"), "写入能力"));
-    const n = (w.access?.allowlist || []).length;
-    sum.append(item(n ? fact(`${n} 人可进`) : no("名单为空 = 拒绝所有"), "后台名单"));
+    // 🔴 这里原来数 `w.access.allowlist` —— 那个字段**已经不存在了**（2026-08-27 删名单）。
+    //    留着的话它恒为 0 ⇒ 摘要上会常驻一条橙色的「名单为空 = 拒绝所有」，
+    //    而那是**一条永远亮着的假警报**：名单没空，是这个概念没了。
+    //    ⇒ 摘要改说"谁在管名单"，而不是"名单里有几个人"。
+    sum.append(item(fact("Cloudflare Access"), "谁能进（唯一名单）"));
     sum.append(item(fact(w.git.shortSha || "无 sha"), w.request.isLocalDev ? "本地 dev" : "生产版本"));
     if (w.git.dirty) sum.append(item(no("部署时工作区是脏的"), "可复现性"));
     const ct = state.contract;
@@ -1773,18 +1776,24 @@ function renderSettings() {
   // ── ② 谁能进来：**两道门**，而这里只看得见一道 ──
   {
     const a = w.access || {};
-    const c = card("谁能进来", "两道独立的门");
+    const c = card("谁能进来", "唯一名单在 Cloudflare Access");
     row(c, "当前操作人", el("b", null, w.operator || "(无身份)"),
-      "来自 Access 的身份头，**伪造不了**（边缘会剥掉客户端自带的 Cf-Access-* 头）。");
-    const list = el("div", "sv-list");
-    (a.allowlist || []).forEach((e) => list.append(el("span", "chip", e)));
-    if (!(a.allowlist || []).length) list.append(el("span", "badge badge-draft", "空 —— 空名单=拒绝所有"));
-    row(c, `后台名单（${(a.allowlist || []).length} 人）`, list, a.allowlistSource);
-    // 中性事实：worker 看不见 Access 的策略列表是架构决定的，没有人需要去"修"它
-    row(c, "Access 策略名单", fact("本后台看不见"), a.accessPolicyNote);
-    row(c, "两道门必须一致", "集合相等",
-      "Access 放行而这份名单没有 ⇒ 那个人看到 **403**；这份名单有而 Access 没有 ⇒ 那个人**连登录页都过不去**。" +
-      "两种症状不同、修的地方也不同，所以不能只补一边。");
+      "取自**验过签的 Access 令牌**，不是那个明文头 —— 头可以伪造，签名不能。" +
+      "它会被写进 commit message 和审计日志，所以来源取错 = 审计记录指认错人，而那种错事后查不出来。");
+    // 🔴 这里以前有一张「后台名单」。**整个删掉了**（2026-08-27）。
+    //    ⛔ 不是"隐藏"：留一张空名单的话，界面会渲染出"0 人"，
+    //       而那正是我们要消灭的第二份名单的样子 —— 人还会去找它、去问怎么加。
+    row(c, "唯一名单", fact(a.singleSource || "Cloudflare Access 策略"), a.accessPolicyNote);
+    row(c, "怎么加人", "去 Cloudflare Access 策略里加",
+      "**改完立刻生效，不需要动这个后台、也不需要重新部署。** " +
+      "以前这里还有一份 ALLOWED_EMAILS 要手工同步，2026-08-27 就因为它少一个邮箱，" +
+      "同事过了 Access 却被本后台回 403 —— 那份名单已经删掉了。");
+    row(c, "worker 怎么确认身份", fact("验 Access JWT 签名"),
+      `公钥取自 **${a.teamDomain || "（未配置）"}**，并校验 **aud** 等于本应用。` +
+      "🔴 aud 那一条不是形式：同一个 team 下 4 个 Access 应用**共用签名公钥**，" +
+      "不校验 aud 等于接受兄弟应用（如 CRM）的令牌 —— 而那些令牌的**签名是有效的**，" +
+      "所以那个洞不会以「验签失败」的形式出现，它没有症状。");
+    if (a.writeImplication) row(c, "⚠️ 加人 = 给写权限", no("能进 = 能写"), a.writeImplication);
     grid.append(c);
   }
 
