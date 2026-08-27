@@ -867,7 +867,13 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
   opacity: 0; pointer-events: none; transition: opacity .12s ease;
 }
 .featcard:hover .featdel { opacity: 1; pointer-events: auto; }
-/* 键盘走到它时也得看得见 —— ⛔ 否则 Tab 过去是个隐形的删除键 */
+/* 键盘走到它时也得看得见 —— ⛔ 否则 Tab 过去是个隐形的删除键。
+   ⚠️ 同时写 `:focus` 与 `:focus-visible`，⛔ 不只写后者：
+      `:focus-visible` 命不命中取决于浏览器对"输入方式"的启发式判断，
+      而**本环境验不了它**（`document.hasFocus()` 恒为 false，连普通 input 聚焦都不 matches(':focus')）。
+      ⇒ 判据落在一个我证不了的启发式上是不行的；`:focus` 是确定的，多这一条只会让它更早出现，
+        不会让任何情形变坏（那时卡片多半已经 hover 着了）。 */
+.featdel:focus,
 .featdel:focus-visible { opacity: 1; pointer-events: auto; }
 .featdel:hover { background: var(--danger); }
 /* 🔴 触屏没有 hover ⇒ **常显**，否则删除按钮永远出不来（按不到 = 死路）。
