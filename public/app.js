@@ -568,6 +568,8 @@ async function bulk(slugs, value, op = "status") {
   //    ⛔ 不做成"改状态就弹"：那样它在 100% 的场合出现 = 零信息（这一单里已经修过同族的两次）。
   const feat = value === "draft" ? featuredWarning(slugs, "下架") : "";
   if (!confirm(`确认把 ${slugs.length} 个产品${verb}？\n\n会产生一次 commit 并触发官网重建。${feat}`)) return;
+  // 🔴 与 doCommit 同一条规矩：拿到 wrote:true 之后，"失败"这个词就不许再出现。
+  let wroteOk = false, commitSha = null;
   try {
     const r = await fetch("/api/products/batch", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -575,6 +577,7 @@ async function bulk(slugs, value, op = "status") {
     });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
+      wroteOk = true; commitSha = b.commitSha;
       state.cacheBust = b.commitSha;
       state.selected.clear();
       await loadList();
@@ -591,7 +594,10 @@ async function bulk(slugs, value, op = "status") {
     } else {
       alert(`未写入：${b?.reason || b?.detail || b?.error || r.status}`);
     }
-  } catch (e) { alert("批量操作失败：" + e.message); }
+  } catch (e) {
+    if (wroteOk) { alert(wroteButRenderFailed(commitSha, e).replace(/\*\*/g, "")); await loadList().catch(() => {}); }
+    else alert("批量操作失败：" + e.message);
+  }
 }
 
 /** slug → 已读到的产品对象，用来在列表里显示真实 name/status */
@@ -1321,8 +1327,20 @@ function renderPreview(r) {
   //    ⛔ **确认这一步本身保留** —— 他指的是"代码"，不是"确认"（按最小范围理解那句话）。
 
   // 🔴 三种结论要说不同的话。混成一句"预览完成"，最危险的那种（什么也没变）会被当成成功。
-  if (r.change.identical) {
-    wrap.append(mkNotice("warn", "内容与现有文件**逐字节相同** —— 这次即使真的保存，也什么都不会改。"));
+  // ⚠️ 这里原来只判 `r.change.identical`（JSON 逐字节相同）⇒ **只换一张图、不动字段**时
+  //    它为 true，于是这句话说"什么都不会改"，而下面的提交按钮也不渲染。
+  //    可**同一块面板上自己写着「图片 N 项改动」** —— 它知道有改动，却不让提交，
+  //    而那句话在这个情形下**是假的**：会改一张图。
+  //    ⇒ 判据换成服务端算的 `wouldChange`（JSON 变了 **或** 有图片操作），
+  //      与真实写入路径判的是同一件事。
+  const imgOnly = r.change.identical && (r.imageOps?.length || 0) > 0;
+  const nothingToDo = r.change?.wouldChange === false;
+  if (nothingToDo) {
+    wrap.append(mkNotice("warn", "内容与现有文件**逐字节相同**，也没有图片变动 —— 这次即使真的保存，也什么都不会改。"));
+  } else if (imgOnly) {
+    // 第三种情形：数据文件不变，但有图片要写。⛔ 绝不能说"什么都不会改"。
+    wrap.append(mkNotice("ok", `**数据文件不变**，但有 **${r.imageOps.length} 项图片改动** —— ` +
+      "确认无误后点下面的按钮，图片会写进仓里。"));
   } else if (!r.validation.ok) {
     wrap.append(mkNotice("bad", `契约校验未通过（${r.validation.errors.length} 个错误），这份内容不允许写入。上方已逐条列出。`));
   } else {
@@ -1382,7 +1400,14 @@ function renderPreview(r) {
   // ── 提交按钮：**只在真能写、且这份内容确实该写的时候才出现** ──
   // ⚠️ 不做成"永远显示但 disabled"：一个灰着的提交按钮会让人以为"再试试就能点"，
   //    而真实情况是这份内容根本不允许提交。不该出现的东西就不要出现。
-  if (state.write?.enabled && r.validation.ok && !r.change.identical) {
+  // 🔴 判据是 `wouldChange`（JSON 变了 **或** 有图片操作），不是 `!identical`。
+  //    用 identical 的话，只换图不改字段 ⇒ 按钮不渲染 ⇒ 图永远传不上去。
+  //    ⚠️ 兼容旧响应：wouldChange 缺失时退回旧判据，⛔ 但不静默 —— 那时至少不会更坏。
+  // ⚠️ 它在 `change` 里（它是"这次改动"的属性），⛔ 不在顶层 ——
+  //    我第一版读成了 `r.wouldChange`，于是恒为 undefined、恒退回旧判据。
+  //    **写完就量**才抓到：文案分支没按预期走。
+  const canCommit = r.change?.wouldChange !== undefined ? r.change.wouldChange : !r.change.identical;
+  if (state.write?.enabled && r.validation.ok && canCommit) {
     const bar = el("div", "commit-bar");
     // ⚠️ 这一步**没有被去掉**，只是名字从"提交"改成"确认保存并上线" ——
     //    它写的是生产数据且会触发官网重建，写前看一眼是真价值。
@@ -1402,10 +1427,36 @@ function renderPreview(r) {
 }
 
 // ═══════════════ 真实提交 ═══════════════
+/**
+ * 🔴 "写已经发生了，但后面的渲染/刷新炸了" —— 这一句是给这种情形用的。
+ *
+ * ⛔ 这种时候**绝不能说"失败"**：说失败 ⇒ 人再点一次 ⇒ **第二次真的写**。
+ *    2026-08-27 就这么让 Joe 在 13 秒内往官网仓写了两个 commit。
+ * ⚠️ 有多少报多少：commit sha 拿得到就报，拿不到就说拿不到，⛔ 不硬拼一个空壳。
+ */
+function wroteButRenderFailed(commitSha, err) {
+  const sha = commitSha ? String(commitSha).slice(0, 7) : "(没拿到 commit sha)";
+  return `**已保存**（commit \`${sha}\`），但界面在显示结果时出错了：${err && err.message ? err.message : err}` +
+    " —— **改动已经写进仓里了，⛔ 不要再点一次**。刷新一下页面即可。";
+}
+
 async function doCommit(prev, btn) {
   const slug = state.isNew ? ($("#f_slug").value.trim() || "unnamed") : state.slug;
   btn.disabled = true;
   btn.textContent = "提交中…";
+
+  // 🔴🔴 **"写有没有发生"与"渲染有没有成功"必须彻底分开。**
+  //
+  // 2026-08-27 真出过：服务端**写成功了**（官网仓里有 commit），而客户端在渲染成功提示时
+  // 抛了 `Cannot read properties of undefined (reading 'slice')` ⇒ 掉进 catch ⇒
+  // 界面报「**提交请求失败**」⇒ Joe 以为没成功 ⇒ **又点了一次 ⇒ 又真写了一次**。
+  // 13 秒内两个 commit。数据这次侥幸没坏，**但那是运气不是设计**。
+  //
+  // ⇒ 一旦拿到服务端 2xx 且 `wrote:true`，**这次写就已经发生了**。
+  //   之后无论渲染出什么错，⛔ **绝不允许再显示"提交请求失败"**。
+  let wroteOk = false;      // ← 越过这一行之后，"失败"这个词就不许再出现
+  let payload = null;
+
   try {
     const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, {
       method: "PUT",
@@ -1413,41 +1464,72 @@ async function doCommit(prev, btn) {
       body: JSON.stringify(buildEnvelope({ mustCreate: state.isNew })),
     });
     const b = await r.json().catch(() => null);
+    payload = b;
     const box = $("#preview");
 
     if (b?.wrote === true) {
+      wroteOk = true;   // ⚠️ 在渲染任何东西**之前**就置位
+
+      // ── 渲染成功提示 ──
+      // ⚠️ 每一个字段都兜底：这次就是 `blobSha` 没兜底炸的。
+      //    🔴 而且那不是偶发 —— 产品保存走的是 commitFiles()，它**从来不返回**
+      //       `blobSha` / `bytes`（那两个字段是另一个函数 writeProductFile 的）。
+      //       客户端这两行是 A4 写的，那时服务端确实返回它们；A6 换成原子多文件提交后
+      //       没人回来改这里 ⇒ **"迁移时没枚举谁假设了旧形态"**。
       const ok = el("div", "notice notice-ok");
       ok.append(el("b", null, "已提交。"));
-      ok.append(document.createTextNode(` commit `));
-      const a = el("a", null, b.commitSha.slice(0, 7));
-      a.href = b.commitUrl; a.target = "_blank"; a.rel = "noopener";
-      ok.append(a);
-      ok.append(document.createTextNode(`  ·  ${b.bytes}B  ·  字节校验通过（blob ${b.blobSha.slice(0, 7)}）`));
+      const sha = b.commitSha ? String(b.commitSha).slice(0, 7) : "(没拿到 commit sha)";
+      ok.append(document.createTextNode(" commit "));
+      if (b.commitUrl) {
+        const a = el("a", null, sha);
+        a.href = b.commitUrl; a.target = "_blank"; a.rel = "noopener";
+        ok.append(a);
+      } else ok.append(el("code", null, sha));
+      // 有多少报多少：字节校验那一段只在服务端真的给了才显示，⛔ 不硬拼一个空壳
+      const bytes = typeof b.verifiedBytes === "number" ? b.verifiedBytes
+        : (typeof b.bytes === "number" ? b.bytes : null);
+      if (bytes != null) ok.append(document.createTextNode(`  ·  ${bytes}B`));
+      const nFiles = Array.isArray(b.files) ? b.files.length : null;
+      if (nFiles != null) ok.append(document.createTextNode(`  ·  这一个 commit 落了 ${nFiles} 个文件`));
       box.prepend(ok);
-      // ⚠️ 必须说清楚"线上还没变" —— 不说的话，人会立刻去刷 airsonde.com，
-      //    看到旧内容，然后以为没保存成功，于是**再存一次**。
       box.prepend(mkNotice("warn", "官网重建需要一两分钟。**现在去刷 airsonde.com 看到的仍是旧内容，这不是没保存成功。**"));
       btn.remove();
+
       // 🔴 待上传清单必须清空：不清的话，下一次保存会把同一批图**再传一遍**，
       //    而且如果这时切到别的产品，这批图会落到那个产品名下。
       resetPending();
-      state.cacheBust = b.commitSha;   // ← 换掉图片 URL 的指纹，打穿 raw 的 CDN 缓存
-      // 重新读一次：拿到新的 blob sha 与归一化后的图片路径，否则下一次编辑带着过期状态提交。
+      state.cacheBust = b.commitSha;
       await loadList();
       await select(slug);
-    } else if (r.status === 409) {
-      box.prepend(mkNotice("bad", `**并发冲突**：${b.detail}`));
+      return;
+    }
+
+    // ── 以下都是**没有写成**的分支 ──
+    if (r.status === 409) {
+      box.prepend(mkNotice("bad", `**并发冲突**：${b?.detail || ""}`));
       btn.disabled = false; btn.textContent = "重新提交";
     } else if (b?.wrote === "unknown") {
       // 🔴 这一条绝不能说成"保存失败" —— commit 可能已经产生了，说失败会让人再存一次。
-      box.prepend(mkNotice("bad", `**状态未知，需要人工核对**：${b.detail}`));
+      box.prepend(mkNotice("bad", `**状态未知，需要人工核对**：${b?.detail || ""}`));
     } else {
       box.prepend(mkNotice("bad", `**未提交**（没有产生 commit）：${b?.detail || b?.reason || b?.error || r.status}`));
       btn.disabled = false; btn.textContent = "重新提交";
     }
   } catch (e) {
-    $("#preview").prepend(mkNotice("bad", "提交请求失败：" + e.message));
-    btn.disabled = false; btn.textContent = "重新提交";
+    // 🔴🔴 分岔就在这里。
+    if (wroteOk) {
+      // 写**已经发生**了，炸的是后面的渲染/刷新。⛔ 绝不说"提交请求失败" ——
+      //    那句话会让人再点一次，而再点一次就是**第二个 commit**。
+      const sha = payload?.commitSha ? String(payload.commitSha).slice(0, 7) : "(没拿到 commit sha)";
+      $("#preview").prepend(mkNotice("warn",
+        `**已保存**（commit \`${sha}\`），但界面在显示结果时出错了：${e.message}` +
+        " —— **改动已经写进仓里了，⛔ 不要再点一次保存**。刷新一下页面即可。"));
+      // 按钮不还原：还原等于邀请他再写一次
+      btn.remove();
+    } else {
+      $("#preview").prepend(mkNotice("bad", "提交请求失败：" + e.message));
+      btn.disabled = false; btn.textContent = "重新提交";
+    }
   }
 }
 
@@ -1998,6 +2080,8 @@ $("#siteSave").onclick = async () => {
   if (!changed.length) return;
   if (!confirm(`确认保存 ${changed.length} 处改动？\n\n${changed.join("\n")}\n\n会产生一次 commit 并触发官网重建。`)) return;
   const btn = $("#siteSave"); btn.disabled = true; btn.textContent = "提交中…";
+  // 🔴 与 doCommit 同一条规矩：写发生之后，"失败"这个词不许再出现。
+  let wroteOk = false, commitSha = null;
   try {
     const r = await fetch("/api/site-content", {
       method: "PUT", headers: { "content-type": "application/json" },
@@ -2006,7 +2090,8 @@ $("#siteSave").onclick = async () => {
     });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
-      alert(`已提交。commit ${String(b.commitSha).slice(0, 7)}\n改了：${(b.changedFields || []).join(", ")}\n\n${b.note || ""}`);
+      wroteOk = true; commitSha = b.commitSha;
+      alert(`已提交。commit ${(String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)")}\n改了：${(b.changedFields || []).join(", ")}\n\n${b.note || ""}`);
       await loadSite(state.siteSection);
     } else if (b?.validation && !b.validation.ok) {
       // 🔴 校验不过 = **零 commit**，要说清楚，别让人以为"存了一半"
@@ -2016,7 +2101,8 @@ $("#siteSave").onclick = async () => {
       alert(`未写入：${b?.detail || b?.reason || b?.error || r.status}`);
     }
   } catch (e) {
-    alert("提交失败：" + e.message);
+    if (wroteOk) { alert(wroteButRenderFailed(commitSha, e).replace(/\*\*/g, "")); await loadSite(state.siteSection).catch(() => {}); }
+    else alert("提交失败：" + e.message);
   } finally { updateSiteDirty(); }
 };
 
@@ -2222,6 +2308,7 @@ async function loadCats() {
 /** 一次轴写入。成功后**重读**，不在前端猜新状态（sha 也变了）。 */
 async function taxonomyOp(payload, btn) {
   const label = btn && btn.textContent;
+  let wroteOk = false, commitSha = null;
   const out = $("#catsResult");
   // 🔴 一进来就清：这一格只属于**这一次**提交。
   //    实测过不清的样子 —— 上一次被拒的红字留在屏幕上，这一次的结果叠在旁边，
@@ -2257,6 +2344,7 @@ async function taxonomyOp(payload, btn) {
       if (body && body.errors) body.errors.forEach((x) => out.append(mkIssue("error", x.field, x.message)));
       return false;
     }
+    wroteOk = true; commitSha = body.commitSha;
     // ⚠️ 先重读再写结果 —— loadCats() 会重画 #catsSummary，结果落在 #catsResult 才不会被它抹掉。
     await loadCats();
     out.append(mkNotice("ok", `✅ ${body.what} —— commit ${String(body.commitSha || "").slice(0, 7)}。${body.note || ""}`));
@@ -2265,6 +2353,7 @@ async function taxonomyOp(payload, btn) {
     return true;
   } catch (e) {
     out.innerHTML = "";
+    if (wroteOk) { out.append(mkNotice("warn", wroteButRenderFailed(commitSha, e))); return true; }
     out.append(mkNotice("bad", "提交失败：" + e.message));
     return false;
   } finally {
@@ -2636,20 +2725,23 @@ $("#deleteBtn").onclick = async () => {
   const typed = prompt(`删除会同时删掉这个产品的 JSON 和它的图片，并触发官网重建。${feat}\n\n确认请输入 slug：\n${slug}`);
   if (typed !== slug) { if (typed !== null) alert("输入不匹配，已取消。"); return; }
   const btn = $("#deleteBtn"); btn.disabled = true; btn.textContent = "删除中…";
+  let wroteOk = false, commitSha = null;
   try {
     const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, { method: "DELETE" });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
+      wroteOk = true; commitSha = b.commitSha;
       $("#detailView").hidden = true; $("#listView").hidden = false;
       state.slug = null; cache.delete(slug); state.selected.delete(slug); resetPending();
       state.cacheBust = b.commitSha;
       await loadList();
-      alert(`已删除。commit ${String(b.commitSha).slice(0, 7)}\n${b.note || ""}`);
+      alert(`已删除。commit ${(String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)")}\n${b.note || ""}`);
     } else {
       alert(`未删除：${b?.detail || b?.error || r.status}`);
     }
   } catch (e) {
-    alert("删除请求失败：" + e.message);
+    if (wroteOk) { alert(wroteButRenderFailed(commitSha, e).replace(/\*\*/g, "")); await loadList().catch(() => {}); }
+    else alert("删除请求失败：" + e.message);
   } finally {
     btn.disabled = false; btn.textContent = "删除这个产品…";
   }

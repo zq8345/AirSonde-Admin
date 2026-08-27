@@ -618,7 +618,14 @@ app.post("/api/products/:slug/preview", async (c) => {
       change: {
         touched,                      // 真的变了值的字段
         cleared,                      // 显式传 null 清空的字段
-        identical: diff.identical,    // 🔴 两边字节一致 ⇒ 这次保存什么也不会改
+        identical: diff.identical,    // JSON 逐字节一致
+        // 🔴 **"这次保存会不会改到东西"要看这一条，不是 identical。**
+        //    identical 只说 JSON；只换一张图时 JSON 确实没变，但**图必须写进去**。
+        //    ⚠️ 真实写入路径（下面那个 PUT）判的一直是 `diff.identical && plan.ops.length === 0`，
+        //       而 dry-run 只发了 identical ⇒ 界面据它决定给不给提交按钮 ⇒
+        //       **只换图不改字段时按钮根本不出现，图永远传不上去。**
+        //       两边判的不是同一件事 —— 这个字段就是为了让它们判同一件事。
+        wouldChange: !diff.identical || plan.ops.length > 0,
         added: diff.added,
         removed: diff.removed,
       },
