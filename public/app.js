@@ -214,6 +214,22 @@ async function loadContract() {
   });
 }
 
+// 🔴🔴 `/api/products-expanded` **不返回 `highlights` / `specs` / `moq` 这些正文字段。**
+//    它给的是列表要画的那几样：slug/name/model/category/sensors/status/image/size
+//    + valid/errorCount/warnCount/hasSupplierRef。
+//
+// ⚠️ 记在这里是因为它已经骗过一次（2026-08-27）：
+//    我拿它扫"有没有 highlight 超过 80 字符"，写的是
+//      `list.filter(p => p && p.highlights)` → 这个字段根本不存在
+//    ⇒ 过滤出**空数组** ⇒ 我据此报告"全部 23 个产品里没有任何一条超过 80"。
+//    而真相是 `ak34-18-…` 那个产品有 **7 条 188–382 字符**的，早就存进仓、也渲染在官网上了。
+//    🔴 **空结果与真·零在结论里长得一模一样** —— 这是本仓反复出现的那个形状。
+//    ⇒ 要按正文字段扫，走 `GET /api/products/<slug>`（单个产品带全字段），
+//      或者直接读官网仓的 JSON。⛔ 别拿列表接口当全量真源。
+//
+// ⚠️ 还有一条同样咬过我：**先对账再下结论**。那次我写"扫了 23 个"，
+//    而侧栏当时显示 24 —— 不自洽就摆在我自己那份数据里，我没核就往下走了。
+
 // ═══════════════ 列表 ═══════════════
 async function loadList() {
   // ⚠️ 用 expanded：表格要缩略图/标题/状态/机型，光有文件名画不出来。
