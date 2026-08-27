@@ -163,6 +163,32 @@ export function validateSiteContent(c: any): { ok: boolean; errors: Issue[]; war
     });
   }
 
+  // ── featuredSlugs：首页那一排精选产品（顺序即展示顺序）──
+  //
+  // ⚠️ 这里只管**形状**。「这个 slug 存不存在 / 是不是已上架」查不了 ——
+  //    这个模块不认识产品数据。那一层在 /api/site-content 里做（它有产品清单），
+  //    而且是**警告不是错误**：一个产品被下架不该把整页锁死到存不了别的字段。
+  const fs = c.home?.featuredSlugs;
+  if (fs !== undefined) {
+    if (!Array.isArray(fs)) {
+      errors.push(err("home.featuredSlugs", "type", "home.featuredSlugs 必须是数组（顺序即首页展示顺序）。"));
+    } else {
+      fs.forEach((v: any, i: number) => {
+        if (typeof v !== "string" || !v.trim()) {
+          errors.push(err(`home.featuredSlugs[${i}]`, "type", "每一项必须是非空的产品 slug。"));
+        }
+      });
+      // 🔴 重复不是小事：同一个产品会在首页出现两次，而**看起来像是"某个产品没排上"** ——
+      //    人会去找丢掉的那个，而真正的问题是多了一个。
+      const seen = new Set<string>(); const dup = new Set<string>();
+      fs.forEach((v: any) => { const k = String(v).trim(); if (seen.has(k)) dup.add(k); seen.add(k); });
+      if (dup.size) {
+        errors.push(err("home.featuredSlugs", "duplicate",
+          `有重复的 slug：${[...dup].join("、")}。同一个产品会在首页出现两次。`));
+      }
+    }
+  }
+
   // ── 供应商痕迹：与产品同一条硬规则。这里**没有** supplierRef 那样的豁免字段。 ──
   walkStrings(stripReadme(c), "", (s, path) => {
     const low = s.toLowerCase();

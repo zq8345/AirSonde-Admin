@@ -870,8 +870,32 @@ app.get("/api/site-content", async (c) => {
     }
     // ⚠️ 页面清单与长度阈值一并发给界面：前端**不抄第二份** ——
     //    抄一份的话，这里改了阈值而界面还按旧的提示，两边说的话就不一样了。
+    // ── 首页精选：把「这些 slug 现在是什么状态」一起发过去 ──
+    // 🔴 ⛔ **绝不在这里静默过滤掉坏条目** —— 那样 Joe 永远不知道自己的列表里有坏的，
+    //    而首页会安静地少一张卡。⇒ 原样返回，附上每一条的实况，界面负责标红。
+    // ⚠️ 产品清单读失败不该让整页读不出来 ⇒ 降级成"这一段没核过"，并说出来。
+    let featured: any = null;
+    try {
+      const products = await listExpanded(c.env);
+      const by = new Map(products.filter((p: any) => p && !p.error).map((p: any) => [p.slug, p]));
+      const list: string[] = Array.isArray((content as any)?.home?.featuredSlugs)
+        ? (content as any).home.featuredSlugs : [];
+      featured = {
+        checked: true,
+        items: list.map((slug) => {
+          const p = by.get(slug);
+          return { slug, exists: !!p, status: p?.status ?? null, name: p?.name ?? null,
+                   ok: !!p && p.status === "published" };
+        }),
+        // 可选清单：**只有已上架的**。未上架的选了等于选了一个官网上不存在的页面。
+        选得到的: products.filter((p: any) => p && !p.error && p.status === "published")
+          .map((p: any) => ({ slug: p.slug, name: p.name, image: p.image })),
+      };
+    } catch (e) {
+      featured = { checked: false, why: `产品清单读失败：${String(e)}`, items: null, 选得到的: [] };
+    }
     return c.json({ path, exists: true, sha: f.sha, content,
-      pages: SEO_PAGES, limits: SEO_LIMITS,
+      pages: SEO_PAGES, limits: SEO_LIMITS, featured,
       validation: validateSiteContent(content) });
   } catch (e) {
     return c.json({ path, error: "读取失败", detail: String(e) }, 502);

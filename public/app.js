@@ -529,11 +529,45 @@ function renderBatch() {
   }
 }
 
+/**
+ * 🔴 这些 slug 里，哪些正挂在首页精选上？
+ *
+ * 下架或删除一个在精选里的产品，**官网构建只打印警告、不失败** ——
+ * 首页就安静地少一张卡，而人不会知道。这是这一整块的主要价值所在。
+ * ⚠️ **提示不是阻断**：他有权下架，只是要知道代价。
+ *
+ * ⚠️ 数据可能还没读过（没进过「首页」那一页）⇒ 这时**说"没核过"，不说"没有"** ——
+ *    把"我不知道"报成"没问题"，正是这一单要防的那种沉默。
+ */
+function featuredAmong(slugs) {
+  const list = state.site?.content?.home?.featuredSlugs;
+  if (!Array.isArray(list)) return { known: false, hit: [] };
+  return { known: true, hit: slugs.filter((s) => list.includes(s)) };
+}
+
+/** 把"会影响首页"这件事拼成一句人话，接在确认框后面。没影响就返回空串。 */
+function featuredWarning(slugs, what) {
+  const f = featuredAmong(slugs);
+  const NL = "\n";
+  if (!f.known) {
+    return NL + NL + "⚠️ 还没读过站点内容，无法确认这些产品在不在首页精选里（进一次「首页」那一页就能核）。";
+  }
+  if (!f.hit.length) return "";
+  return NL + NL + "🔴 其中 " + f.hit.length + " 个正挂在【首页精选】上：" + NL
+    + f.hit.map((x) => "· " + x).join(NL) + NL
+    + what + "之后官网首页会少 " + f.hit.length + " 张卡"
+    + "（构建只打印警告、不会失败，所以站上不报错，只是安静地少一张）。"
+    + "要补回来，去「首页」那一页改精选列表。";
+}
+
 /** 批量改字段。单行的"上架/下架"也走这里 —— 一条路径，行为不可能分叉。 */
 async function bulk(slugs, value, op = "status") {
   if (!slugs.length) return;
   const verb = op === "category" ? `改机型为 ${value}` : (value === "published" ? "上架" : "下架");
-  if (!confirm(`确认把 ${slugs.length} 个产品${verb}？\n\n会产生一次 commit 并触发官网重建。`)) return;
+  // ⚠️ 只有**下架**才需要问首页 —— 上架不会让首页少东西。
+  //    ⛔ 不做成"改状态就弹"：那样它在 100% 的场合出现 = 零信息（这一单里已经修过同族的两次）。
+  const feat = value === "draft" ? featuredWarning(slugs, "下架") : "";
+  if (!confirm(`确认把 ${slugs.length} 个产品${verb}？\n\n会产生一次 commit 并触发官网重建。${feat}`)) return;
   try {
     const r = await fetch("/api/products/batch", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -1754,6 +1788,13 @@ function renderSite(keepDraft = false) {
     v.append(add);
     form.append(v);
 
+    // ══ 首页精选产品（Joe 2026-08-27）══
+    //
+    // 真源是 site-content.json 的 `home.featuredSlugs`，**数组顺序 = 首页展示顺序**。
+    // ⚠️ 只能选**已上架**的：选一个未上架的等于指向一个官网上不存在的页面，
+    //    首页那张卡会渲染不出来 —— 而官网构建只打印警告、**不失败**，人不会知道。
+    renderFeatured(form);
+
     const o = siteCard("其它段落");
     siteField(o, "home.sections.capabilitiesIntro", "能力段小字");
     siteField(o, "home.contactBlock.title", "首页联系区块 · 标题");
@@ -1804,6 +1845,110 @@ function renderSite(keepDraft = false) {
     });
   }
   updateSiteDirty();
+}
+
+/**
+ * 首页精选产品：选 / 排序 / 移除。
+ *
+ * ⛔ 排序沿用**图片列表那套拖拽**（同样的 dragstart/dragover/drop + `state.dragFrom`），
+ *    不造第三种交互。
+ * 🔴 坏条目（产品不存在 / 已下架）**列出来并标红**，⛔ 绝不静默过滤 ——
+ *    静默过滤之后，Joe 的列表里有坏的他永远不知道，而首页会安静地少一张卡。
+ */
+function renderFeatured(form) {
+  const f = state.site?.featured;
+  const list = state.siteDraft?.home?.featuredSlugs;
+  if (!Array.isArray(list)) return;
+
+  const card = siteCard("首页精选产品", `${list.length} 个 · 顺序就是首页的展示顺序`);
+  card.classList.add("card-featured");
+
+  if (f && f.checked === false) {
+    card.append(mkNotice("warn", `⚠️ 产品清单读不出来，**这一段没核过**：${f.why}。` +
+      "下面只按 slug 显示，看不出哪些已经下架或不存在了。"));
+  }
+
+  // ⚠️ 不是 4 的倍数就说一句 —— ⛔ 不阻断（实测 6 条渲染 6 张、9 条渲染 9 张，网格都不塌）
+  if (list.length % 4 !== 0) {
+    card.append(mkNotice("warn",
+      `现在是 **${list.length} 个**，不是 4 的倍数 —— 首页那个网格是 4 列，**最后一行会缺 ${4 - (list.length % 4)} 个位置**。` +
+      "不影响保存，也不会让构建失败，只是看起来会缺一角。"));
+  }
+
+  const byStatus = new Map((f?.items || []).map((x) => [x.slug, x]));
+  const ul = el("div", "featlist");
+  list.forEach((slug, i) => {
+    const st = byStatus.get(slug);
+    const bad = st && !st.ok;
+    const row = el("div", "featrow" + (bad ? " is-bad" : ""));
+    row.draggable = true;
+    row.append(el("span", "featno", String(i + 1)));
+    const t = el("div", "feattext");
+    t.append(el("div", "li-name", st?.name || slug));
+    t.append(el("div", "li-sub", slug));
+    row.append(t);
+    if (bad) {
+      // 🔴 说清是哪一种坏 —— "不存在"与"已下架"的修法完全不同
+      row.append(el("span", "badge badge-draft",
+        st.exists ? `已下架（${statusLabel(st.status)}）` : "产品不存在"));
+      row.append(appendMd(el("div", "hint hint-tight"),
+        st.exists
+          ? "**它现在没有官网页面** —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
+          : "**真源里找不到这个产品** —— 多半是被删了或改过 slug。"));
+    }
+    const rm = el("button", "linkish danger", "移除"); rm.type = "button";
+    rm.onclick = () => {
+      state.siteDraft.home.featuredSlugs = list.filter((_, k) => k !== i);
+      renderSite(true);
+    };
+    row.append(rm);
+
+    // 拖拽换序 —— 与图片列表同一套
+    row.addEventListener("dragstart", (e) => {
+      state.featDrag = i; row.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i));
+    });
+    row.addEventListener("dragend", () => { row.classList.remove("is-dragging"); state.featDrag = null; });
+    row.addEventListener("dragover", (e) => { if (state.featDrag == null) return;
+      e.preventDefault(); row.classList.add("is-over"); });
+    row.addEventListener("dragleave", () => row.classList.remove("is-over"));
+    row.addEventListener("drop", (e) => {
+      if (state.featDrag == null) return;
+      e.preventDefault(); e.stopPropagation(); row.classList.remove("is-over");
+      moveFeatured(state.featDrag, i);
+    });
+    ul.append(row);
+  });
+  card.append(ul);
+
+  // 添加：**只列已上架、且还没在列表里的**
+  const pool = (f?.["选得到的"] || []).filter((p) => !list.includes(p.slug));
+  const add = el("div", "featadd");
+  const sel = el("select");
+  sel.append(new Option(`＋ 加一个产品（可选 ${pool.length} 个）`, ""));
+  pool.forEach((p) => sel.append(new Option(`${p.name || p.slug}`, p.slug)));
+  sel.onchange = () => {
+    const v = sel.value; if (!v) return;
+    state.siteDraft.home.featuredSlugs = [...list, v];
+    renderSite(true);
+  };
+  add.append(sel);
+  add.append(appendMd(el("span", "hint"),
+    "⚠️ 只列**已上架**的产品：未上架的在官网上没有那一页，选了首页那张卡会渲染不出来。"));
+  card.append(add);
+  form.append(card);
+}
+
+/** 换序。⚠️ 单独一个函数，是为了拖拽之外也调得到（自检、将来的键盘操作）。 */
+function moveFeatured(from, to) {
+  const list = state.siteDraft?.home?.featuredSlugs;
+  if (!Array.isArray(list) || from === to || from == null || to == null) return;
+  const next = list.slice();
+  const [m] = next.splice(from, 1);
+  next.splice(to, 0, m);
+  state.siteDraft.home.featuredSlugs = next;
+  state.featDrag = null;
+  renderSite(true);
 }
 
 function updateSiteDirty() {
@@ -2472,7 +2617,8 @@ $("#f_status").addEventListener("change", () => {
 $("#deleteBtn").onclick = async () => {
   const slug = state.slug;
   if (!slug) return;
-  const typed = prompt(`删除会同时删掉这个产品的 JSON 和它的图片，并触发官网重建。\n\n确认请输入 slug：\n${slug}`);
+  const feat = featuredWarning([slug], "删除");
+  const typed = prompt(`删除会同时删掉这个产品的 JSON 和它的图片，并触发官网重建。${feat}\n\n确认请输入 slug：\n${slug}`);
   if (typed !== slug) { if (typed !== null) alert("输入不匹配，已取消。"); return; }
   const btn = $("#deleteBtn"); btn.disabled = true; btn.textContent = "删除中…";
   try {

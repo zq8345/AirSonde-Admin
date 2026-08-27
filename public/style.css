@@ -776,3 +776,41 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 }
 .senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
 .senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); font-family: var(--mono); cursor: help; }
+
+/* ══ 首页精选产品 ══ */
+.card-featured .featlist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; }
+.featrow {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: grab;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+}
+.featrow.is-dragging { opacity: .4; }
+.featrow.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* 🔴 坏条目要**看得见**：静默过滤掉的话，Joe 永远不知道列表里有坏的，
+   而首页会安静地少一张卡。 */
+.featrow.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+.featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.feattext { flex: 1 1 auto; min-width: 0; }
+.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.featadd select {
+  font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+}
+
+/* ══ 首页精选产品（Joe 2026-08-27）══ */
+.card-featured .featlist { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; }
+.featrow {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px; cursor: grab;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 7px;
+}
+.featrow.is-dragging { opacity: .4; }
+.featrow.is-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* 🔴 坏条目要**看得见**：静默过滤掉的话，Joe 永远不知道列表里有坏的，
+   而首页会安静地少一张卡（官网构建只打印警告、不失败）。 */
+.featrow.is-bad { border-color: var(--danger); background: var(--danger-soft); }
+.featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.feattext { flex: 1 1 auto; min-width: 0; }
+.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.featadd select {
+  font: inherit; font-size: 13px; padding: 6px 8px; max-width: 100%;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text);
+}
