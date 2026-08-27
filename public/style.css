@@ -316,7 +316,8 @@ button:disabled, [disabled] {
 /* ⚠️ 加 max-width 是**安全绳不是收窄**：内容区在 1440 档量到 1232px（不受它限制）。
    它挡的是 2560 那种宽屏 —— 不设上限的话产品表会被拉到两千多像素，
    一行里"缩略图 … 机型"两端相距半米，眼睛要横扫过去。 */
-.main { padding: 18px 22px 40px; min-width: 0; height: 100%; overflow-y: auto; }
+/* ⚠️ 这里的 20/24 与 `.detail-bar` 的出血 `-20px -24px` 是**耦合组**，改一个必须改另一个。 */
+.main { padding: 20px 24px 40px; min-width: 0; height: 100%; overflow-y: auto; }
 .main > section { max-width: 1600px; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
 .page-head h1 { margin: 0; font-size: 19px; }
@@ -501,7 +502,10 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
    用 opacity 压文字是把对比度悄悄拉低：色值上算是 8.12:1，实际上屏只有 6.51:1，
    而报告里如果只看声明色，报出来的是一个**屏幕上不存在的数**。
    降权已经由 --muted 这个色值本身承担了，不需要再叠一层。 */
-.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: 2px 0 9px; border-bottom: 1px solid var(--line); margin-top: -1px; }
+/* ⚠️ `margin-top: -1px` **不是间距值**，它是用来抵消上面那条 1px 描边的 ——
+   吸附成 0 会出现双线。⛔ 它跟着 `border-bottom: 1px` 走，不跟间距刻度走。
+   （padding 的 9→8 与它无关，可以照常吸附。）*/
+.shint { font-size: 11px; color: var(--muted); line-height: 1.65; padding: 2px 0 8px; border-bottom: 1px solid var(--line); margin-top: -1px; }
 .shint b { color: var(--text); }
 .shint code { font-family: var(--mono); font-size: 11px; }
 
@@ -664,8 +668,13 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
       （旧写法的病是 `top: 40px` 假设横幅永远一行。） */
 .detail-bar {
   position: sticky; top: 0; z-index: 15;
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: -18px -22px 10px; padding: 12px 22px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  /* 🔴 **耦合组**：这三个数与 `.main` 的 padding **必须一起动**。
+     负边距是"出血"——靠 `-20/-24` 正好抵消 `.main` 的 `padding: 20px 24px` 才能顶到容器边。
+     ⛔ 只吸附其中一个（比如 -22→-20 而 `.main` 仍是 22）⇒ 这条吸顶条会错位且左右不对称，
+        而那种歪没人会归因到 CSS。
+     ⇒ `.main{padding:20px 24px 40px}` · 出血 `-20px -24px` · 本条自身 `padding` 的 24 三者同源。 */
+  margin: -20px -24px 12px; padding: 12px 24px;
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
 /* 「保存」「删除」在这一行的右端（Joe 2026-08-26）。
