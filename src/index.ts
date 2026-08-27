@@ -1053,9 +1053,10 @@ app.get("/api/contract", async (c) => {
   //    "两个下拉框都是空的" —— 和"数据没加载完"长得一模一样，而真因在另一个仓的一个文件上。
   //    ⛔ 也不回落到 SAMPLE_*：回落的话下拉框会有值、看起来一切正常，
   //       而那些值来自后台自己抄的一份，与官网真源无关。宁可空着并说明白。
-  let axes;
+  // ⚠️ 读整份 taxonomy 而不是只读 axes：下拉框要的是 value **和** label 两样。
+  let tax: Taxonomy;
   try {
-    axes = await loadAxes(c.env);
+    tax = (await loadTaxonomy(c.env)).tax;
   } catch (e) {
     return c.json({
       error: "读不到分类轴，界面的机型/传感器选项无法渲染",
@@ -1064,8 +1065,26 @@ app.get("/api/contract", async (c) => {
       detail: String(e),
     }, 502);
   }
+  /** 一个轴的下拉选项：{value,label}，按 order 排。两个轴共用，写成两份迟早分家。 */
+  const opts = (axis: Axis) =>
+    tax[axis].slice().sort((a, b) => a.order - b.order)
+      // ⚠️ label 空着就退回 value —— 但那是**兜底显示**，不是"没有显示名"这件事的答案：
+      //    校验器不允许空 label，所以走到这里说明数据已经不合契约了。
+      .map((it) => ({ value: it.value, label: it.label || it.value }));
   return c.json({
-    version: "C1 v1.4", categories: axes.categories, sensors: axes.sensors, statuses: STATUSES,
+    version: "C1 v1.4",
+    // 🔴 带 **label** 一起发：机型/传感器的显示名是 taxonomy.json 里的数据，
+    //    只发 value 的话，界面上的下拉框只能拿 value 当文字 ——
+    //    于是分类页显示「Desktop」、官网显示「Desktop」、而编辑器下拉写着「desktop」，
+    //    **Joe 在分类页改了显示名，这两个下拉不跟着变**。那等于把刚做的功能废掉一半。
+    //    ⛔ 界面不许自己抄一份 value→label 的映射表：那是第二个真源。
+    // ⚠️ 顺序照 taxonomy.json 的 order —— 下拉框的顺序 = 文件里的顺序 = 分类页上的顺序。
+    categories: opts("categories"),
+    sensors: opts("sensors"),
+    // ⚠️ status **不带 label**：它的中文说法（在线 / 未上架）是界面词汇，不是数据 ——
+    //    界面里已经有唯一一张 STATUS_LABEL 表（tab、徽章、行内都用它）。
+    //    在这里再发一份就是第二张表，两张表迟早分家。
+    statuses: STATUSES,
     // ⚠️ 判据落在**集合**上，界面不抄第二份：哪些 warning 属于"状态说明、不是待办"
     //    由契约说了算。界面写 `if (code === "internal_field")` 的话，
     //    下一个加同类 warning 的人不会知道有这条规矩。

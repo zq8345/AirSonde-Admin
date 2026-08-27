@@ -293,6 +293,16 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 .nav-item .ext { margin-left: auto; color: var(--muted); font-size: 11px; }
 .nav-foot { margin-top: auto; padding: 10px 8px 0; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10.5px; color: var(--muted); word-break: break-all; }
 .nav-foot b { color: var(--text); font-weight: 600; }
+/* 登出：挨着"当前是谁"，换人这件事在同一个地方看和做。
+   ⚠️ 字号不跟 .nav-foot 的 10.5px —— 那是给身份串用的等宽小字，
+      一个**可点的动作**用 10.5px 等宽既不像按钮也点不准。 */
+.logoutbtn {
+  margin-top: 8px; padding: 4px 10px; cursor: pointer;
+  font: inherit; font-family: inherit; font-size: 12px;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 6px;
+}
+.logoutbtn:hover { color: var(--danger); border-color: var(--danger); }
 
 /* 正文区是**真正的滚动容器**（页面不滚）。里面那些 sticky 的 top 因此
    相对的是这个盒子的顶边，不是视口 ⇒ 它们的偏移都归 0 起算，见下面 .editbar。 */

@@ -86,6 +86,27 @@ async function loadWho() {
     line1.append(document.createTextNode(`  ·  ${w.data.repo || "?"}`));
     const line2 = el("div", "muted", `${w.git.shortSha || "无 sha"}${w.git.dirty ? "（脏）" : ""} · ${w.deploy.versionId ? w.deploy.versionId.slice(0, 8) : "本地"} · ${w.request.colo || "-"}`);
     $("#who").append(line1, line2);
+
+    // 🔴 登出（Joe 点名）。位置就挨着"当前是谁"—— 换人这件事在同一个地方看和做。
+    //
+    // ⚠️ 它不只是"共用设备换个人"：**这个后台自己写下的对账程序需要它**。
+    //    设置页与 /api/_whoami 都写着：Access 名单与 ALLOWED_EMAILS 必须集合相等，
+    //    而 worker 看不见 Access 的策略列表 ⇒ **唯一的对账办法是让人真去登一次**。
+    //    没有登出，那条程序在同一台机器上根本执行不了 —— 后台要求的事它自己不让你做。
+    //
+    // ⚠️ `/cdn-cgi/access/logout` 是 Cloudflare 边缘的端点，不经过这个 worker。
+    //    ⇒ 本地开发（旁路模式、根本没有 Access）点它只会 404。
+    //      所以不是"显示但点了没反应"，而是**禁用并说明为什么** —— 那正是这一批在修的病。
+    const out = el("button", "logoutbtn"); out.type = "button";
+    out.textContent = "登出";
+    if (w.request.isLocalDev) {
+      out.disabled = true;
+      out.title = "本地开发是旁路模式，前面没有 Access 门，也就没有会话可以登出";
+    } else {
+      out.title = `以 ${w.operator} 登入中 · 登出后回到 Cloudflare Access 登录页（可用来核对 Access 名单与 ALLOWED_EMAILS 是否一致）`;
+      out.onclick = () => { location.href = "/cdn-cgi/access/logout"; };
+    }
+    $("#who").append(out);
     // ⚠️ warnings 不是给日志看的，是给正在用后台的人看的。
     // 🔴 A12-1 撤掉常驻横幅时**差点把这些一起藏掉** —— 它们（GIT_SHA 未注入 / 部署时工作区是脏的）
     //    正是"这一版不可信"的信号，属于**真警告**，不是那条被撤掉的装饰性红字。
@@ -167,21 +188,28 @@ async function loadContract() {
 
   // ⚠️ 先清空：轴改完之后会**再调一次**这个函数。不清的话选项会一份一份叠上去，
   //    而下拉框里出现两个 desktop 时，人只会以为数据坏了。
+  // 🔴 显示 label、存 value。`new Option(c, c)` 那种写法是把 value 当文字用 ——
+  //    分类页显示「Desktop」、官网显示「Desktop」，而这里写着「desktop」；
+  //    更糟的是 Joe 在分类页改了显示名，这里不会跟着变。
   const cat = $("#f_category");
   cat.innerHTML = "";
   cat.append(new Option("（请选择）", ""));
-  body.categories.forEach((c) => cat.append(new Option(c, c)));
+  body.categories.forEach((c) => cat.append(new Option(c.label, c.value)));
 
+  // ⚠️ status 走 statusLabel()，与 tab / 徽章 / 行内**同一张表**。
+  //    这里原来是 `new Option(s, s)` ⇒ 全站四处说中文、唯独下拉直出 draft/published。
   const st = $("#f_status");
   st.innerHTML = "";
-  body.statuses.forEach((s) => st.append(new Option(s, s)));
+  body.statuses.forEach((s) => st.append(new Option(statusLabel(s), s)));
 
   const box = $("#f_sensors");
   box.innerHTML = "";
-  body.sensors.forEach((s) => {
+  body.sensors.forEach((s0) => {
+    const s = s0.value;
     const lab = el("label", "chip");
     const cb = el("input"); cb.type = "checkbox"; cb.value = s;
-    lab.append(cb, document.createTextNode(s));
+    // 存 value、显示 label（传感器现在两者多半相同，但 Joe 一改显示名就会分开）
+    lab.append(cb, document.createTextNode(s0.label || s));
     box.append(lab);
   });
 }
@@ -227,6 +255,20 @@ const TAB_ORDER = ["published", "draft"];
  */
 const statusLabel = (s) => STATUS_LABEL[s] ?? (s || "?");
 
+/**
+ * 机型 / 传感器的显示名。**唯一来源是 /api/contract**（它转发 taxonomy.json 的 label）。
+ *
+ * 🔴 与 STATUS_LABEL 的区别要说清楚，否则下一个人会把两者混成一件事：
+ *    · status 的中文说法（在线 / 未上架）是**界面词汇** ⇒ 表在前端，就是上面那一张。
+ *    · 机型/传感器的显示名是**数据** ⇒ 表在 taxonomy.json，前端**只能问服务端要**。
+ *    ⛔ 绝不在前端写死一份 value→label —— Joe 在分类页改完显示名，那份会立刻过期，
+ *       而且没有任何症状：下拉框照常有值，只是写着旧名字。
+ *
+ * ⚠️ 认不出的取值**原样显示 value**（与 statusLabel 同一条规矩）：
+ *    轴里没有的机型是**数据脏了的信号**，吞成空白等于把信号删掉。
+ */
+const catLabel = (v) => state.contract?.categories?.find((c) => c.value === v)?.label ?? (v || "?");
+
 /** 官网上这个产品的地址。⚠️ 只有已上架的才有这一页。 */
 const siteUrl = (slug) => `https://airsonde.com/products/${slug}/`;
 
@@ -252,12 +294,14 @@ function siteLink(slug, status, text) {
 }
 
 function renderList() {
-  // ── 机型下拉：选项从**真实数据**里长出来，不硬编码 ──
+  // ── 机型筛选：**选项**从真实数据里长（筛一个没有产品的机型只会得到空列表），
+  //    但**显示名**取自契约。两件事分开：谁可筛 ← 数据；叫什么 ← taxonomy.json。
+  // ⚠️ 轴里没有的散值（数据脏了才会出现）就原样显示 value —— 那时看见原值正是我们要的。
   const cats = [...new Set(state.list.map((i) => i.category).filter(Boolean))].sort();
   const sel = $("#catFilter"), keep = sel.value;
   sel.innerHTML = "";
   sel.append(new Option("全部机型", ""));
-  cats.forEach((c) => sel.append(new Option(c, c)));
+  cats.forEach((c) => sel.append(new Option(catLabel(c), c)));
   sel.value = cats.includes(keep) ? keep : "";
 
   // ── 状态 tabs（带计数）──
@@ -325,7 +369,8 @@ function renderList() {
     // A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
     // 独立一列他扫一眼就知道哪些还是 AS- —— 挤在 slug 后面做不到。
     tr.append(el("td", "col-model", it.model || "—"));
-    tr.append(el("td", "col-cat", it.category || "—"));
+    // 列表这一格也走 catLabel —— 否则同一屏上：筛选下拉写「Desktop」、行内写「desktop」。
+    tr.append(el("td", "col-cat", it.category ? catLabel(it.category) : "—"));
 
     const tdAct = el("td", "col-act");
     // A12-①：按钮说"编辑"就要进编辑态。原来它落在默认的「详情」tab ——
@@ -376,7 +421,8 @@ function renderBatch() {
   //    恰恰是这个下拉唯一能做、别处做不了的事。
   const sel = $("#bulkCat");
   if (sel && !sel.dataset.filled && state.contract?.categories?.length) {
-    state.contract.categories.forEach((k) => sel.append(new Option(k, k)));
+    // 显示 label、存 value（与编辑器那个下拉同一条规矩）
+    state.contract.categories.forEach((k) => sel.append(new Option(k.label, k.value)));
     sel.dataset.filled = "1";
   }
 }
