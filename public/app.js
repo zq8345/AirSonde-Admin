@@ -1454,16 +1454,54 @@ function siteField(parent, path, label, hint, opts = {}) {
     updateSiteDirty();
   };
   wrap.append(input);
+  // ── A：留空时把**继承来的那句**显示出来 ──
+  // 🔴 这一页存在的理由就是回答"这一页在搜索结果里会显示什么"。
+  //    而 `home · 描述` 是空的 `0 / 160` ⇒ 界面上**没有任何地方**告诉人首页实际显示哪句 ——
+  //    人得自己记住"留空=用站点默认"，再自己往上翻去找那句。
+  // ⚠️ 它必须**明显是只读的**（灰底、无边框、不是 input）：做成可编辑的框就是第二个写入口，
+  //    而这一页刚因为"两个长得一样的框"出过一次事故。
+  let paintInherit = () => {};
+  if (opts.inheritFrom) {
+    // ⚠️ 它要在**别人**（站点默认描述）被改时也重画 —— 只绑自己的 input 的话，
+    //    Joe 改完默认描述，下面几张卡显示的还是上一次渲染时的那句。
+    //    ⇒ 登记到 state.sitePainters，由 updateSiteDirty（每次输入都跑）统一触发。
+    const box = el("div", "inherit");
+    box.append(el("span", "inherit-tag", "继承自站点默认"));
+    const txt = el("span", "inherit-txt");
+    box.append(txt);
+    paintInherit = () => {
+      const own = input.value.trim();
+      box.hidden = !!own;                      // 自己填了就不显示继承
+      if (!own) txt.textContent = opts.inheritFrom() || "（站点默认描述也是空的 —— 这一页会没有 description）";
+    };
+    input.addEventListener("input", paintInherit);
+    (state.sitePainters ||= []).push(paintInherit);
+    wrap.append(box);
+  }
+
   if (opts.counter) {
+    // ── D：计数器**三态**，不是两态 ──
+    // ⚠️ `0 / 160`（留空）与 `155 / 160`（快到上限）原来长得一模一样 ——
+    //    一个"这一页在继承别人的文案"和一个"再写五个字就超了"，用同一种灰色说。
     const cnt = el("div", "shint");
     const paint = () => {
       const n = input.value.trim().length;
-      cnt.textContent = `${n} / ${opts.counter} 字符${n > opts.counter ? "（超出会在搜索结果里被截断）" : ""}`;
-      cnt.style.color = n > opts.counter ? "var(--warn)" : "";
+      cnt.classList.remove("cnt-empty", "cnt-ok", "cnt-over");
+      if (n === 0) {
+        cnt.classList.add("cnt-empty");
+        cnt.textContent = opts.inheritFrom ? "留空 —— 继承站点默认描述" : "留空";
+      } else if (n > opts.counter) {
+        cnt.classList.add("cnt-over");
+        cnt.textContent = `${n} / ${opts.counter} 字符 —— 超出部分会在搜索结果里被截断`;
+      } else {
+        cnt.classList.add("cnt-ok");
+        cnt.textContent = `${n} / ${opts.counter} 字符`;
+      }
     };
     input.addEventListener("input", paint); paint();
     wrap.append(cnt);
   }
+  paintInherit();
   if (hint) wrap.append(appendMd(el("p", "hint"), hint));
   parent.append(wrap);
 }
@@ -1495,6 +1533,9 @@ function renderSite(keepDraft = false) {
     `**保存成功不等于站上已经变了**，中间隔着一次构建。`));
 
   const form = $("#siteForm"); form.innerHTML = "";
+  // ⚠️ 表单重画 ⇒ 上一批继承框的画笔全部作废。不清的话它们指向已被移除的节点，
+  //    每渲染一次就多攒一份，而且看不出任何症状（只是白跑）。
+  state.sitePainters = [];
   const sec = state.siteSection;
 
   if (sec === "contact") {
@@ -1543,30 +1584,55 @@ function renderSite(keepDraft = false) {
     siteField(o, "home.contactBlock.body", "首页联系区块 · 正文", null, { multiline: true, rows: 2 });
     form.append(o);
   } else {
+    // ══════════ 站级 SEO（Joe 2026-08-26 重做排版）══════════
+    //
+    // 🔴 这一页的排版**造成过一次真实事故**，不是审美问题：
+    //    Joe 想改 /products/ 的描述，粘进了「组织描述」那一格，覆盖了公司简介并上了生产。
+    //    根因是三个框长得一模一样、只靠一行灰字区分，而它们进的地方完全不同
+    //    （页面 meta / JSON-LD Organization / 单页 meta）。
     const lim = b.limits || { title: 60, description: 160 };
-    const d = siteCard("站点默认", "没有单独设置时用这些");
+
+    // ── B：组织描述**独立成块**，不再和「默认标题/默认描述」同卡 ──
+    // 它和那两个不是同一种东西：那两个是页面 meta 的兜底，它是公司简介，不属于任何一页。
+    const org = siteCard("公司简介", "进 JSON-LD 的 Organization —— 不是任何一页的 meta");
+    org.classList.add("card-org");
+    org.append(appendMd(el("p", "hint"),
+      "🔴 **AI 与搜索引擎读「AirSonde 这家公司是什么」，读的就是这一条。** " +
+      "所以它要有主语、要有公司名 —— 一句产品文案放进来，机器读到的是「一堆产品」而不是「一家做贴牌代工的厂」。" +
+      "⚠️ 它**不受 160 字符限制**（那是页面 meta 的规矩，与这里无关）。"));
+    siteField(org, "seo.organisationDescription", "公司简介", null, { multiline: true });
+    form.append(org);
+
+    // ── 站点默认：现在只剩真正属于"页面 meta 兜底"的两个 ──
+    const d = siteCard("站点默认", "某一页没单独填时，用这两条兜底");
     siteField(d, "seo.defaultTitle", "默认标题", null, { counter: lim.title });
     siteField(d, "seo.defaultDescription", "默认描述", null, { multiline: true, counter: lim.description });
-    siteField(d, "seo.organisationDescription", "组织描述", "进 JSON-LD 的 Organization —— AI 与搜索引擎读的是这一条。", { multiline: true });
     form.append(d);
 
-    const p = siteCard("各页", "title 必须互不相同");
-    p.append(appendMd(el("p", "hint"),
-      "🔴 **两页 title 相同会让官网构建直接失败**（构建时会数唯一 title 数）—— 也就是这次改动根本上不了线。后台会先拦住。" +
-      "描述**留空**表示「用站点默认描述」，不是「没有描述」。"));
+    // ── C：每页一张卡，路径当卡标题 ──
+    const defDesc = () => (state.siteDraft?.seo?.defaultDescription || "").trim();
     Object.entries(b.pages || {}).forEach(([key, url]) => {
-      const box = el("div", "card");
-      box.append(el("div", "li-sub", url));
-      siteField(box, `seo.pages.${key}.title`, `${key} · 标题`, null, { counter: lim.title });
-      siteField(box, `seo.pages.${key}.description`, `${key} · 描述`, null, { multiline: true, counter: lim.description });
-      p.append(box);
+      const box = siteCard(url, key);
+      box.classList.add("card-page");
+
+      // ── E：那条 title 警告挪到**与 title 相邻处** ──
+      // ⚠️ 它只关于 title，压在整块顶部时，下面 title 与 description 是混排的。
+      //    ⛔ 这句话本身是真的（构建时数唯一 title 数），不许顺手删。
+      siteField(box, `seo.pages.${key}.title`, "标题", null, { counter: lim.title });
+      box.append(appendMd(el("p", "hint hint-tight"),
+        "⚠️ **两页 title 相同会让官网构建直接失败**（构建时数唯一 title 数）—— 后台会先拦住，改动上不了线。"));
+
+      siteField(box, `seo.pages.${key}.description`, "描述", null,
+        { multiline: true, counter: lim.description, inheritFrom: defDesc });
+      form.append(box);
     });
-    form.append(p);
   }
   updateSiteDirty();
 }
 
 function updateSiteDirty() {
+  // 继承框跟着"被继承的那一句"走（见 siteField 的 inheritFrom）
+  (state.sitePainters || []).forEach((f) => { try { f(); } catch {} });
   const changed = siteChangedPaths();
   const btn = $("#siteSave");
   btn.disabled = !changed.length || !state.write?.enabled;

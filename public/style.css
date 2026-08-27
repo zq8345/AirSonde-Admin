@@ -634,3 +634,39 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
    症状是几个输入框/下拉没有白底、透出页面灰底 —— 看起来像"设计就这样"，不像 bug。
    本次把 4 处全换成 --surface（其中 #bulkCat 那处是更早就有的，不是这一批引入的）。
    ⚠️ 同一类：未定义的自定义属性不会报错，只会**静默什么都不做**。 */
+
+/* ══ 站级 SEO 页排版（Joe 2026-08-26 重做）══
+   🔴 这一页的排版**造成过一次真实事故**：三个描述框长得一模一样、只靠一行灰字区分，
+      而它们进的地方完全不同（页面 meta / JSON-LD Organization / 单页 meta）。
+      Joe 想改 /products/ 的描述，粘进了「组织描述」，覆盖公司简介并上了生产。
+      ⇒ 下面这些不是装饰，是**让"这三个不是同一种东西"一眼看得出来**。 */
+
+/* 公司简介独立成块，左侧一道色带 —— 它不属于任何一页，视觉上就不该混在页面 meta 里 */
+.card-org { border-left: 3px solid var(--accent); background: var(--accent-soft); }
+.card-org textarea { background: var(--surface); }
+
+/* 每页一张卡，路径当标题（原来路径是框外一行极小灰字，容易漏） */
+.card-page > h3 { font-family: var(--mono); font-size: 13.5px; }
+.hint-tight { margin-top: -4px; }
+
+/* ── 留空时显示"继承来的那一句" ──
+   🔴 必须**明显是只读的**：灰底、无边框、不是表单控件。
+      做成可编辑的框就是第二个写入口，而这一页刚因为"两个长得一样的框"出过事故。 */
+.inherit {
+  margin-top: 6px; padding: 8px 10px; border-radius: 6px;
+  background: var(--bg); border: 1px dashed var(--line);
+  font-size: 12.5px; line-height: 1.6;
+}
+.inherit-tag {
+  display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 10.5px; font-family: var(--mono); color: var(--muted);
+}
+.inherit-txt { color: var(--text); }
+
+/* ── 计数器三态 ──
+   ⚠️ `0 / 160`（留空）与 `155 / 160`（快到上限）原来长得一模一样：
+      "这一页在继承别人的文案" 和 "再写五个字就超了" 用的是同一种灰。 */
+.cnt-empty { color: var(--muted); font-style: italic; }
+.cnt-ok    { color: var(--ok); }
+.cnt-over  { color: var(--warn); font-weight: 600; }
