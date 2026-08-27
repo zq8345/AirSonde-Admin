@@ -106,63 +106,69 @@ for (const f of ["slug", "name", "model", "category", "sensors", "status", "imag
   check("③ name 是空白串必须报 required（不是「填了」）", hasErr(r, "required"), JSON.stringify(codes(r)));
 }
 
-// ════════ 硬规则 3（契约 v1.3）：model 必填，前缀只吼不拦 ════════
+// ════════ 硬规则 3（契约 v1.5）：model 只有"必填 + 不含供应商痕迹" ════════
 //
-// 🔴 v1.3 之前这里是 `^AS-` 硬闸。作废的理由不是"太严"，是**它守的那个前缀是编的** ——
-//    冻结契约时并不知道我方真实编码，`AS-` 是当时造出来的；真实编码是 `AK`+数字。
-//    一个照着编造值去拦真实值的闸，拦下的全是对的东西。
+// 这条规则被削过两次，两次的理由不一样，都值得记着：
+//   · v1.3：删掉 `^AS-` 硬闸 —— **它守的那个前缀是编的**。冻结契约时不知道我方真实
+//     编码，`AS-` 是当时造出来的；真实编码是 `AK`+数字。照着编造值去拦真实值的闸，
+//     拦下的全是对的东西。
+//   · v1.5：删掉 `unknown_series_prefix` warning（Joe 2026-08-26「这句话删掉」）——
+//     黄色角标当天已撤，编辑页那段文字是它**唯一的显示位**，文字再撤它就是一条
+//     永远没人看得到的告警。**用不上就整条删，别留死代码。**
+//
+// ⚠️ 两次削的都是"猜前缀"这条线，**从来没碰过 `scanSupplierLeak`** ——
+//    那才是真正防误填供应商型号的闸，下面有反向自证。
 {
   const r = mut((p) => { p.model = "AK101"; });
   check("④ 真实编码 AK101 通过，零 error", r.ok && r.errors.length === 0, JSON.stringify(codes(r)));
-  check("④ 且不吼（AK 在已知系列表里）",
-    !r.warnings.some((w) => w.code === "unknown_series_prefix"), JSON.stringify(r.warnings.map((w) => w.code)));
 }
 {
-  // 🔴 存量那 23 个产品全是 AS-xxx。改闸**不能把它们变成不可保存** ——
-  //    那会把"闸放宽了"变成"一批产品打不开了"，而症状完全不像是改闸引起的。
+  // 🔴 契约 v1.5（Joe 2026-08-26「这句话删掉」）：`unknown_series_prefix` 整条 warning 删除。
+  //    存量那 23 个 `AS-xxx` 现在**保存时零 warning**。
+  //    ⚠️ 判据是"一条都没有"，不是"没有 unknown_series_prefix 这一条" ——
+  //       后者在 warning 被改名之后照样绿，那就成了一条认得出旧错法、认不出新错法的判据。
   const r = mut((p) => { p.model = "AS-D16"; });
-  check("④ 关键：存量 AS-D16 仍然通过（改闸不许弄坏存量数据）", r.ok, JSON.stringify(codes(r)));
-  check("④ 但要吼一声（不在已知系列表里）",
-    r.warnings.some((w) => w.code === "unknown_series_prefix"), JSON.stringify(r.warnings.map((w) => w.code)));
+  check("④ AS-D16 通过", r.ok, JSON.stringify(codes(r)));
+  check("④ 🔴 且 warning **一条都没有**（那句话已整条删除，不是藏起来）",
+    r.warnings.length === 0, JSON.stringify(wcodes(r)));
 }
 {
-  // 供应商痕迹仍是**硬拒** —— 放开前缀不等于放开这条红线
+  // 🔴 反向自证之一：删的是那条 warning，**不是整条 model 闸**。
+  //    供应商痕迹仍是硬拒 —— 那才是真正防误填供应商型号的东西（硬规则 1 的 scanSupplierLeak）。
   const r = mut((p) => { p.model = "alibaba.com/JT-168"; });
-  check("④ 关键：model 里的供应商痕迹仍被硬拒", hasErr(r, "supplier_leak"), JSON.stringify(codes(r)));
+  check("④ 🔴 反向自证：model 里的供应商痕迹**仍被硬拒**（真闸一个字没动）",
+    hasErr(r, "supplier_leak"), JSON.stringify(codes(r)));
 }
 {
-  // 反向自证：不是把整条闸拆了 —— 必填还在
+  // 反向自证之二：必填还在
   const r = mut((p) => { p.model = "   "; });
   check("④ 反向自证：空 model 仍被拒", hasErr(r, "required"), JSON.stringify(codes(r)));
 }
 {
-  // A10-R2-b：文案要对"正在逐个换型号的人"有用，而不只是报个分类
-  const r = mut((p) => { p.model = "AS-D16"; });
-  const w = r.warnings.find((x) => x.code === "unknown_series_prefix");
-  check("④ warning 说清了为什么亮（占位值）以及怎么消失",
-    !!w && /占位值/.test(w.message) && /自动消失/.test(w.message), w?.message);
+  // 反向自证之三：删掉这条之后，warning 机制**本身**还活着 ——
+  // 否则"AS-D16 零 warning"也可能是因为整个 warning 通道坏了。
+  const r = mut((p) => { p.model = "AS-D16"; p.supplierRef = "https://www.alibaba.com/x"; });
+  check("④ 🔴 反向自证：warning 通道本身还活着（同一份数据仍产生 internal_field）",
+    r.warnings.some((w) => w.code === "internal_field"), JSON.stringify(wcodes(r)));
 }
 
 // ════════ ④-b A10-R3-b：列表 badge 只报"需要人做点什么"的东西 ════════
 //
 // 🔴 23 个产品全都有 supplierRef ⇒ 全都会亮一条 internal_field。
-//    一个在 **100% 的行**上都亮的警告不携带任何区分信息，它只会把真正要注意的淹掉；
-//    而 Joe 正要靠 badge 当"哪些型号还没换"的清单。
+//    一个在 **100% 的行**上都亮的警告不携带任何区分信息，它只会把真正要注意的淹掉。
 {
   // ⚠️ 必须显式给上 supplierRef —— 这才是那 23 个产品的真实形态（它们全都有）。
-  //    不给的话这条用例根本产生不出 internal_field，测的就不是要测的东西。
   const r = mut((p) => { p.model = "AK101"; p.supplierRef = "https://www.alibaba.com/x"; });
-  check("④-b 只剩状态说明时，可操作计数 = 0（badge 消失 —— 这就是 Joe 要的清单）",
+  check("④-b 只剩状态说明时，可操作计数 = 0",
     actionableWarnCount(r.warnings) === 0 && r.warnings.some((w) => w.code === "internal_field"),
     `warnings=${JSON.stringify(wcodes(r))} actionable=${actionableWarnCount(r.warnings)}`);
 }
 {
+  // ⚠️ 契约 v1.5 之后，AS- 型号**不再**产生可操作 warning ——
+  //    这条原来断言 =1，那个 1 就是被删掉的 unknown_series_prefix。
   const r = mut((p) => { p.model = "AS-D16"; p.supplierRef = "https://www.alibaba.com/x"; });
-  check("④-b 型号没换时可操作计数 = 1（不是 2 —— 状态说明不占名额）",
-    actionableWarnCount(r.warnings) === 1, `warnings=${JSON.stringify(wcodes(r))}`);
-  check("④-b 且那一条正是 unknown_series_prefix",
-    r.warnings.filter((w) => !["internal_field"].includes(w.code))[0]?.code === "unknown_series_prefix",
-    JSON.stringify(wcodes(r)));
+  check("④-b AS- 型号现在也是 0（unknown_series_prefix 已删）",
+    actionableWarnCount(r.warnings) === 0, `warnings=${JSON.stringify(wcodes(r))}`);
 }
 {
   // ⚠️ 被排除的只是**列表计数**：完整 warnings 里那条必须还在，详情页要照常显示它

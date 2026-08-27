@@ -169,30 +169,19 @@ function checkNameStuffing(name: string, out: Issue[]): void {
 }
 
 /**
- * 已知的系列前缀。**当前只有 `AK`**（Joe 2026-08-25 确认的我方真实编码）。
- * ⚠️ 这张表是会长的（Joe 原话「以后或许有别的系列编码」）—— 所以它只用来**吼**，不用来拦。
- *    拿一张"当前已知"的表去做硬闸，等于赌"以后不会有新系列"，而那个赌注写在数据里。
+ * 🔴 这里原来有 `KNOWN_MODEL_PREFIXES` + `checkModelPrefix()`：model 不以 `AK` 开头
+ *    就出一条 `unknown_series_prefix` warning。**契约 v1.5 整条删除**（Joe 2026-08-26
+ *    指着编辑页那句话说「这句话删掉」）。
+ *
+ * ⚠️ **删而不是藏**：黄色「N 提示」角标当天已撤，编辑页那段文字是这条 warning
+ *    **唯一的显示位**。文字再撤掉，它就是一条**永远不会被任何人看到的告警** —— 死代码。
+ *    而本仓的死代码是会复活的：`.topbar` 那条死规则一加顶栏就当场覆盖了我的 padding，
+ *    `.flag-warn` 也是撤了显示留着规则。⇒ 用不上就整条删。
+ *
+ * ⚠️ **删它不放开真风险**：它防的是误填供应商型号，而真正的闸是硬规则 1 的
+ *    `scanSupplierLeak`（覆盖所有公开字段，含 model）—— **那道闸一个字没动**。
+ *    这一条从来就只是"吼一声"，不阻断，也不构成任何防线。
  */
-const KNOWN_MODEL_PREFIXES = ["AK"];
-
-/**
- * model 前缀检查 —— **warning，不阻断**。与 checkNameStuffing 同一条道理。
- * ⚠️ 站上现存 23 个 `AS-xxx` 全是冻结契约时编的值（真实 AK 对照表还没拿到）。
- *    它们必须仍然能在后台打开和保存 —— 改闸不能把存量数据变成不可保存，
- *    那会把"闸更宽松了"变成"一批产品打不开了"。
- */
-function checkModelPrefix(model: string, out: Issue[]): void {
-  const m = model.trim();
-  if (KNOWN_MODEL_PREFIXES.some((p) => m.toUpperCase().startsWith(p))) return;
-  // ⚠️ 这句话是写给**正在逐个核对 23 个产品的 Joe** 看的（A10-R2-b）：
-  //    闸放开后，那 23 个 `AS-` 会各自亮一条 —— 它天然就是一张"还没换完"的清单。
-  //    ⇒ 文案要说清"为什么亮"和"怎么让它消失"，而不是干巴巴一句"不在已知系列"。
-  out.push(err("model", "unknown_series_prefix",
-    `「${m}」不在已知系列前缀里（当前已知：${KNOWN_MODEL_PREFIXES.join(" / ")}）。` +
-    `站上这批 \`AS-\` 开头的型号是**当初冻结契约时的占位值**，需要换成真实编号 —— ` +
-    `换掉之后这条提示会自动消失。` +
-    `如果这是一个新系列，直接存就行：这条只是提醒，不阻断。`));
-}
 
 // ─────────────────────────────────────────────────────────────
 
@@ -271,9 +260,9 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
   // 闸拦的是"确定错的"，吼的是"看着可疑但可能正当"。一个天天误报的闸，人很快就不看它了。
   if (typeof p.model !== "string" || !p.model.trim()) {
     errors.push(err("model", "required", "model 必填。"));
-  } else {
-    checkModelPrefix(p.model, warnings);
   }
+  // ⚠️ 这里原来接一句 `checkModelPrefix(p.model, warnings)`（契约 v1.5 删）。
+  //    model 现在的判据只有：必填 + 非空 + 不含供应商痕迹（后者由 scanSupplierLeak 统一扫）。
 
   // ---- category（必填，枚举）----
   if (typeof p.category !== "string" || !p.category) {

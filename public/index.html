@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=26">
+<link rel="stylesheet" href="/style.css?v=29">
 </head>
 <body>
 
@@ -259,6 +259,13 @@
       <!-- A12 顶部压缩：返回 + tab + 标题**并成一行**（原来返回在左、tab 在右、标题另起一块）。
            ⛔ 文件路径 src/content/products/xxx.json 撤出顶部 —— Joe 不看仓，对他没用。
               它挪到详情态底部的内部信息区（见 renderView）。 -->
+      <!-- ⭐ 「保存」「删除」在这一行的**右端**（Joe 2026-08-26 当面定）。
+           这一行住在 .detail-bar 里，而顶栏与内容区是分开滚的（body 不滚）⇒
+           **滚到最底它们仍在原地**，不需要 sticky、不需要算偏移。
+           ⚠️ 两个按钮并排，一个常用一个不可逆 ⇒ **视觉权重必须拉开**：
+              「保存」实心主按钮，「删除」保持 .danger 且**描边不实心** ——
+              同一处两个实心红蓝按钮，误点只是时间问题。
+           ⛔ 不因此把删除做成三步：它现在的二次确认已经够了。 -->
       <div class="detail-bar">
         <button type="button" class="linkish" id="backBtn">← 返回</button>
         <div class="tabs">
@@ -266,23 +273,24 @@
           <button type="button" class="tab" data-view="edit">编辑</button>
         </div>
         <h2 id="dTitle">—</h2>
+        <div class="detail-actions">
+          <!-- ⚠️ form="editPane"：这两个按钮在 <form> **外面**，靠 form 属性归属于它。
+               不写的话「保存」提交不了表单 —— 而症状是"点了没反应"。 -->
+          <button type="submit" form="editPane" class="primary" id="previewBtn" hidden>保存</button>
+          <button type="button" id="deleteBtn" class="danger" hidden>删除…</button>
+        </div>
       </div>
 
       <div id="issues"></div>
       <div id="viewPane"></div>
 
       <form id="editPane" hidden autocomplete="off">
-        <!-- 🔴 sticky 保存条：改动计数 + 提交入口常驻。
-             不做的话，人要滚到页面最底才找得到"保存"，而这条页面的主路是"传图+填标题+保存"。 -->
-        <div class="editbar">
-          <span class="dirty" id="dirtyCount">未改动</span>
-          <span class="spacer"></span>
-          <!-- ⚠️ 文案由 saveBtnLabel() 按新建/编辑态决定 —— 这里只给个初值。
-               闸没变：点它先校验+展示将要写入的内容，再点确认才真写。 -->
-          <button type="submit" class="primary" id="previewBtn">保存</button>
-          <button type="button" id="resetBtn">还原</button>
-          <button type="button" id="deleteBtn" class="danger" hidden>删除…</button>
-        </div>
+        <!-- ⚠️ 这里原来是一条 .editbar（未改动计数 / 保存 / 还原 / 删除）。
+             Joe 2026-08-26：保存与删除移到右上角、「未改动 / 还原」撤掉。
+             ⇒ 整条撤掉，不是把它藏起来 —— 藏起来的话 #dirtyCount / #resetBtn
+                会变成永远没人看得到的 DOM，而本仓的死节点是会被后来的人当活的用的
+                （`.topbar` / `.flag-warn` / `#preview` 都有前科）。
+             ⚠️ 「保存」现在住在 .detail-bar 里，靠 form="editPane" 归属这张表。 -->
 
         <!-- ⚠️ 分组顺序按 Joe 的真实用途排：他要做的是"上传产品图 + 填标题"。
              ⇒ 图片面板常驻右栏顶部、name 是左栏第一个字段，其余全部给这条主路让路。
@@ -414,7 +422,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=26"></script>
+<script src="/app.js?v=29"></script>
 </body>
 </html>
 

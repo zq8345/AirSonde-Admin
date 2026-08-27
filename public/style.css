@@ -306,7 +306,11 @@ details.raw pre { margin: 0; padding: 0 12px 12px; overflow-x: auto; font-family
 
 /* 正文区是**真正的滚动容器**（页面不滚）。里面那些 sticky 的 top 因此
    相对的是这个盒子的顶边，不是视口 ⇒ 它们的偏移都归 0 起算，见下面 .editbar。 */
+/* ⚠️ 加 max-width 是**安全绳不是收窄**：内容区在 1440 档量到 1232px（不受它限制）。
+   它挡的是 2560 那种宽屏 —— 不设上限的话产品表会被拉到两千多像素，
+   一行里"缩略图 … 机型"两端相距半米，眼睛要横扫过去。 */
 .main { padding: 18px 22px 40px; min-width: 0; height: 100%; overflow-y: auto; }
+.main > section { max-width: 1600px; }
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
 .page-head h1 { margin: 0; font-size: 19px; }
 
@@ -449,10 +453,14 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .card-internal > h3 { color: var(--danger); }
 
 /* 宽屏双栏：左边填字段、右边图片，减少纵向滚动 */
-.edit-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 14px; align-items: start; }
-@media (max-width: 1100px) { .edit-grid { grid-template-columns: 1fr; } }
-.edit-col-side { position: sticky; top: 72px; }
-@media (max-width: 1100px) { .edit-col-side { position: static; } }
+/* 🔴 这里原来是**两栏**：`minmax(0,1fr) minmax(300px,380px)`，右栏放图片模块。
+   A10-R1 把图片模块搬进主列之后，`.edit-col-side` 这个元素从 HTML 里消失了，
+   **而这条规则没跟着改** ⇒ 第二条轨道一直在，只是永远空着。
+   实测（1440 视口）：主列 779px，右边**空 394px** —— 就是 Joe 说的"右边空一大片"。
+   ⚠️ 这是 `.topbar` 那条死规则的同一个形状：规则活得比它服务的那段 HTML 久，
+      而症状（版面变窄）完全不像是 CSS 里多了一条轨道。
+   ⇒ 单栏。⛔ 不贴边：给一个上限，宽屏上不至于把一行输入框拉到两千像素。 */
+.edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; max-width: 1100px; }
 
 /* ══ A10-R1：单一图片列表（第一张即主图）══ */
 /* --tile：网格每一格的高度。**这个数字只写这一处**，缩略图卡与「＋」格都引用它 ——
@@ -548,14 +556,41 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 /* ══ A12：详情/编辑页顶部并成一行 ══
    原来「← 返回列表」在左、「详情|编辑」在右、标题另起一整块 —— 三样东西占三行高度，
    而每次真正要用的只有一个按钮。并成一行。 */
-.detail-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+/* 🔴 sticky 是**实测逼出来的**，不是顺手加的。
+   我先写的是"body 不滚、.main 内部滚 ⇒ 这一行天然停在原地"，并把这句话写进了注释。
+   **量了一下：滚到底时它在 y=-730，早就滚出去了。** 不滚的是顶栏和横幅，
+   而 .detail-bar 住在 .main **里面**，跟着内容一起滚。
+   —— 又一次"注释说的和产出不是一回事"。判据落在 getBoundingClientRect 上才发现。
+   ⚠️ 这里的 `top: 0` 与旧 `.editbar` 那个 `top: 0` 不同：
+      滚动容器就是 .main 本身 ⇒ 0 指的是这个容器的顶边，**不依赖"上面没有别的东西"**。
+      （旧写法的病是 `top: 40px` 假设横幅永远一行。） */
+.detail-bar {
+  position: sticky; top: 0; z-index: 15;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: -18px -22px 10px; padding: 12px 22px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+/* 「保存」「删除」在这一行的右端（Joe 2026-08-26）。
+   ⭐ 不用 sticky、不算偏移：body 不滚、.main 内部滚 ⇒ 顶部这一行天然停在原地。
+      （旧写法 `.editbar{position:sticky;top:0}` 那个 0 依赖"上面没有别的东西"，
+       而横幅一带 warning 就换行变高 —— 那类假设在这个仓里已经错过一次。） */
+.detail-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+/* 🔴 权重拉开：主动作实心，不可逆动作**描边**。
+   同一处并排两个实心按钮，误点只是时间问题 —— 而这两个的后果不对称到没法比。 */
+.detail-actions .danger {
+  background: none; color: var(--danger); border: 1px solid var(--danger);
+  padding: 7px 12px; border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.detail-actions .danger:hover { background: var(--danger-soft); }
 .detail-bar h2 { margin: 0; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 字段级提示：贴在它所属的输入框正下方，而不是堆在顶部 */
 .field-issue { color: var(--warn); margin-top: 5px; }
 
 /* ══ A12-4：预览态 —— 接近官网产品页，不是字段表 ══
    ⚠️ 目标是"看得出是不是对的"，不是"看起来一样"（官网样式会变，追了也守不住）。 */
-.pv { max-width: 760px; }
+/* 预览排版：比正文读起来舒服的宽度略宽一点，但仍**有上限** ——
+   它模拟的是官网产品页，而那一页本来就不是通栏。760 → 980（1440 档实测右侧不再空一大片）。 */
+.pv { max-width: 980px; }
 .pv-hero { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .pv-hero img { width: 100%; height: 100%; object-fit: contain; }
@@ -579,7 +614,7 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .pv-specs td { padding: 7px 0; border-bottom: 1px solid var(--line); }
 /* 🔴 内部信息区**必须与预览区在视觉上分开** —— 否则"预览"这个词就是假的：
    这里的东西官网上一个都看不到。 */
-.pv-internal { margin-top: 34px; padding-top: 18px; border-top: 2px dashed var(--line); max-width: 760px; }
+.pv-internal { margin-top: 34px; padding-top: 18px; border-top: 2px dashed var(--line); max-width: 980px; }
 
 /* 管理态开关（沿用 wanew 后台：🔧 管理 / ✓ 管理中）。⛔ 不造第三种交互。 */
 .axishead { display: flex; align-items: baseline; gap: 8px; }

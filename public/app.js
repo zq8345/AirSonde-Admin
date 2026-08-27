@@ -849,7 +849,6 @@ function imgListFromDraft(p) {
 
 function renderImages() {
   // 图片增删改后同步刷新 sticky 条的计数（这里是所有图片变化的汇合点）
-  setTimeout(() => { try { updateDirty(); } catch {} }, 0);
   const box = $("#imgList");
   if (!box) return;
   // ⚠️ 只清卡片，**不能 innerHTML=""** —— 那会把「＋」那一格连同它里面的
@@ -1261,6 +1260,9 @@ function switchView(v) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.view === v));
   $("#viewPane").hidden = v !== "view";
   $("#editPane").hidden = v !== "edit";
+  // 「保存」住在顶部那一行里（表单外，靠 form="editPane" 归属）⇒ 显隐要跟着 tab 走。
+  // ⚠️ 预览态摆一个保存按钮，点了会提交一张看不见的表单 —— 那正是"点了不知道发生了什么"。
+  $("#previewBtn").hidden = v !== "edit";
   // 提示贴在哪儿取决于当前 tab ⇒ 切 tab 要用同一份结果重画一次。
   // ⚠️ 传 state.lastValidation 而不是重新校验：重新校验会**掉进另一个真源**，
   //    而人看到的应该始终是"上一次校验的结论"。
@@ -1297,7 +1299,9 @@ $("#bulkCat").onchange = (e) => {
   if (v) bulk([...state.selected], v, "category");
 };
 $("#editPane").onsubmit = doPreview;
-$("#resetBtn").onclick = () => { resetPending(); if (state.draft) fillForm(state.draft); $("#preview").hidden = true; };
+// ⚠️ 「还原」按钮已撤（Joe 2026-08-26）。绑定必须一起删：
+//    对着不存在的元素 `.onclick=` 会当场抛 TypeError，而它在模块顶层 ⇒
+//    **整份 app.js 停在这一行**，症状是"整个后台白屏"，看起来完全不像是删了个按钮。
 document.querySelectorAll(".add[data-add]").forEach((b) => {
   b.onclick = () => {
     if (b.dataset.add === "specs") kvRow($("#f_specs"), "", "");
@@ -2116,37 +2120,9 @@ function showNav(which) {
 }
 document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
 
-// ── sticky 条上的改动计数 ──
-// 🔴 数的是**与已保存内容的实际差异**，不是"你敲过几下键盘"：
-//    敲进去又改回来，那不算改动；只报"有未保存改动"的话，人分不清自己动了什么。
-function updateDirty() {
-  const n = $("#dirtyCount");
-  if (!n) return;
-  if (state.isNew) { n.innerHTML = "<b>新产品</b>（尚未创建）"; return; }
-  if (!state.draft) { n.textContent = "未改动"; return; }
-  let changed = [];
-  try {
-    const now = readForm(), base = state.draft;
-    for (const k of Object.keys(now)) {
-      // images 由服务端按 status 归一化，前端比它没意义 —— 图片的改动用下面的待上传计数表达
-      if (k === "images") continue;
-      if (JSON.stringify(now[k] ?? null) !== JSON.stringify(base[k] ?? null)) changed.push(k);
-    }
-  } catch { /* 表单还没填好时不报错，保持上一次的显示 */ }
-  // 图片的改动 = 待上传张数 + 顺序/删除是否与打开时不同。
-  // ⚠️ 顺序也算改动：只数"待上传"的话，纯拖顺序会显示"未改动"，
-  //    而人明明动了东西 —— 那种"我改了它说没改"最伤信任。
-  const orig = imgListFromDraft(state.draft).map((x) => x.path).join("|");
-  const nowList = (state.imgList || []).map((x) => (x.kind === "have" ? x.path : "«new»")).join("|");
-  const imgs = (state.imgList || []).filter((x) => x.kind === "new").length + (orig !== nowList ? 1 : 0);
-  if (!changed.length && !imgs) { n.textContent = "未改动"; return; }
-  const parts = [];
-  if (changed.length) parts.push(`<b>${changed.length}</b> 个字段（${changed.join("、")}）`);
-  if (imgs) parts.push(`<b>${imgs}</b> 项图片`);
-  n.innerHTML = "已改：" + parts.join(" · ");
-}
-$("#editPane").addEventListener("input", updateDirty);
-$("#editPane").addEventListener("change", updateDirty);
+// ⚠️ 这里原来是 updateDirty()：往 sticky 条上的「未改动 / N 处改动」写字。
+//    那一格已随 .editbar 一起撤掉（Joe 2026-08-26）⇒ 整个函数删掉，不留空转的版本。
+//    留着的话它是一个每次输入都跑一遍、却对屏幕零影响的函数 —— 下一个人会以为它有用。
 
 // ══ A10-B：slug 跟随标题，人一动就停 ══
 //
@@ -2158,7 +2134,6 @@ $("#f_slug").addEventListener("input", () => { state.slugTouched = true; });
 $("#f_name").addEventListener("input", () => {
   if (!state.isNew || state.slugTouched) return;
   $("#f_slug").value = slugify($("#f_name").value);
-  updateDirty();
 });
 
 // ── 图片：多选 + 拖文件进来 ──
