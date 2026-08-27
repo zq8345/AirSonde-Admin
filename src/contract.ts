@@ -47,6 +47,13 @@ export const SAMPLE_SENSORS = [
   "SAMPLE-CO2", "SAMPLE-PM2.5", "SAMPLE-TVOC", "SAMPLE-temperature",
 ] as const;
 
+/**
+ * 卖点"短句"的上限。**界面也要用它** —— 由 /api/contract 发出去。
+ * 🔴 界面自己抄一个数的话，两边一旦分家，症状是"界面上是绿的、保存后服务端仍报警"，
+ *    而人只会觉得后台在骗他。（我写这一版时就抄错过：界面 90、这里 80。）
+ */
+export const HIGHLIGHT_MAX = 80;
+
 export const STATUSES = ["draft", "published"] as const;
 
 
@@ -353,7 +360,7 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
       const bad = badStringItems(p.highlights);
       if (bad.length) errors.push(err("highlights", "type", `highlights 第 ${bad.join(", ")} 项不是非空字符串。`));
       p.highlights.forEach((h, i) => {
-        if (typeof h === "string" && h.length > 80) {
+        if (typeof h === "string" && h.length > HIGHLIGHT_MAX) {
           warnings.push(err(`highlights[${i}]`, "too_long", `${h.length} 个字符，契约说的是"短句"。详情页参数表用 specs，别塞进 highlights。`));
         }
       });

@@ -736,3 +736,10 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
    ⇒ 显式指定。用 --muted（7.57:1 on --bg）——
    ⚠️ 它与真值仍然分得开：真值走 --text，约 17:1，比 placeholder 明显重。 */
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+
+/* 卖点每行自己的字数（Joe 2026-08-27：顶部那一整块提示挪到各自那一行）。
+   ⚠️ 复用 SEO 页那套三态（.cnt-empty / .cnt-ok / .cnt-over），⛔ 不造第二套。
+   🔴 屏幕上只留**一个数字 + 一个颜色**：完整理由挂在 title 上（hover 再看）——
+      把那段 30 字的说明抄到七行里，是把一块噪音拆成七块。 */
+.repeat-row { align-items: center; }
+.rowcnt { flex: 0 0 auto; padding: 0; border: 0; margin: 0 0 0 8px; font-size: 11px; white-space: nowrap; cursor: help; }

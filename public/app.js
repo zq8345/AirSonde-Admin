@@ -356,8 +356,13 @@ function renderList() {
       //    一个 100% 命中的信号零区分信息 —— 它只是把红色那几个淹掉。
       //    🔴 撤的是**这一块**，不是这一类：红色「N 个错误」保留，
       //       服务端的 warnCount / actionableWarnCount 一个字不动（详情页仍在用）。
-      // model 已独立成列，这里只留 slug
-      tdName.append(n, el("div", "li-sub", it.slug));
+      // 🔴 slug 不再显示在列表里（Joe 2026-08-27：「产品列表不要显示 slug 标题」）。
+      //    ⛔ 撤的是**这一处的显示**，不是 slug 本身：
+      //      · 顶部搜索**仍按 slug 匹配**（占位符写着「搜标题 / slug / 型号」，那句话得继续为真）
+      //      · 标题本身就是链接（A12-3）⇒ "这个产品的网址是什么"仍然回答得出
+      //      · 编辑页的 slug 输入框、详情页内部信息区的 slug **都保留**
+      //      · 数据里的 slug 一个字节不动
+      tdName.append(n);
     }
     tr.append(tdName);
 
@@ -595,7 +600,38 @@ function setPreviewTabEnabled(on) {
 
 // ═══════════════ 校验结果 ═══════════════
 /** 哪个字段的提示贴到哪个输入框下面。不在表里的留在顶部。 */
+/**
+ * 卖点的"短句"上限 —— **从服务端拿**（/api/contract 的 limits.highlight）。
+ * 🔴 我第一版在这里写了个常量 90，而校验器里是 80：**当场就是两个真源**。
+ *    那种分家的症状是"界面上是绿的、保存后服务端仍报警"，人只会觉得后台在骗他。
+ * ⇒ 不抄数字，问服务端要。⚠️ 拿不到时返回 0 = **不显示计数**，
+ *    ⛔ 绝不猜一个默认值——猜错的那个数会安静地误导人。
+ */
+const hlLimit = () => state.contract?.limits?.highlight || 0;
+
 const FIELD_ANCHOR = { model: "f_model", name: "f_name", slug: "f_slug", category: "f_category", sensors: "f_sensors" };
+
+/**
+ * 🔴 带下标 / 带键的字段名也要找得到自己的那一行（Joe 2026-08-27）。
+ *
+ * 原来这里只有一张**精确字段名**的表 ⇒ `highlights[0]`、`specs.power`、
+ * `images.gallery[2]` 这种**永远查不到**，于是全部堆在顶部：
+ * 编辑页顶上曾经是一整块黄条，7 条 `highlights[N] 382 个字符…` 挤在一起。
+ * ⚠️ 我们自己在下面原则②里写着"字段级的提示贴到那个字段的输入框下面"——
+ *    **规矩写了，但贴附逻辑认不出这类名字**，等于没落实。
+ * ⛔ 修法不是给 highlights 开特例：`specs.<key>` 与 `images.gallery[N]` 是同一个洞。
+ *
+ * 约定：重复行容器里第 N 行的输入框，可以用 `data-anchor="highlights[N]"` 认领自己。
+ * 找不到就仍然回顶部 —— **回不去的提示不能凭空消失**。
+ */
+function anchorFor(field) {
+  const exact = FIELD_ANCHOR[field];
+  if (exact) { const e = document.getElementById(exact); if (e) return e; }
+  // data-anchor 精确匹配（highlights[0] / specs.power / images.gallery[2] 都走这条）
+  const byData = document.querySelector(`[data-anchor="${CSS.escape(field)}"]`);
+  if (byData) return byData;
+  return null;
+}
 
 function clearFieldIssues() {
   document.querySelectorAll(".field-issue").forEach((n) => n.remove());
@@ -635,8 +671,7 @@ function renderIssues(v) {
   v.errors.forEach((i) => box.append(mkIssue("error", i.field, i.message)));
 
   warns.forEach((i) => {
-    const anchorId = FIELD_ANCHOR[i.field];
-    const anchor = anchorId ? document.getElementById(anchorId) : null;
+    const anchor = anchorFor(i.field);
     // 编辑态才有输入框可贴；详情（预览）态贴不了就回到顶部
     // ⛔ 不用 offsetParent 判可见（这一单已反复证明它判不准）；
     //    这里要问的本来也不是"现在可见吗"，而是**"当前是不是编辑态"** —— 用 state 判。
@@ -962,16 +997,52 @@ async function addImageFiles(files) {
 //    "主图"和"更多图片"不再是两个入口 —— 留着它就是留一条**没人走但仍能写 state 的**路径。
 //    上传统一走 addImageFiles()。
 
-function repeatRow(container, value) {
+/**
+ * 重复行（卖点）。⭐ 每一行**认领自己的字段名**（`highlights[N]`）并**自己报字数**。
+ *
+ * 🔴 为什么不是把那段 30 字的完整说明抄到每一行：那是把一块噪音拆成七块。
+ *    **一个数字 + 一个颜色就够**，完整理由放 title（hover 再看）。
+ * ⚠️ 计数用的是 SEO 页那套**三态**（留空 / 正常 / 超标），⛔ 不造第二套。
+ */
+function repeatRow(container, value, opts = {}) {
   const r = el("div", "repeat-row");
   const i = el("input"); i.value = value || "";
-  const d = el("button", "del-row", "×"); d.type = "button"; d.onclick = () => r.remove();
-  r.append(i, d); container.append(r);
+  const d = el("button", "del-row", "×"); d.type = "button";
+  const cnt = opts.limit ? el("div", "shint rowcnt") : null;
+
+  // ⚠️ 下标由**它在容器里的实际位置**算，不是创建顺序 —— 删掉中间一行之后
+  //    后面几行的下标会整体前移，而校验器报的是新下标。
+  const reindex = () => {
+    [...container.querySelectorAll(".repeat-row > input")].forEach((inp, n) => {
+      inp.dataset.anchor = `${opts.field || "highlights"}[${n}]`;
+    });
+  };
+  const paint = () => {
+    if (!cnt) return;
+    const n = i.value.trim().length;
+    cnt.classList.remove("cnt-empty", "cnt-ok", "cnt-over");
+    if (n === 0) { cnt.classList.add("cnt-empty"); cnt.textContent = "留空"; cnt.title = ""; }
+    else if (n > opts.limit) {
+      cnt.classList.add("cnt-over");
+      cnt.textContent = `${n} 字符`;
+      // 完整理由挂 title —— 屏幕上只留数字和颜色
+      cnt.title = `契约说的是"短句"（建议 ${opts.limit} 字符以内）。详情页的参数表用 specs，别塞进卖点。` +
+        "⚠️ 卖点过长会把官网产品页那一栏撑窄。";
+    } else { cnt.classList.add("cnt-ok"); cnt.textContent = `${n} 字符`; cnt.title = ""; }
+  };
+  d.onclick = () => { r.remove(); reindex(); };
+  i.addEventListener("input", paint);
+  r.append(i, d); if (cnt) r.append(cnt);
+  container.append(r);
+  reindex(); paint();
 }
 function kvRow(container, k, v) {
   const r = el("div", "kv-row");
   const ik = el("input", "k"); ik.value = k || ""; ik.placeholder = "键";
   const iv = el("input", "v"); iv.value = v || ""; iv.placeholder = "值（字符串）";
+  // specs 的提示是 `specs.<key>` ⇒ 值那一格认领它，键一改就跟着改。
+  const claim = () => { iv.dataset.anchor = `specs.${ik.value.trim()}`; };
+  ik.addEventListener("input", claim); claim();
   const d = el("button", "del-row", "×"); d.type = "button"; d.onclick = () => r.remove();
   r.append(ik, iv, d); container.append(r);
 }
@@ -990,7 +1061,8 @@ function fillForm(p) {
 
   $("#f_sensors").querySelectorAll("input").forEach((cb) => { cb.checked = (p.sensors || []).includes(cb.value); });
 
-  const h = $("#f_highlights"); h.innerHTML = ""; (p.highlights || []).forEach((x) => repeatRow(h, x));
+  const h = $("#f_highlights"); h.innerHTML = "";
+  (p.highlights || []).forEach((x) => repeatRow(h, x, { field: "highlights", limit: hlLimit() }));
   const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
   // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
   state.imgList = imgListFromDraft(p);
@@ -1313,7 +1385,7 @@ $("#editPane").onsubmit = doPreview;
 document.querySelectorAll(".add[data-add]").forEach((b) => {
   b.onclick = () => {
     if (b.dataset.add === "specs") kvRow($("#f_specs"), "", "");
-    else repeatRow($("#f_highlights"), "");
+    else repeatRow($("#f_highlights"), "", { field: "highlights", limit: hlLimit() });
   };
 });
 // ═══════════════ A8 媒体库 ═══════════════
