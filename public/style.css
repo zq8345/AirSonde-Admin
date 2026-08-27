@@ -550,18 +550,28 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
 .edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; max-width: 1100px; }
 
 /* ══ A10-R1：单一图片列表（第一张即主图）══ */
-/* --tile：网格每一格的高度。**这个数字只写这一处**，缩略图卡与「＋」格都引用它 ——
-   两边各写一份的话，改了一处另一处就错位 4px，而那种歪没人会立刻归因到 CSS。
+/* --tile：网格每一格的**边长**（格子是正方的）。**这个数字只写这一处**，
+   缩略图卡与「＋」格都引用它 —— 两边各写一份的话，改了一处另一处就错位，
+   而那种歪没人会立刻归因到 CSS。
    ⚠️ 本来想用 align-self:stretch 让「＋」自动跟着卡片走，实测**没生效**
-      （去掉 min-height 后它是 113 而不是卡片的 120）⇒ 不跟它较劲，改成单一真源。 */
+      （去掉 min-height 后它是 113 而不是卡片的 120）⇒ 不跟它较劲，改成单一真源。
+   🔴 2026-08-27：原来 `width: 116px` 是**写死的第二个数字**，与 `--tile: 120px` 不等
+      ⇒ 格子是 116×120，不方。Joe：「上传图片这个容器好像不是正方形」。
+      ⇒ 宽度也取 `--tile` ⇒ 一个变量驱动两边，⛔ 不再有第二个裸数字。
+      （维持高度 120、让宽度跟上来：内框因此从 102.7×82 变成约 106.7 见方，**图片高度涨约 30%**，
+        而每行容纳张数不变 —— 1066.67 内宽下 116 与 120 都是每行 8 格。）*/
 .imglist { --tile: 120px; display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .imglist:empty { margin-bottom: 0; }
 .icard {
-  position: relative; width: 116px; height: var(--tile); border: 1px solid var(--line); border-radius: var(--radius);
+  position: relative; width: var(--tile); height: var(--tile); border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg); padding: 6px; cursor: grab; user-select: none;
 }
 .icard:active { cursor: grabbing; }
-.icard .thumb { width: 100%; height: 82px; border-radius: 5px; }
+/* 🔴 内框照 `.featthumb` 的写法（`aspect-ratio: 1/1`）——
+   ⛔ 同一个仓里已有现成的正确写法，不发明第二种。
+   原来是 `height: 82px`：这是全文件**唯一一个不方的** thumb 覆盖
+   （基类 110×110、.thumb-sm 64、.gcard 92、.mcard 150、.featthumb 1/1 全是方的）。 */
+.icard .thumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 5px; }
 .icard.is-new { border-color: var(--ok); background: var(--ok-soft); }
 .icard.is-dragging { opacity: .4; }
 /* 拖到谁身上，谁左边亮一条 —— 只是一个 class，不重绘（wanew 那边在 dragover 里整块重绘） */
@@ -584,7 +594,8 @@ button.danger { background: var(--danger-soft); border: 1px solid var(--danger);
    ⚠️ 原来是缩略图下面一个整宽大虚线框，占了半屏 —— 而它承担的信息量只有"点这里加图"。
    ⚠️ 一张图都没有时它仍然在（它是网格里唯一的一格），且要看得出是可点的。 */
 .iadd {
-  width: 116px; flex: 0 0 auto;
+  /* 🔴 与 `.icard` 取**同一个** `--tile`，⛔ 不再写死 116 —— 卡片改边长时它自动跟上 */
+  width: var(--tile); flex: 0 0 auto;
   /* ⚠️ 高度**不写死**：用 stretch 跟着同一行里最高的卡片走。
      写死 116 的话，卡片底下那行文件名让它变成 120 —— 底边差 4px，网格看起来是歪的。
      而写死的数字还会在将来卡片改高时**再错一次**，且没人会想到回来改这里。 */
