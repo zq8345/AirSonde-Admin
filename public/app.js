@@ -560,6 +560,19 @@ function featuredWarning(slugs, what) {
     + "要补回来，去「首页」那一页改精选列表。";
 }
 
+/**
+ * 这一批 slug 各自的文件 sha —— 取自**列表那一次**读到的 `files[]`。
+ * ⚠️ `products-expanded` 的 `items[]` **没有** sha，`files[]` 才有（两者不是同一份东西）。
+ * ⛔ 取不到的就不放进去：⛔ 绝不编一个 sha —— 缺了顶多是"这一条没锁"，编错了是"锁在错的东西上"。
+ */
+function shasFor(slugs) {
+  const files = state.listMeta?.files || [];
+  const by = new Map(files.map((f) => [f.slug, f.sha]));
+  const out = {};
+  for (const s of slugs) { const sha = by.get(s); if (sha) out[s] = sha; }
+  return out;
+}
+
 /** 批量改字段。单行的"上架/下架"也走这里 —— 一条路径，行为不可能分叉。 */
 async function bulk(slugs, value, op = "status") {
   if (!slugs.length) return;
@@ -573,7 +586,9 @@ async function bulk(slugs, value, op = "status") {
   try {
     const r = await fetch("/api/products/batch", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ slugs, op, value }),
+      // 🔴 逐个文件的锁：sha 取自列表那一次读到的 `files[]`（`state.listMeta.files`）——
+      //    ⛔ 不另发请求去取，那会引入"取的时候已经不是刚才那份"的缝隙。
+      body: JSON.stringify({ slugs, op, value, expectedShas: shasFor(slugs) }),
     });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
@@ -1285,7 +1300,12 @@ function buildEnvelope(extra = {}) {
     ...(rest.length ? { gallery: rest.map((it) => (it.kind === "have" ? it.path : null)) } : {}),
   };
 
-  return { patch, uploads, ...extra };
+  // 🔴 乐观锁：把**打开这个产品那一刻**读到的文件 sha 原样带回去。
+  //    ⚠️ 它随产品数据在**同一个响应**里返回（`state.loaded.sha`）⇒ ⛔ 不存在"保存时再取一次"的缝隙。
+  //    新建时没有 sha（文件还不存在）—— 那条路由 `mustCreate` 守着 slug 唯一性，不需要它。
+  const expectedSha = state.isNew ? undefined : state.loaded?.sha;
+
+  return { patch, uploads, ...(expectedSha ? { expectedSha } : {}), ...extra };
 }
 
 /**
@@ -2898,7 +2918,11 @@ $("#deleteBtn").onclick = async () => {
   const btn = $("#deleteBtn"); btn.disabled = true; btn.textContent = "删除中…";
   let wroteOk = false, commitSha = null;
   try {
-    const r = await fetch(`/api/products/${encodeURIComponent(slug)}`, { method: "DELETE" });
+    // 🔴 删除也带锁：删掉一个"别人刚改过"的产品是**不可逆**的，比保存更需要它。
+    //    ⚠️ DELETE 没有请求体 ⇒ 走查询串。
+    const delSha = state.loaded?.sha;
+    const r = await fetch(`/api/products/${encodeURIComponent(slug)}`
+      + (delSha ? `?expectedSha=${encodeURIComponent(delSha)}` : ""), { method: "DELETE" });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
       wroteOk = true; commitSha = b.commitSha;

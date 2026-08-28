@@ -47,14 +47,25 @@ async function api(env: Env, path: string, init?: RequestInit): Promise<any> {
 /**
  * 原子提交一组文件。
  *
+ * ⛔ **这里没有乐观锁，也不该有。**
+ * 原来有一个 `expectedHeadSha`（分支 HEAD）参数，2026-08-28 删除，两个理由：
+ *   ① **它是空转的**：服务端读 `env0.baseHeadSha` 往这里传，而**客户端从来不发** ⇒ 恒为 undefined
+ *      ⇒ `if (opts.expectedHeadSha && …)` 整条被跳过。它从上线那天起就没生效过，**而且不报错**。
+ *   ② **就算发了，粒度也是错的**：实测官网仓 3 小时 14 个 commit、相邻间隔中位数 3.1 分钟，
+ *      其中只有 5 个碰产品 JSON ⇒ 用分支 HEAD 当锁，**编辑超过 3 分钟就必然冲突**，
+ *      而真冲突只可能来自"同一个文件被改过"。
+ * ⇒ 锁改在**调用方**按**文件 blob sha** 判（`index.ts` 的 `staleConflict()`，全仓唯一一处）。
+ *
+ * ⚠️ 保留的是**另一件事**：下面 `api()` 在 GitHub 返回 409/422 时抛 `ConflictError` ——
+ *    那是"读 HEAD 到 push 之间的几秒"里被人抢先推了。它挡的窗口只有几秒，
+ *    ⛔ **不要把它当成乐观锁**（"页面开了一小时"那种情形它挡不住）。
+ *
  * @param message commit message
  * @param files   文件动作列表
- * @param expectedHeadSha 可选的乐观锁：调用方读取数据时分支的 HEAD。
- *        传了它 ⇒ 分支若已前进就中止。⚠️ 不传不是"不锁"，是"以本次读到的 HEAD 为准"。
  */
 export async function commitFiles(
   env: Env,
-  opts: { message: string; files: CommitFile[]; expectedHeadSha?: string },
+  opts: { message: string; files: CommitFile[] },
 ): Promise<CommitResult> {
   const repo = env.GITHUB_REPO, branch = env.GITHUB_BRANCH;
   if (!repo || !branch) throw new Error("配置缺失：GITHUB_REPO / GITHUB_BRANCH。");
@@ -63,12 +74,6 @@ export async function commitFiles(
   // ── 1. 当前 HEAD ──
   const ref = await api(env, `/repos/${repo}/git/ref/heads/${branch}`);
   const headSha: string = ref.object.sha;
-  if (opts.expectedHeadSha && opts.expectedHeadSha !== headSha) {
-    throw new ConflictError(
-      `分支在你打开页面之后被推过（你基于 ${opts.expectedHeadSha.slice(0, 7)}，现在是 ${headSha.slice(0, 7)}）。` +
-      `请重新读一次再保存 —— 直接提交会把别人的改动盖掉。`,
-    );
-  }
 
   // ── 2. base tree（一次拿全，copy 的源 sha 与 remove 的存在性都从这里查）──
   const headCommit = await api(env, `/repos/${repo}/git/commits/${headSha}`);

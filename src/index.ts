@@ -401,10 +401,14 @@ app.post("/api/products/batch", async (c) => {
   const operator = operatorOf(c);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝写入" }, 403);
 
-  let body: { slugs?: string[]; op?: string; value?: string };
+  // `expectedShas` 是 { slug: 打开列表时读到的该文件 blob sha }。
+  // 🔴 批量一次动多个文件 ⇒ 锁也必须**逐个文件**，⛔ 不是一把总锁。
+  let body: { slugs?: string[]; op?: string; value?: string; expectedShas?: Record<string, string> };
   try { body = await c.req.json(); } catch (e) { return c.json({ error: "请求体不合法", detail: String(e) }, 400); }
   const slugs = [...new Set(body.slugs || [])];
   if (!slugs.length) return c.json({ wrote: false, error: "没有选中任何产品" }, 400);
+  const expectedShas: Record<string, string> = body.expectedShas && typeof body.expectedShas === "object"
+    ? body.expectedShas : {};
 
   // 轴从真源现读 —— 批量改机型的合法值必须包含 Joe 刚新增的那个
   let axes: Axes;
@@ -430,11 +434,20 @@ app.post("/api/products/batch", async (c) => {
     const changed: string[] = [];
     const skipped: { slug: string; why: string }[] = [];   // ⭐ 跳过的必须数出来并报出去
     const rejected: { slug: string; codes: string[] }[] = [];
+    const conflicts: { slug: string; why: string }[] = [];  // 🔴 被别人改过的，逐个点名
     let imageOps = 0;
 
     for (const slug of slugs) {
       const f = await readProductFile(c.env, slug);
       if (!f.exists) { skipped.push({ slug, why: "文件不存在" }); continue; }
+
+      // 🔴 **逐个文件各判各的**：一批里某一个被别人改过，只有那一个算冲突。
+      //    ⛔ 不整批失败（另外 4 个是好的，凭什么陪葬）、⛔ 也不整批放行（那就等于没锁）。
+      //    ⇒ 冲突的进 `conflicts` 并**点名**，与 `skipped`/`rejected` 分开报 —— 三种原因修法不同。
+      const exp = expectedShas[slug];
+      const cf = staleConflict(exp, f.sha, "这个产品");
+      if (cf) { conflicts.push({ slug, why: cf.detail }); continue; }
+
       let existing: any;
       try { existing = JSON.parse(f.text!); }
       catch { skipped.push({ slug, why: "不是合法 JSON，拒绝在它上面改" }); continue; }
@@ -473,7 +486,15 @@ app.post("/api/products/batch", async (c) => {
       }, 422);
     }
     if (!changed.length) {
-      return c.json({ wrote: false, reason: "没有需要改动的产品", skipped });
+      // ⚠️ 冲突与"本来就无需改"是**两种不同的原因**，⛔ 不能混成一句话。
+      //    🔴 这里第一版写的是「选中的产品**全部**被别人改过（N 个）」——
+      //       而实测那次是 **1 个冲突 + 4 个本就是目标状态**，那句话**是假的**。
+      //       ⇒ 两个数各自报，谁是 0 就不提谁。
+      const why = [];
+      if (conflicts.length) why.push(`${conflicts.length} 个被别人改过（${conflicts.map((x) => x.slug).join("、")}）`);
+      if (skipped.length) why.push(`${skipped.length} 个本来就无需改动`);
+      return c.json({ wrote: false, skipped, conflicts,
+        reason: why.length ? `未写入任何东西：${why.join("；")}` : "没有需要改动的产品" });
     }
 
     const r = await commitFiles(c.env, {
@@ -486,8 +507,13 @@ app.post("/api/products/batch", async (c) => {
     });
     console.log(JSON.stringify({ evt: "bulk_ok", operator, op, value, count: changed.length, commit: r.commitSha }));
 
-    return c.json({ wrote: true, ...r, changed, skipped, imageOps,
-      note: `已在**一个 commit** 里改了 ${changed.length} 个产品${skipped.length ? `，跳过 ${skipped.length} 个` : ""}。` });
+    return c.json({ wrote: true, ...r, changed, skipped, conflicts, imageOps,
+      note: `已在**一个 commit** 里改了 ${changed.length} 个产品`
+        + (skipped.length ? `，跳过 ${skipped.length} 个` : "")
+        // 🔴 冲突必须出现在**成功**的这条回执里 —— 否则"改了 4 个"看起来像全做完了，
+        //    而第 5 个被别人改过、这次没动它，人却不知道。
+        + (conflicts.length ? `。⚠️ 另有 ${conflicts.length} 个**被别人改过、这次没有动**：${conflicts.map((x) => x.slug).join("、")}` : "")
+        + "。" });
   } catch (e) {
     if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
     if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
@@ -670,12 +696,40 @@ function assertWebp(bytes: Uint8Array, label: string): void {
   }
 }
 
+/**
+ * 🔴 乐观锁 —— **全仓只有这一处实现**。
+ *
+ * 判据是**文件自己的 blob sha**，⛔ 不是分支 HEAD。
+ * ⚠️ 这不是随便挑的，是量出来的（2026-08-28）：官网仓 3 小时内 14 个 commit、
+ *    相邻间隔中位数 **3.1 分钟**，而其中只有 5 个碰了产品 JSON。
+ *    ⇒ 用分支 HEAD 当锁，**编辑超过 3 分钟就必然冲突**（别人传一张图就推一个 commit），
+ *      而真正的冲突只可能来自"同一个文件被改过"。**粒度选错，锁就变成了拒服务。**
+ *
+ * 📌 旧的 `baseHeadSha`/`expectedHeadSha` 那条路已删：**服务端读它、客户端从来不发**，
+ *    ⇒ 它从上线那天起就是空转的。⛔ 不留没人走的旧路 —— 那正是它当初失效而无人察觉的方式。
+ *
+ * @param expected 调用方读到数据那一刻的 sha（随同数据在**同一个响应**里返回 ⇒ 没有时间缝隙）
+ * @param actual   此刻仓里的 sha
+ */
+function staleConflict(expected: string | null | undefined, actual: string | null | undefined, what: string) {
+  if (!expected || expected === actual) return null;
+  return {
+    wrote: false as const,
+    error: "并发冲突",
+    detail: `${what}在你打开它之后被改过了（你基于 ${String(expected).slice(0, 7)}，现在是 ${String(actual).slice(0, 7)}）。`
+      + `请重新读一次再改 —— 直接覆盖会把别人的改动弄丢。`,
+  };
+}
+
 interface WriteEnvelope {
   patch?: Record<string, unknown>;
   uploads?: { slot: "main" | number; base64: string }[];
   removeGallery?: number[];
-  /** 打开页面时读到的分支 HEAD —— 传了才有乐观锁。 */
-  baseHeadSha?: string;
+  /**
+   * 🔴 打开这个产品时读到的**文件 blob sha**（`GET /api/products/:slug` 的 `sha`）。
+   * ⚠️ 它与产品数据在**同一个响应**里返回 ⇒ ⛔ 不存在"保存时再去取一次"的时间缝隙（那种锁等于没有）。
+   */
+  expectedSha?: string;
   /** true = 这是"新建"，若文件已存在则拒绝（slug 唯一性）。 */
   mustCreate?: boolean;
 }
@@ -705,6 +759,10 @@ app.put("/api/products/:slug", async (c) => {
     if (env0.mustCreate && f.exists) {
       return c.json({ wrote: false, error: "slug 已被占用", detail: `${f.path} 已经存在。换一个 slug，或去编辑那个已有的产品。` }, 409);
     }
+
+    // 🔴 乐观锁：在**合并与写入之前**判。⛔ 不能放到 commitFiles 那一步 —— 那时图片可能已经处理过了。
+    const conflict = staleConflict(env0.expectedSha, f.sha, "这个产品");
+    if (conflict) return c.json(conflict, 409);
 
     let existing: Record<string, unknown> | null = null;
     if (f.exists) {
@@ -769,7 +827,7 @@ app.put("/api/products/:slug", async (c) => {
         `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}${imgSummary}\n` +
         `来源：admin.airsonde.com`,
       files,
-      expectedHeadSha: env0.baseHeadSha,
+      // ⛔ 旧的 expectedHeadSha（分支 HEAD）已删：粒度错、且客户端从来不发 ⇒ 空转。锁在上面按文件 sha 判。
     });
     console.log(JSON.stringify({ evt: "write_ok", slug, operator, commit: result.commitSha, fields: touched, imageOps: plan.ops.length }));
 
@@ -812,6 +870,12 @@ app.delete("/api/products/:slug", async (c) => {
   try {
     const f = await readProductFile(c.env, slug);
     if (!f.exists) return c.json({ wrote: false, error: "产品不存在", path: f.path }, 404);
+
+    // 🔴 删除也要过乐观锁：⛔ 删掉一个"别人刚改过"的产品，改动连同文件一起没了，
+    //    而删除是**不可逆**的 —— 这一条比保存更需要它。
+    const delExpected = c.req.query("expectedSha") || undefined;
+    const delConflict = staleConflict(delExpected, f.sha, "这个产品");
+    if (delConflict) return c.json(delConflict, 409);
 
     let existing: Record<string, unknown>;
     try { existing = JSON.parse(f.text!); }
@@ -959,7 +1023,7 @@ app.put("/api/site-content", async (c) => {
         `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}\n` +
         `来源：admin.airsonde.com`,
       files: [{ path, text }],
-      expectedHeadSha: undefined,
+      // 锁已在上面按文件 blob sha 判过（staleConflict）⇒ 这里不再传分支 HEAD。
     });
     console.log(JSON.stringify({ evt: "site_content_ok", operator, section: body.section, fields, commit: r.commitSha }));
     return c.json({ wrote: true, ...r, changedFields: fields, validation: v,
