@@ -1,7 +1,7 @@
 {
   "slug": "fixture-desktop-16in1",
   "name": "16-in-1 Desktop Air Quality Monitor P02",
-  "model": "AS-D16",
+  "model": "ZZ-LOCKTEST-1",
   "category": "desktop",
   "sensors": [
     "CO2",
