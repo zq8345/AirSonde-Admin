@@ -11,7 +11,7 @@
 // 跑：node scripts/contract-selftest.mjs   （Node ≥22.6 直接吃 .ts，无需构建）
 import {
   validateProduct as validateProductRaw, mergeProduct, checkSlugMatchesPath, serializeProduct,
-  actionableWarnCount, SAMPLE_CATEGORIES, SAMPLE_SENSORS,
+  actionableWarnCount, SAMPLE_CATEGORIES, SAMPLE_SENSORS, modelKey,
 } from "../src/contract.ts";
 
 // 契约 v1.4 起，两个轴的取值不再是契约里的常量，而是 taxonomy.json（官网真源）。
@@ -307,6 +307,24 @@ const ALIBABA = "https://www.alibaba.com/product-detail/16-in-1-Air-Quality_1601
     sensors: GOOD.sensors, images: GOOD.images, status: "published" });
   check("⑫ 键序被打乱也序列化成同一份字节（否则改一个字段会产生整体重排的 diff）", a === b);
   check("⑫ 末尾有换行", a.endsWith("}\n"));
+}
+
+// ════════ 13 modelKey：型号 → 网址键（判重的判据）════════
+//
+// 🔴 这条规则**在官网也有一份**（`AirSonde-Web/src/lib/products.ts` 的 `modelPath()`）。
+//    ⛔ 两处写法是有意暂留的（终局是官网导出、后台读）——
+//    在那之前**把行为钉在这里**：谁动了它这一节当场红，而不是等官网少一个产品才发现。
+{
+  check("13-1 大小写归一：AK19 与 ak19 同键", modelKey("AK19") === modelKey("ak19"));
+  check("13-2 首尾空白归一：'AK19 ' 与 'AK19' 同键", modelKey("AK19 ") === modelKey("AK19"));
+  check("13-3 斜杠换连字符（与官网 modelPath 一致）", modelKey("AK19/B") === "ak19-b");
+  check("13-4 真实型号 AK34-1 → ak34-1", modelKey("AK34-1") === "ak34-1");
+  check("13-5 🔴 反向自证：AK19 与 AK19B **不同键**", modelKey("AK19") !== modelKey("AK19B"));
+  check("13-6 🔴 反向自证：AK34-1 与 AK34-2 **不同键**", modelKey("AK34-1") !== modelKey("AK34-2"));
+  check("13-7 空/缺失得到空串（调用方据此跳过判重，⛔ 不是把空型号判成互撞）",
+    modelKey(undefined) === "" && modelKey(null) === "" && modelKey("   ") === "");
+  check("13-8 已知差别有记录：'AK19 ' 在这里是可用键（官网不 trim，会判 unusable-model）",
+    modelKey("AK19 ") === "ak19");
 }
 
 console.log(results.join("\n"));

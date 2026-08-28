@@ -76,6 +76,25 @@ export interface Product {
   status: Status;
 }
 
+/**
+ * 型号 → 判重用的键。**型号现在就是网址**（官网 W29：`/products/<key>/`）。
+ *
+ * 🔴 ⚠️ **这是一条"同一个东西两处写法"，我知道，是有意暂留的。**
+ *    官网真源：`AirSonde-Web/src/lib/products.ts` 的 `modelPath()` ——
+ *      `String(model).toLowerCase().replace(/\//g, '-')`，再校验 `^[a-z0-9-]+$`。
+ *    ⇒ 终局是**官网把这条规则的结果导出**（与 `product-refs.json` 同一批），后台读它、⛔ 不自己算。
+ *      但判重必须**现在**就有（两个人同时在写同一个仓），所以先在这里放一份。
+ *
+ * ⚠️ 与官网的差别，**明写**：这里**多一个 `trim()`**。
+ *    官网不 trim ⇒ `"AK19 "` 过不了 `^[a-z0-9-]+$`，会被判成 unusable-model 而**整条产品跳过**。
+ *    ⇒ 两边都不接受它，但**理由不同**。这里 trim 是为了让 `"AK19 "` 与 `"AK19"` **当场判为相撞**，
+ *      而不是放它进去、再让官网悄悄少一个产品。
+ *
+ * ⛔ 改这里必须同时确认官网那一侧；`contract-selftest.mjs` 已把这条规则的行为钉住。
+ */
+export const modelKey = (model: unknown): string =>
+  String(model ?? "").trim().toLowerCase().replace(/\//g, "-");
+
 /** 契约 v1 的**全部**顶层键。多一个都算错（见 checkUnknownKeys 的理由）。 */
 const TOP_LEVEL_KEYS = new Set([
   "slug", "name", "model", "category", "sensors",

@@ -17,7 +17,7 @@ import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount, INFO_CODES,
-  STATUSES, HIGHLIGHT_MAX, type Axes,
+  STATUSES, HIGHLIGHT_MAX, modelKey, type Axes,
 } from "./contract";
 import {
   validateTaxonomy, axesOf, valuesOf, refsOf, unreadableCount, addItem, editItem, deleteItem,
@@ -801,6 +801,31 @@ app.put("/api/products/:slug", async (c) => {
     if (!validation.ok) {
       console.error(JSON.stringify({ evt: "write_rejected", slug, operator, codes: validation.errors.map((e) => e.code) }));
       return c.json({ wrote: false, reason: "契约校验未通过，未产生任何 commit", validation }, 422);
+    }
+
+    // ── 🔴 型号唯一性：**在服务端、写入的这一刻**算 ──
+    //
+    // ⚠️ 型号现在就是网址（W29）⇒ 两个产品同型号 = 两个产品抢同一个地址 ⇒
+    //    官网会**跳过其中一个**（只打印警告、不失败）⇒ 站上安静地少一个产品。
+    // 🔴 ⛔ 不能只在客户端表单里查：两个人同时保存时，各自拿的是**自己加载时**的那份名单，
+    //    **两边都会通过**。乐观锁也挡不住这类 —— 那是两个不同文件，两把锁都放行。
+    // ⚠️ 判重按**规范化后的值**（`modelKey`：trim + 小写 + `/`→`-`）：
+    //    `ak19` / `AK19` / `AK19 ` 落到同一个网址，字面比较会放它们过去。
+    const wantKey = modelKey((merged as any).model);
+    if (wantKey) {
+      const all = await listExpanded(c.env);
+      const clash = all.find((p: any) =>
+        p && !p.error && p.slug !== slug && modelKey(p.model) === wantKey);
+      if (clash) {
+        return c.json({
+          wrote: false, error: "型号已被占用",
+          // ⛔ 不许只说"型号重复" —— 要说得出**是谁占着**，否则他没法处理
+          detail: `型号 ${JSON.stringify(String((merged as any).model))} 已经被产品「${clash.name || clash.slug}」`
+            + `（slug: ${clash.slug}）占用。型号就是官网地址 ⇒ 两个产品同型号，官网会跳过其中一个。`
+            + `换一个型号，或先去改那个产品的型号。`,
+          conflictWith: { slug: clash.slug, name: clash.name, model: clash.model },
+        }, 409);
+      }
     }
 
     const newText = serializeProduct(merged);
