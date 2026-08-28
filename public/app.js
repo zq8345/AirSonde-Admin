@@ -484,11 +484,26 @@ function fitSensorRows(root) {
     r.querySelectorAll(".senchip").forEach((c) => { c.hidden = false; });
     const m = r.querySelector(".senmore"); if (m) { m.hidden = true; m.textContent = ""; }
   });
-  // ② 读：每行的可用宽 + 每个 chip 的宽
+  // ② 读 chip 宽度 —— **必须在可见时读**（隐藏元素量出来是 0）
   const plan = rows.map((r) => {
     const chips = [...r.querySelectorAll(".senchip")];
-    return { r, chips, avail: r.clientWidth, w: chips.map((c) => c.getBoundingClientRect().width) };
+    return { r, chips, w: chips.map((c) => c.getBoundingClientRect().width) };
   });
+
+  // ③ 🔴 **量可用宽之前，先把所有 chip 藏起来。**
+  //
+  // ⚠️ 这一步是 2026-08-28 补的，它修的是一个**测量改变了被测对象**的缺陷：
+  //    原来直接在 ② 里读 `r.clientWidth` —— 而那时所有 chip 都是展开的，
+  //    表格是 `auto` 布局 ⇒ **列已经被这些 chip 自己撑宽了**，
+  //    于是量到的是"展开后的宽度"，而那正是这个函数要防止的东西。
+  //    ⇒ 后果不是行高（`nowrap` 保证了行高），是**列被撑宽、表格出横滚**：
+  //      实测 20 个 chip 时列 683→935、表格 1167→1409、横滚出现（与「零横滚」直接冲突）。
+  //
+  // 🔴 先隐藏再量 ⇒ `avail` 由**列本身**决定，与 chip 数无关 —— 不是"量得更准"，是**让它量不到自己**。
+  // ⚠️ 这条成立有个前提，已实测：全表所有行一起隐藏时，列宽**不塌**（仍 683px，由产品标题撑着）。
+  //    ⛔ 若哪天名称列改成由 chip 撑宽，这个前提就没了 —— 那时要给列设上限，而不是回到旧写法。
+  rows.forEach((r) => { r.querySelectorAll(".senchip").forEach((c) => { c.hidden = true; }); });
+  plan.forEach((p) => { p.avail = p.r.clientWidth; });
   // ③ 写
   const GAP = 4;
   plan.forEach(({ r, chips, avail, w }) => {
