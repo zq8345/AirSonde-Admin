@@ -1,7 +1,7 @@
 {
   "slug": "fixture-desktop-16in1",
   "name": "16-in-1 Desktop Air Quality Monitor P02",
-  "model": "ZZ-RACE-9",
+  "model": "ZZ-RACE-SAME",
   "category": "desktop",
   "sensors": [
     "CO2",
