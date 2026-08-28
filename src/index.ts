@@ -409,6 +409,11 @@ app.post("/api/products/batch", async (c) => {
   if (!slugs.length) return c.json({ wrote: false, error: "没有选中任何产品" }, 400);
   const expectedShas: Record<string, string> = body.expectedShas && typeof body.expectedShas === "object"
     ? body.expectedShas : {};
+  // 🔴 缺锁就拒。批量这里判在**整批**层面：一个旧页面根本不会带这个字段，
+  //    ⇒ 与其逐条报"这条没锁"，不如一句话说清"你这页是旧的"。
+  // ⚠️ 逐条缺失（名单里有、sha 查不到）在下面循环里单独处理 —— 那是另一种情况。
+  const missing = slugs.filter((s) => !expectedShas[s]);
+  if (missing.length === slugs.length) return c.json(missingLock("这些产品"), 428);
 
   // 轴从真源现读 —— 批量改机型的合法值必须包含 Joe 刚新增的那个
   let axes: Axes;
@@ -445,6 +450,9 @@ app.post("/api/products/batch", async (c) => {
       //    ⛔ 不整批失败（另外 4 个是好的，凭什么陪葬）、⛔ 也不整批放行（那就等于没锁）。
       //    ⇒ 冲突的进 `conflicts` 并**点名**，与 `skipped`/`rejected` 分开报 —— 三种原因修法不同。
       const exp = expectedShas[slug];
+      // 🔴 逐条缺锁也不许放行：整批带了字段、但**这一条**查不到 sha
+      //    （例如列表里没有它）⇒ 它没有保护，⛔ 不能因为"别的有"就顺带写了它。
+      if (!exp) { conflicts.push({ slug, why: "这一条没有版本号，无法确认它有没有被别人改过 ⇒ 未写入。请刷新页面后重试。" }); continue; }
       const cf = staleConflict(exp, f.sha, "这个产品");
       if (cf) { conflicts.push({ slug, why: cf.detail }); continue; }
 
@@ -711,6 +719,27 @@ function assertWebp(bytes: Uint8Array, label: string): void {
  * @param expected 调用方读到数据那一刻的 sha（随同数据在**同一个响应**里返回 ⇒ 没有时间缝隙）
  * @param actual   此刻仓里的 sha
  */
+/**
+ * 🔴 「缺锁就拒」—— 请求根本没带版本号时的回绝。
+ *
+ * ⚠️ 为什么不能"没带就放行"：`if (expected && …)` 这种写法**对"没传"和"传了且正确"给同一个结果** ——
+ *    于是哪天客户端忘了传，保护就**静默消失**，而没有任何症状。
+ *    📌 本仓前科：`baseHeadSha` 服务端读、客户端从来不发，空转了很久没人发现。
+ *
+ * 🔴 文案是给 **Joe** 看的，不是给我们看的：
+ *    ⛔ 绝不出现"缺少 expectedSha 字段"这种话 —— 他看到只会以为后台坏了。
+ *    要说清三件事：**这页是旧的 / 它少带了什么 / 刷新后重做**。
+ */
+function missingLock(what: string) {
+  return {
+    wrote: false as const,
+    error: "页面是旧版本",
+    detail: `你这个页面是**打开得比较久的旧版本**，它在保存时没有带上"防止两个人同时改坏同一份数据"所需的版本号。`
+      + `\n\n⇒ 请**刷新页面**（Ctrl+R），然后重做这次修改。`
+      + `\n\n⚠️ 这次**没有写入任何东西**，${what}还是原来的样子。`,
+  };
+}
+
 function staleConflict(expected: string | null | undefined, actual: string | null | undefined, what: string) {
   if (!expected || expected === actual) return null;
   return {
@@ -759,6 +788,11 @@ app.put("/api/products/:slug", async (c) => {
     if (env0.mustCreate && f.exists) {
       return c.json({ wrote: false, error: "slug 已被占用", detail: `${f.path} 已经存在。换一个 slug，或去编辑那个已有的产品。` }, 409);
     }
+
+    // 🔴 缺锁就拒：文件已经存在却没带版本号 ⇒ 这是个旧页面，⛔ 不许放行。
+    //    ⚠️ **新建**天然没有版本号（文件还不存在）⇒ 只在 `f.exists` 时要求它，
+    //       否则会把"新建产品"整条路堵死。
+    if (f.exists && !env0.expectedSha) return c.json(missingLock("这个产品"), 428);
 
     // 🔴 乐观锁：在**合并与写入之前**判。⛔ 不能放到 commitFiles 那一步 —— 那时图片可能已经处理过了。
     const conflict = staleConflict(env0.expectedSha, f.sha, "这个产品");
@@ -899,6 +933,7 @@ app.delete("/api/products/:slug", async (c) => {
     // 🔴 删除也要过乐观锁：⛔ 删掉一个"别人刚改过"的产品，改动连同文件一起没了，
     //    而删除是**不可逆**的 —— 这一条比保存更需要它。
     const delExpected = c.req.query("expectedSha") || undefined;
+    if (!delExpected) return c.json(missingLock("这个产品"), 428);
     const delConflict = staleConflict(delExpected, f.sha, "这个产品");
     if (delConflict) return c.json(delConflict, 409);
 
