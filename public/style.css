@@ -137,7 +137,6 @@
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
-
 * { box-sizing: border-box; }
 
 /* 🔴 全局兜底：`hidden` 属性必须真的隐藏（A10-R3-a，实测出来的 bug）。
@@ -631,8 +630,6 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
 #bulkCat { font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 
-
-
 /* ═══ A9 编辑页：卡片分组 + sticky 保存条 + 宽屏双栏 ═══
    照 admin.wanew.com 的做法（实测其结构：card + <h3> 分组、edit-bar position:sticky）。
    Joe 的原话是「整页是一根裸的纵向表单」—— 缺的正是这三样。 */
@@ -928,11 +925,6 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 .featrow.is-bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 .featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
 .feattext { flex: 1 1 auto; min-width: 0; }
-.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
-.featadd select {
-  font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); max-width: 100%;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary);
-}
 
 /* ══ 首页精选产品：卡片网格（Joe 2026-08-27「像官网一样可视化」）══
    🔴 **4 列不是随便挑的**：官网首页就是 4 列 ⇒ 后台看到的排列 == 首页看到的排列，
@@ -1002,8 +994,36 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 @media (hover: none) {
   .featdel { opacity: 1; pointer-events: auto; }
 }
-.featadd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); margin-top: var(--space-12); }
-.featadd select {
-  font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); max-width: 100%;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary);
+
+/* ══ 「加一个产品」选择器 —— 与上面那排精选卡同一套视觉 ══ */
+.featadd { margin-top: var(--space-16); }
+.featadd-head { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-8); }
+
+/* 🔴 与 `.card-featured .featgrid` **同一套断点**：后台看到的排列 == 首页看到的排列。
+   ⛔ 别为选择器另立一套列数 —— 那会让同一批产品在两处排得不一样。 */
+.featpickgrid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-8);
+  /* 🔴 产品变多时**纵向滚动**，⛔ 绝不横向 ——
+     这次改动的直接目的就是消灭那条被超长产品名拉出来的横滚。 */
+  max-height: 320px; overflow-y: auto; overflow-x: hidden;
+  padding: var(--space-4); margin: 0 calc(-1 * var(--space-4));
 }
+@media (max-width: 1100px) { .featpickgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px)  { .featpickgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .featpickgrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 每一项是原生 `<button>` ⇒ 天然可聚焦、Enter/空格可激活。
+   ⛔ 不用 div + tabindex 自己发明一套键盘处理。 */
+.featpick {
+  display: flex; flex-direction: column; gap: var(--space-6);
+  padding: var(--space-8); min-width: 0; text-align: left; font: inherit;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
+  cursor: pointer;
+}
+.featpick:hover { border-color: var(--border-accent); background: var(--bg-selected); }
+/* 键盘走到它时必须看得出来 —— ⛔ 别只靠 hover，那是鼠标才有的 */
+.featpick:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.featpick .featmodel { color: var(--text-accent); }
+/* ⛔ 这里原来有一份 `.featadd` + `.featadd select`，**而且一模一样的两份**（931 与 1005 行）。
+   `<select>` 已被可视化选择器替掉 ⇒ 那两条选择器规则成了死代码，一并删。
+   📌 本仓前例：`.topbar` 那条死规则躺了很久，一加顶栏当场复活并覆盖了 padding。**用不上就删。** */

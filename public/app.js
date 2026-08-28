@@ -2094,18 +2094,13 @@ function renderFeatured(form) {
     const cardEl = el("div", "featcard" + (bad ? " is-bad" : ""));
     cardEl.draggable = true;
 
-    const t = el("div", "thumb featthumb");
     // 🔴 坏条目**没有图也没有型号** ⇒ 必须有一个明确的"坏卡"样子，
     //    ⛔ 绝不因为取不到图就静默跳过它 —— 那样他永远不知道列表里有坏的。
-    setThumb(t, st?.image ? rawUrl(st.image) : null, st?.name || slug);
-    cardEl.append(t);
-    cardEl.append(el("span", "featno", String(i + 1)));
-
-    const body = el("div", "featbody");
     // 型号**醒目**（Joe 点名要的），取自真源 model 字段 —— ⛔ 不是从标题里截的
-    body.append(el("div", "featmodel", st?.model || (bad ? "—" : "（无型号）")));
-    body.append(el("div", "feattitle", st?.name || slug));
-    cardEl.append(body);
+    const v = featVisual(st, slug, { bad });
+    cardEl.append(v.thumb);
+    cardEl.append(el("span", "featno", String(i + 1)));
+    cardEl.append(v.body);
 
     if (bad) {
       // 🔴 分得清是哪一种：「不存在」与「已下架」的修法完全不同
@@ -2147,20 +2142,59 @@ function renderFeatured(form) {
 
   // 添加：**只列已上架、且还没在列表里的**
   const pool = (f?.["选得到的"] || []).filter((p) => !list.includes(p.slug));
+  // ── 「加一个产品」：与上面那排卡**同一套视觉**（Joe 2026-08-28）──
+  //
+  // ⚠️ 原来是原生 `<select>`，只显示得了纯文本，而最长那条产品名是：
+  //    `AK34 · AK34-18 in 1 Air Quality Monitor Indoor,15D & 24H History, 7" TFT CO2 …`
+  //    —— 一行拉得比屏幕还宽。⇒ 改成缩略图 + 型号 + 标题。
+  //
+  // 🔴 复用两样东西，⛔ 都不另起炉灶：
+  //    ① 渲染走 `featVisual()` —— 与精选卡**同一处代码**
+  //    ② 查找走上面那张 `byStatus` —— **同一张表**（它已经同时盖住"已保存的"和"可选的"两种来源）
+  //
+  // 🔴 每一项是 `<button>`，不是 div：原生按钮**天然可聚焦、Enter/空格可激活** ——
+  //    换掉原生 select 最容易丢的就是键盘可达，用按钮就不用自己发明一套 tabindex/keydown。
   const add = el("div", "featadd");
-  const sel = el("select");
-  sel.append(new Option(`＋ 加一个产品（可选 ${pool.length} 个）`, ""));
-  pool.forEach((p) => sel.append(new Option(`${p.model ? p.model + " · " : ""}${p.name || p.slug}`, p.slug)));
-  sel.onchange = () => {
-    const v = sel.value; if (!v) return;
-    state.siteDraft.home.featuredSlugs = [...list, v];
-    renderSite(true);
-  };
-  add.append(sel);
+  add.append(el("div", "featadd-head", `＋ 加一个产品（可选 ${pool.length} 个）`));
+  if (!pool.length) {
+    add.append(appendMd(el("span", "hint"), "**已上架的产品都已经在精选里了。**"));
+  } else {
+    const grid = el("div", "featpickgrid");
+    pool.forEach((p) => {
+      const st = byStatus.get(p.slug);          // 🔴 同一张表
+      const b = el("button", "featpick"); b.type = "button";
+      const v = featVisual(st, p.slug);         // 🔴 同一处渲染
+      b.append(v.thumb); b.append(v.body);
+      b.title = `加入首页精选：${st?.name || p.slug}`;
+      b.onclick = () => {
+        state.siteDraft.home.featuredSlugs = [...list, p.slug];
+        renderSite(true);
+      };
+      grid.append(b);
+    });
+    add.append(grid);
+  }
   add.append(appendMd(el("span", "hint"),
     "⚠️ 只列**已上架**的产品：未上架的在官网上没有那一页，选了首页那张卡会渲染不出来。"));
   card.append(add);
   form.append(card);
+}
+
+/**
+ * 缩略图 + 型号 + 标题 —— **精选卡与「加一个产品」选择器共用这一处**。
+ *
+ * 🔴 ⛔ 别在选择器里再抄一遍这三行：抄一份，就一定会有一天两边长得不一样
+ *    （A14 整单就是在收这种"同一个东西两种写法"）。
+ * ⚠️ `bad` 只影响型号那一格的占位符：坏条目显示「—」，正常但缺型号显示「（无型号）」——
+ *    这两种缺失不是一回事，⛔ 不许混成同一个样子。
+ */
+function featVisual(st, slug, opts = {}) {
+  const thumb = el("div", "thumb featthumb");
+  setThumb(thumb, st?.image ? rawUrl(st.image) : null, st?.name || slug);
+  const body = el("div", "featbody");
+  body.append(el("div", "featmodel", st?.model || (opts.bad ? "—" : "（无型号）")));
+  body.append(el("div", "feattitle", st?.name || slug));
+  return { thumb, body };
 }
 
 /** 换序。⚠️ 单独一个函数，是为了拖拽之外也调得到（自检、将来的键盘操作）。 */
