@@ -1051,6 +1051,54 @@ function imgListFromDraft(p) {
   return out;
 }
 
+/**
+ * 图片这一块**除了增删，还要说清封面和顺序**。
+ *
+ * 🔴 病根：`imageOps` 数的是**文件增删**，而换封面/拖顺序一个文件都不动 ——
+ *    它只改 JSON 里的 `images.main` / `images.gallery`。
+ *    于是拖完封面，面板写「图片 **无改动**」。
+ * ⚠️ 那句话**在它自己的口径下是真的**（确实没有文件增删），**在读者的口径下是假的**
+ *    （他刚把封面换了，屏幕告诉他图片没变）。
+ *    ⇒ 与今天修过的同族：「逐字节相同」在只换图时、「什么都不会改」在有图片操作时 ——
+ *      **一句只在自己口径下为真的话，就是假话。**
+ *
+ * ⛔ 判据不落在 `imageOps` 上（它天然看不见这件事），落在**列表本身**：
+ *    仓里的 `[main, ...gallery]` ↔ 编辑器里的 `state.imgList`。
+ *
+ * @returns {{cover: null|{gone:true}|{from:string,to:string}, reordered:boolean} | null}
+ *          新建时返回 null —— 那时"全都是新增"，说"换封面"没有意义。
+ */
+function describeImageMoves() {
+  if (state.isNew) return null;
+  const old = state.loaded?.product?.images;
+  if (!old) return null;
+  const oldList = [old.main, ...(old.gallery || [])].filter(Boolean);
+  const list = state.imgList || [];
+  const base = (p) => String(p).split("/").pop();
+
+  // ── 封面 ──
+  let cover = null;
+  const oldCover = oldList[0] ?? null;
+  const first = list[0];
+  if (oldCover && !first) cover = { gone: true };
+  else if (oldCover && first) {
+    // 新上传的那张此刻还没有路径（服务端算），所以只能按"这次新上传的"来称呼它。
+    if (first.kind === "new") cover = { from: base(oldCover), to: "这次新上传的那张" };
+    else if (first.path !== oldCover) cover = { from: base(oldCover), to: base(first.path) };
+  }
+  // ⚠️ 原来一张图都没有 ⇒ 现在有了，那是**新增**不是"换封面"，`imageOps` 已经说过了。
+
+  // ── 顺序：只比**两边都还在**的老图的相对次序 ──
+  // ⚠️ 这样：纯删除不算换序（剩下的相对次序没变）；
+  //    中间插一张新图也不算（老图彼此的次序没变）。
+  const keptNew = list.filter((it) => it.kind === "have").map((it) => it.path);
+  const keptSet = new Set(keptNew);
+  const keptOld = oldList.filter((p) => keptSet.has(p));
+  const reordered = keptNew.length === keptOld.length && keptNew.some((p, i) => p !== keptOld[i]);
+
+  return { cover, reordered };
+}
+
 function renderImages() {
   // 图片增删改后同步刷新 sticky 条的计数（这里是所有图片变化的汇合点）
   const box = $("#imgList");
@@ -1529,6 +1577,10 @@ function renderPreview(r) {
 
     li(`数据文件 **1 个**`);
 
+    // 🔴 图片这一块是**两件事**，读者分得清，所以面板也要分开说：
+    //    ① 文件增删（`imageOps` 看得见）  ② 封面/顺序（只在 JSON 里，`imageOps` 看不见）
+    // ⛔ 「无改动」只有在**两件都没有**时才许说 —— 见 describeImageMoves() 的病根注释。
+    const moves = describeImageMoves();
     if (r.imageOps?.length) {
       // ⚠️ 这个数必须留着，而且要与真实 imageOps 长度**相等** —— 不是"约"、不是取整。
       const n = r.imageOps.length;
@@ -1541,9 +1593,16 @@ function renderPreview(r) {
       if (dels) bits.push(`${dels} 张会被删除`);
       if (bits.length) t += ` —— ${bits.join("；")}`;
       li(t);
-    } else {
-      li("图片 **无改动**");
     }
+    if (moves?.cover?.gone) {
+      li("封面 **被删除** —— 这个产品将一张图都没有");
+    } else if (moves?.cover) {
+      li(`封面 **从「${moves.cover.from}」换成「${moves.cover.to}」**`);
+    }
+    // ⚠️ 换封面本身就是一次换序 ⇒ 封面已经点名时**不再重复说"顺序有调整"**（两句都真，但后一句是废话）。
+    //    ⛔ 所以顺序这一条只在"封面没变"时出现 —— 那正是 Joe 只拖了后面几张的情形。
+    if (moves?.reordered && !moves?.cover) li("图片**顺序有调整**（封面没变）");
+    if (!r.imageOps?.length && !moves?.cover && !moves?.reordered) li("图片 **无改动**");
 
     li("这次保存会产生一次 commit 并触发 airsonde.com 重建，**约 1 分钟后站上可见**");
     sum.append(ul);
