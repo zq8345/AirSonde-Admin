@@ -1,0 +1,32 @@
+{
+  "slug": "zz-race-b",
+  "name": "ZZ Race Fixture B",
+  "model": "ZZ-RACE-B0",
+  "category": "desktop",
+  "sensors": [
+    "CO2",
+    "PM2.5",
+    "PM10",
+    "HCHO",
+    "TVOC",
+    "temperature",
+    "humidity"
+  ],
+  "highlights": [
+    "7-inch TFT display",
+    "USB-C powered"
+  ],
+  "specs": {
+    "display": "7-inch TFT",
+    "power": "USB-C / built-in battery",
+    "connectivity": "Wi-Fi + mobile app"
+  },
+  "moq": 1000,
+  "images": {
+    "main": "products/fixture-desktop-16in1.webp",
+    "gallery": [
+      "products/fixture-desktop-16in1-1.webp"
+    ]
+  },
+  "status": "published"
+}
