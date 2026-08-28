@@ -687,6 +687,16 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
   border: 0; border-radius: 50%; background: var(--scrim-weak); color: var(--on-accent); cursor: pointer; font-size: 13px;
 }
 .idel:hover { background: var(--bg-critical); }
+/* 待上传图的两行说明：实际尺寸 / 实际画质。
+   ⚠️ 与 `.itag` 同一族排版（等宽、10.5px、单行省略）—— ⛔ 不另起一套字号。 */
+.imeta, .iq {
+  display: block; margin-top: var(--space-2); font-family: var(--mono); font-size: 10.5px;
+  color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ishrunk { color: var(--text-caution); }
+/* 🔴 画质被压到 ≤55% 必须显眼 —— 那是"为了压进 2MB 牺牲了画质"。
+   ⛔ 与正常画质长得一样 = 等于没显示。 */
+.iq.is-low { color: var(--text-caution); font-weight: 600; }
 .itag {
   display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 10.5px; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

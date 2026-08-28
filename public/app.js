@@ -970,7 +970,9 @@ async function toWebp(file) {
   for (const q of [0.85, 0.7, 0.55, 0.4]) {
     const blob = await new Promise((r) => cv.toBlob(r, "image/webp", q));
     if (!blob) throw new Error("这个浏览器的 canvas 导不出 WebP。");
-    if (blob.size <= MAX_UPLOAD) return { blob, quality: q, w: cv.width, h: cv.height };
+    // 🔴 `ow/oh` = **原图**尺寸，纯增量返回，⛔ 不参与任何计算 ——
+    //    它只用来在卡片上说清"已从 W×H 缩到 …"。⛔ blob 的字节由 scale 与 q 决定，这两个字段碰不到它。
+    if (blob.size <= MAX_UPLOAD) return { blob, quality: q, w: cv.width, h: cv.height, ow: bmp.width, oh: bmp.height };
   }
   throw new Error("图片降到最低画质仍超过 2MB，请先自行压缩。");
 }
@@ -1073,9 +1075,31 @@ function renderImages() {
     };
     card.append(del);
 
-    card.append(el("span", "itag", it.kind === "new"
-      ? `待上传 ${(it.size / 1024).toFixed(0)}KB`
-      : it.path.split("/").pop()));
+    // ── 待上传的图：把**上传时实际做了什么**摆出来（Joe 2026-08-28 批）──
+    //
+    // 🔴 ⛔ 这里**没有改变任何图片处理行为**：`toWebp()` 的三个数（1600 / 质量阶梯 / 2MB）
+    //    一个字没动。这些值本来就已经算出来、存在 `imgList` 里了 —— **只是从来没画到屏幕上。**
+    // ⚠️ 他要知道的是"我这张图被动过什么"，⛔ 不是压缩算法 ⇒ 只说尺寸与画质两件事。
+    if (it.kind === "new") {
+      card.append(el("span", "itag", `待上传 ${(it.size / 1024).toFixed(0)}KB`));
+      const meta = el("span", "imeta", `${it.w}×${it.h}`);
+      // 🔴 被缩过必须说明从多大缩来 —— ⛔ 只报结果尺寸，他看不出原图被动过
+      if (it.ow && it.oh && (it.ow !== it.w || it.oh !== it.h)) {
+        meta.append(el("span", "ishrunk", `（已从 ${it.ow}×${it.oh} 缩小）`));
+      }
+      card.append(meta);
+      // 🔴 画质 ≤55% = 为了压进 2MB **牺牲了画质** ⇒ 让他当场知道、当场决定换不换图，
+      //    ⛔ 不是等哪天在官网上看出来再反推。
+      const low = it.quality <= 0.55;
+      const q = el("span", "iq" + (low ? " is-low" : ""), `画质 ${Math.round(it.quality * 100)}%`);
+      q.title = low
+        ? `为了压进 ${(MAX_UPLOAD / 1024 / 1024).toFixed(0)}MB，这张图被压到了 ${Math.round(it.quality * 100)}%。`
+          + `不满意的话，请先自行压缩、或换一张更小的再传。`
+        : `按 ${Math.round(it.quality * 100)}% 导出，未触发降质。`;
+      card.append(q);
+    } else {
+      card.append(el("span", "itag", it.path.split("/").pop()));
+    }
 
     // ── 拖拽换位 ──
     card.addEventListener("dragstart", (e) => {
@@ -1133,10 +1157,10 @@ async function addImageFiles(files) {
   setTip(`0/${arr.length}`);
   try {
     for (let k = 0; k < arr.length; k++) {
-      const { blob, quality, w, h } = await toWebp(arr[k]);
+      const { blob, quality, w, h, ow, oh } = await toWebp(arr[k]);
       state.imgList.push({
         kind: "new", base64: await blobToBase64(blob),
-        url: URL.createObjectURL(blob), size: blob.size, quality, w, h,
+        url: URL.createObjectURL(blob), size: blob.size, quality, w, h, ow, oh,
       });
       setTip(`${k + 1}/${arr.length}`);
       renderImages();
