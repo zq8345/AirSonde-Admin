@@ -211,7 +211,7 @@ body {
    我的 padding / justify-content。删掉。
    —— 这就是"同名重定义会静默继承"那一类：写的人以为自己在控制，真正生效的是后面那条。
    同时删掉 `.brand` / `.brand span`：字标已搬进顶栏，它们跟着失效。 */
-.who { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); text-align: right; }
+.who { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); text-align: right; }
 .who b { color: var(--text-primary); font-weight: 600; }
 
 .layout {
@@ -246,9 +246,9 @@ body {
 .list button.is-on { background: var(--bg-selected); }
 .list .li-top { display: flex; justify-content: space-between; gap: var(--space-8); align-items: baseline; }
 .list .li-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list .li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list .li-sub { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.badge { flex: 0 0 auto; font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; font-family: var(--mono); }
+.badge { flex: 0 0 auto; font-size: 11px; padding: var(--space-1) var(--space-6); border-radius: 999px; font-family: var(--mono); }
 .badge-published { background: var(--bg-success-soft); color: var(--text-success); }
 .badge-draft { background: var(--bg-caution-soft); color: var(--text-caution); }
 .badge-unknown { background: var(--bg-app); color: var(--text-secondary); }
@@ -263,7 +263,7 @@ body {
 
 .detail-head { display: flex; justify-content: space-between; gap: var(--space-16); align-items: flex-start; flex-wrap: wrap; }
 .detail-head h2 { margin: 0 0 var(--space-2); font-size: 17px; }
-.path { font-family: var(--mono); font-size: 11.5px; }
+.path { font-family: var(--mono); font-size: 12px; }
 
 .tabs { display: flex; gap: var(--space-2); background: var(--bg-app); padding: var(--space-2); border-radius: 6px; }
 .tab { padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
@@ -279,15 +279,15 @@ body {
 .issue-error { background: var(--bg-critical-soft); color: var(--text-critical); border-color: color-mix(in srgb, var(--border-critical) 25%, transparent); }
 .issue-warn { background: var(--bg-caution-soft); color: var(--text-caution); border-color: color-mix(in srgb, var(--border-caution) 25%, transparent); }
 .issue-ok { background: var(--bg-success-soft); color: var(--text-success); }
-.issue-field { font-family: var(--mono); font-size: 11.5px; flex: 0 0 auto; opacity: .85; }
+.issue-field { font-family: var(--mono); font-size: 12px; flex: 0 0 auto; opacity: .85; }
 
 /* ── 详情视图 ── */
-.kvtable { width: 100%; border-collapse: collapse; margin-top: var(--space-16); font-size: 13.5px; }
+.kvtable { width: 100%; border-collapse: collapse; margin-top: var(--space-16); font-size: 14px; }
 .kvtable th, .kvtable td { text-align: left; vertical-align: top; padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); }
 .kvtable th { width: 150px; font-weight: 550; color: var(--text-secondary); font-family: var(--mono); font-size: 12px; }
-.kvtable td code { font-family: var(--mono); font-size: 12.5px; }
+.kvtable td code { font-family: var(--mono); font-size: 13px; }
 .taglist { display: flex; flex-wrap: wrap; gap: var(--space-4); }
-.tag { background: var(--bg-app); border: 1px solid var(--border); border-radius: 4px; padding: var(--space-1) var(--space-8); font-family: var(--mono); font-size: 11.5px; }
+.tag { background: var(--bg-app); border: 1px solid var(--border); border-radius: 4px; padding: var(--space-1) var(--space-8); font-family: var(--mono); font-size: 12px; }
 .internal-row td, .internal-row th { background: var(--bg-critical-soft); }
 
 /* ── 表单 ── */
@@ -295,11 +295,11 @@ form { margin-top: var(--space-16); }
 .field { margin: 0 0 var(--field-gap); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); }
 @media (max-width: 620px) { .row2 { grid-template-columns: 1fr; } }
-label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: var(--space-4); }
-.req { color: var(--text-critical); font-size: 10.5px; font-weight: 600; margin-left: var(--space-4); }
-.internal { color: var(--text-critical); background: var(--bg-critical-soft); font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
+label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-4); }
+.req { color: var(--text-critical); font-size: 11px; font-weight: 600; margin-left: var(--space-4); }
+.internal { color: var(--text-critical); background: var(--bg-critical-soft); font-size: 11px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
 input, select, textarea {
-  width: 100%; padding: var(--space-8) var(--space-8); font: inherit; font-size: 13.5px;
+  width: 100%; padding: var(--space-8) var(--space-8); font: inherit; font-size: 14px;
   background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
 }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--border-focus); outline-offset: -1px; }
@@ -309,7 +309,7 @@ input.bad, select.bad { border-color: var(--border-critical); background: var(--
 .field-internal { border-left: 3px solid var(--border-critical); padding-left: var(--space-12); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-6); }
-.chip { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 12.5px; font-family: var(--mono); background: var(--bg-app); }
+.chip { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 13px; font-family: var(--mono); background: var(--bg-app); }
 .chip input { width: auto; margin: 0; }
 .chip:has(input:checked) { background: var(--bg-selected); border-color: var(--border-accent); color: var(--text-accent); }
 
@@ -318,7 +318,7 @@ input.bad, select.bad { border-color: var(--border-critical); background: var(--
 .kv-row .k { flex: 0 0 32%; }
 .del-row { flex: 0 0 auto; width: 30px; padding: 0; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; font-size: 15px; line-height: 1; }
 .del-row:hover { color: var(--text-critical); border-color: var(--border-critical); }
-.add { margin-top: var(--space-6); padding: var(--space-4) var(--space-12); font: inherit; font-size: 12.5px; background: var(--bg-app); border: 1px dashed var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; }
+.add { margin-top: var(--space-6); padding: var(--space-4) var(--space-12); font: inherit; font-size: 13px; background: var(--bg-app); border: 1px dashed var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; }
 .add:hover { color: var(--text-accent); border-color: var(--border-accent); }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; margin-top: var(--space-20); padding-top: var(--space-16); border-top: 1px solid var(--border); }
@@ -383,21 +383,21 @@ button:disabled, [disabled] {
 /* height 定死、width:auto ⇒ 比例由图自己决定，我不去算宽度（算错就变形）。
    max-width 是安全绳：万一将来换了更宽的字标，它会缩而不是把侧栏顶破。 */
 .brand-logo { height: 32px; width: auto; max-width: 100%; display: block; }
-.nav-sec { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); padding: var(--space-12) var(--space-8) var(--space-4); }
+.nav-sec { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-secondary); padding: var(--space-12) var(--space-8) var(--space-4); }
 .nav-item {
   display: flex; align-items: center; gap: var(--space-6); width: 100%; text-align: left;
   padding: var(--space-6) var(--space-8); border: 0; border-radius: 6px; background: none; color: var(--text-primary);
-  font: inherit; font-size: 13.5px; cursor: pointer; text-decoration: none;
+  font: inherit; font-size: 14px; cursor: pointer; text-decoration: none;
 }
 .nav-item:hover { background: var(--bg-app); }
 .nav-item.is-on { background: var(--bg-selected); color: var(--text-accent); font-weight: 550; }
 /* ⛔ SOON 项不可点：光变灰不够，还要 cursor:default，否则手会去点 */
 .nav-item.soon { color: var(--text-secondary); cursor: default; }
 .nav-item.soon:hover { background: none; }
-.soon-tag { font-size: 9.5px; letter-spacing: .06em; padding: var(--space-1) var(--space-4); border-radius: 999px; background: var(--bg-app); border: 1px solid var(--border); color: var(--text-secondary); }
+.soon-tag { font-size: 10px; letter-spacing: .06em; padding: var(--space-1) var(--space-4); border-radius: 999px; background: var(--bg-app); border: 1px solid var(--border); color: var(--text-secondary); }
 .nav-item .cnt { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-secondary); }
 .nav-item .ext { margin-left: auto; color: var(--text-secondary); font-size: 11px; }
-.nav-foot { margin-top: auto; padding: var(--space-12) var(--space-8) 0; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 10.5px; color: var(--text-secondary); word-break: break-all; }
+.nav-foot { margin-top: auto; padding: var(--space-12) var(--space-8) 0; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text-secondary); word-break: break-all; }
 .nav-foot b { color: var(--text-primary); font-weight: 600; }
 /* 登出：挨着"当前是谁"，换人这件事在同一个地方看和做。
    ⚠️ 字号不跟 .nav-foot 的 10.5px —— 那是给身份串用的等宽小字，
@@ -451,14 +451,14 @@ button:disabled, [disabled] {
    ⇒ **一个撤销动作被渲染成与批量操作同等权重**，而且是同一个类名渲染出两种控件。
    这条规则想说的从来是"批量条里那几个**操作按钮**长这样"，不是"里面所有 button"。
    ⇒ 写准之后 `.linkish` 全站只剩一种长相，撤销动作也回到它该有的分量。 */
-.batchbar button:not(.linkish) { padding: var(--space-4) var(--space-12); font: inherit; font-size: 12.5px; cursor: pointer;
+.batchbar button:not(.linkish) { padding: var(--space-4) var(--space-12); font: inherit; font-size: 13px; cursor: pointer;
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); }
 .batchbar button:hover { border-color: var(--border-accent); color: var(--text-accent); }
-.batch-note { margin-left: auto; font-size: 11.5px; color: var(--text-secondary); }
+.batch-note { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
 
 .table-wrap { overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
-.ptable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.ptable th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ptable th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); white-space: nowrap; }
 .ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--border); vertical-align: middle; }
 .ptable tr:last-child td { border-bottom: 0; }
 .ptable tbody tr:hover { background: var(--bg-app); }
@@ -501,9 +501,9 @@ button:disabled, [disabled] {
 /* 标题链官网：默认不加下划线（一行里已经有够多的视觉噪音），hover 才提示可点 */
 .ttl-link { color: inherit; text-decoration: none; }
 .ttl-link:hover { color: var(--text-link); text-decoration: underline; }
-.li-sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); }
+.li-sub { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
 .li-sub.bad { color: var(--text-critical); }
-.flag-bad { font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px; background: var(--bg-critical-soft); color: var(--text-critical); }
+.flag-bad { font-size: 11px; padding: var(--space-1) var(--space-6); border-radius: 999px; background: var(--bg-critical-soft); color: var(--text-critical); }
 /* ⛔ `.flag-warn` 已删（黄色「N 提示」角标撤掉，2026-08-26）。
    留一条没人用的规则不是"以防万一"，是给下一个人埋雷：`.topbar` 那条死规则在这个仓里
    躺了很久，我一加顶栏它当场复活并覆盖了我的 padding。用不上就删。 */
@@ -527,7 +527,7 @@ button:disabled, [disabled] {
       列表缩略图还要承担"一眼看出这张图有问题"的职责，40px 做不到。 */
 .thumb-sm { width: 64px; height: 64px; border-radius: 5px; }
 .thumb-empty { color: var(--text-secondary); font-size: 12px; }
-.filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 12.5px; font-weight: 500; cursor: pointer;
+.filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 13px; font-weight: 500; cursor: pointer;
   background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); margin: 0 0 var(--space-6); }
 .filebtn:hover { border-color: var(--border-accent); color: var(--text-accent); }
 .gallery { display: flex; flex-wrap: wrap; gap: var(--space-8); }
@@ -537,7 +537,7 @@ button:disabled, [disabled] {
   border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; line-height: 1; font-size: 14px; }
 .gcard .gdel:hover { color: var(--text-critical); border-color: var(--border-critical); }
 .gcard.is-removed .thumb { opacity: .35; filter: grayscale(1); }
-.gcard .gtag { display: block; font-size: 10.5px; color: var(--text-secondary); text-align: center; margin-top: var(--space-4);
+.gcard .gtag { display: block; font-size: 11px; color: var(--text-secondary); text-align: center; margin-top: var(--space-4);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 .gcard.is-new .gtag { color: var(--text-success); }
 button.danger { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
@@ -546,7 +546,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .commit-bar { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; padding: var(--space-12); border-top: 1px solid var(--border); background: var(--bg-app); }
 .commit-bar .actions-note { font-size: 12px; color: var(--text-secondary); }
 .notice a { color: inherit; }
-.notice { padding: var(--space-8) var(--space-12); font-size: 12.5px; }
+.notice { padding: var(--space-8) var(--space-12); font-size: 13px; }
 .notice-ok { background: var(--bg-success-soft); color: var(--text-success); }
 .notice-warn { background: var(--bg-caution-soft); color: var(--text-caution); }
 .notice-bad { background: var(--bg-critical-soft); color: var(--text-critical); }
@@ -583,19 +583,19 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .sumitem { display: flex; flex-direction: column; gap: var(--space-4); }
 /* 摘要里的徽章要比行内的大一档 —— 它是这一页的结论，不是行末的注脚 */
 .sumbar .badge { font-size: 12px; padding: var(--space-4) var(--space-8); }
-.sumlabel { font-size: 10.5px; color: var(--text-secondary); letter-spacing: .02em; }
+.sumlabel { font-size: 11px; color: var(--text-secondary); letter-spacing: .02em; }
 .srow { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-16); padding: var(--space-8) 0; border-bottom: 1px solid var(--border); }
 .srow:last-child { border-bottom: 0; }
-.sk { color: var(--text-secondary); font-size: 12.5px; flex: 0 0 auto; }
+.sk { color: var(--text-secondary); font-size: 13px; flex: 0 0 auto; }
 /* ── C：值加重、说明降权 ──
    实测改前：值 13px/400/rgb(26,29,33)，说明 11.5px/400/rgb(107,114,128) ——
    **只差 1.5px、粗细一模一样**，而说明占了约 70% 的面积 ⇒ 值根本跳不出来。
    ⛔ 说明只降权**不删**：这一页的说明质量很高（尤其「Access 名单本后台看不见」
       那段讲清了为什么看不见、以及对账办法），删了就把这一页最值钱的东西删了。 */
-.sv { text-align: right; font-size: 13.5px; font-weight: 600; word-break: break-word; display: flex; flex-wrap: wrap; gap: var(--space-6); justify-content: flex-end; align-items: center; }
+.sv { text-align: right; font-size: 14px; font-weight: 600; word-break: break-word; display: flex; flex-wrap: wrap; gap: var(--space-6); justify-content: flex-end; align-items: center; }
 .sv code { font-family: var(--mono); font-size: 12px; }
 .sv-list { display: flex; flex-wrap: wrap; gap: var(--space-4); justify-content: flex-end; }
-.sv-list .chip { font-family: var(--mono); font-size: 11.5px; }
+.sv-list .chip { font-family: var(--mono); font-size: 12px; }
 /* 说明句：默认在的，不是 hover 才出现的 —— 这一页的每一行都需要"为什么" */
 /* ⚠️ 这里原来还有 `opacity: .92`（我在设置页那批里加的"降权"手法）。**删掉。**
    用 opacity 压文字是把对比度悄悄拉低：色值上算是 8.12:1，实际上屏只有 6.51:1，
@@ -609,7 +609,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .shint code { font-family: var(--mono); font-size: 11px; }
 
 /* 分类页脚注。列表比一整段话读得快。 */
-.catnote { margin: var(--space-12) 0 0; padding-left: var(--space-20); font-size: 12.5px; color: var(--text-secondary); line-height: 1.8; }
+.catnote { margin: var(--space-12) 0 0; padding-left: var(--space-20); font-size: 13px; color: var(--text-secondary); line-height: 1.8; }
 .catnote b { color: var(--text-primary); }
 
 /* 两个轴并排。⚠️ minmax(0,1fr) 而不是 1fr：1fr 的最小尺寸是 auto，表格里一个长取值
@@ -635,7 +635,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    Joe 的原话是「整页是一根裸的纵向表单」—— 缺的正是这三样。 */
 .card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--card-padding); margin: 0 0 var(--section-gap); }
 .card > h3 { margin: 0 0 var(--space-12); font-size: 13px; font-weight: 650; display: flex; align-items: baseline; gap: var(--space-8); padding-bottom: var(--space-8); border-bottom: 1px solid var(--border); }
-.card > h3 .h3sub { font-weight: 400; font-size: 11.5px; color: var(--text-secondary); }
+.card > h3 .h3sub { font-weight: 400; font-size: 12px; color: var(--text-secondary); }
 /* 内部字段那张卡整体压红边 —— 它承载的是绝不能上站的东西 */
 .card-internal { border-color: color-mix(in srgb, var(--border-critical) 45%, var(--border)); }
 .card-internal > h3 { color: var(--text-critical); }
@@ -679,7 +679,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .icard.is-over { box-shadow: -3px 0 0 var(--shadow-accent); border-color: var(--border-accent); }
 .icover {
   position: absolute; top: 10px; left: 10px; z-index: 2;
-  background: var(--bg-accent); color: var(--on-accent); font-size: 10.5px; font-weight: 600;
+  background: var(--bg-accent); color: var(--on-accent); font-size: 11px; font-weight: 600;
   padding: var(--space-2) var(--space-8); border-radius: 999px; letter-spacing: .02em;
 }
 .idel {
@@ -690,7 +690,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 /* 待上传图的两行说明：实际尺寸 / 实际画质。
    ⚠️ 与 `.itag` 同一族排版（等宽、10.5px、单行省略）—— ⛔ 不另起一套字号。 */
 .imeta, .iq {
-  display: block; margin-top: var(--space-2); font-family: var(--mono); font-size: 10.5px;
+  display: block; margin-top: var(--space-2); font-family: var(--mono); font-size: 11px;
   color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ishrunk { color: var(--text-caution); }
@@ -698,7 +698,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    ⛔ 与正常画质长得一样 = 等于没显示。 */
 .iq.is-low { color: var(--text-caution); font-weight: 600; }
 .itag {
-  display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 10.5px; color: var(--text-secondary);
+  display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 11px; color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* A12-5：添加入口 = 网格里的最后一格，尺寸与缩略图一致，就一个「＋」。
@@ -749,7 +749,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .editbar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12);
   padding: var(--space-12) var(--space-16); margin: 0 0 var(--space-16); background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: 0 2px 6px var(--shadow-sm); }
-.editbar .dirty { font-size: 12.5px; color: var(--text-secondary); }
+.editbar .dirty { font-size: 13px; color: var(--text-secondary); }
 .editbar .dirty b { color: var(--text-accent); }
 .editbar .spacer { margin-left: auto; }
 .card .field:last-child { margin-bottom: 0; }
@@ -816,13 +816,13 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
   border-radius: var(--radius); font-size: 13px; }
 .pv-title { font-size: 24px; margin: var(--space-20) 0 var(--space-6); line-height: 1.3; }
 .pv-meta { display: flex; gap: var(--space-8); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-4); }
-.pv-cat { font-size: 11.5px; padding: var(--space-2) var(--space-8); border-radius: 999px; background: var(--bg-selected); color: var(--text-accent); }
-.pv-model { font-family: var(--mono); font-size: 12.5px; color: var(--text-secondary); }
+.pv-cat { font-size: 12px; padding: var(--space-2) var(--space-8); border-radius: 999px; background: var(--bg-selected); color: var(--text-accent); }
+.pv-model { font-family: var(--mono); font-size: 13px; color: var(--text-secondary); }
 .pv-sec { margin-top: var(--space-24); }
 .pv-h3 { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: .04em;
   text-transform: uppercase; margin: 0 0 var(--space-8); }
 .pv-list { margin: 0; padding-left: var(--space-20); line-height: 1.8; }
-.pv-specs { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pv-specs { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pv-specs th { text-align: left; font-weight: 500; color: var(--text-secondary); padding: var(--space-8) var(--space-12) var(--space-8) 0;
   border-bottom: 1px solid var(--border); width: 34%; }
 .pv-specs td { padding: var(--space-8) 0; border-bottom: 1px solid var(--border); }
@@ -860,7 +860,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .card-org textarea { background: var(--bg-surface); }
 
 /* 每页一张卡，路径当标题（原来路径是框外一行极小灰字，容易漏） */
-.card-page > h3 { font-family: var(--mono); font-size: 13.5px; }
+.card-page > h3 { font-family: var(--mono); font-size: 14px; }
 .hint-tight { margin-top: calc(-1 * var(--space-4)); }
 
 /* ── 留空时显示"继承来的那一句" ──
@@ -869,12 +869,12 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .inherit {
   margin-top: var(--space-6); padding: var(--space-8) var(--space-12); border-radius: 6px;
   background: var(--bg-app); border: 1px dashed var(--border);
-  font-size: 12.5px; line-height: 1.6;
+  font-size: 13px; line-height: 1.6;
 }
 .inherit-tag {
   display: inline-block; margin-right: var(--space-8); padding: var(--space-1) var(--space-6); border-radius: 999px;
   background: var(--bg-surface); border: 1px solid var(--border);
-  font-size: 10.5px; font-family: var(--mono); color: var(--text-secondary);
+  font-size: 11px; font-family: var(--mono); color: var(--text-secondary);
 }
 .inherit-txt { color: var(--text-primary); }
 
@@ -916,11 +916,11 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
    放不下的收成 `+N` —— N 是**被藏起来的个数**，「…」说不出数量。 */
 .senrow { display: flex; align-items: center; gap: var(--space-4); overflow: hidden; white-space: nowrap; min-width: 0; }
 .senchip {
-  flex: 0 0 auto; font-size: 10.5px; line-height: 1.6; padding: 0 var(--space-6); border-radius: 999px;
+  flex: 0 0 auto; font-size: 11px; line-height: 1.6; padding: 0 var(--space-6); border-radius: 999px;
   background: var(--bg-app); color: var(--text-secondary); border: 1px solid var(--border); font-family: var(--mono);
 }
 .senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
-.senmore { flex: 0 0 auto; font-size: 10.5px; color: var(--text-secondary); font-family: var(--mono); cursor: help; }
+.senmore { flex: 0 0 auto; font-size: 11px; color: var(--text-secondary); font-family: var(--mono); cursor: help; }
 
 /* ══ 首页精选产品 ══ */
 .card-featured .featlist { display: flex; flex-direction: column; gap: var(--space-6); margin: var(--space-8) 0 0; }
@@ -962,16 +962,16 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 .featcard .featno {
   position: absolute; top: 6px; left: 6px; z-index: 2;
   min-width: 18px; padding: 0 var(--space-4); border-radius: 999px; text-align: center;
-  background: var(--scrim); color: var(--on-accent); font-family: var(--mono); font-size: 10.5px; line-height: 1.7;
+  background: var(--scrim); color: var(--on-accent); font-family: var(--mono); font-size: 11px; line-height: 1.7;
 }
 .featbody { min-width: 0; }
 /* 型号**醒目**（Joe 点名要的），取自真源 model 字段 */
 .featmodel { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 标题次要权重：两行封顶，不让它把卡撑得高矮不齐 */
-.feattitle { font-size: 11.5px; color: var(--text-secondary); line-height: 1.35;
+.feattitle { font-size: 12px; color: var(--text-secondary); line-height: 1.35;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.7em; }
-.featbad { align-self: flex-start; font-size: 10.5px; padding: var(--space-1) var(--space-6); border-radius: 999px;
+.featbad { align-self: flex-start; font-size: 11px; padding: var(--space-1) var(--space-6); border-radius: 999px;
   background: var(--bg-critical); color: var(--on-accent); font-family: var(--mono); cursor: help; }
 /* ⚠️ 只有坏卡显示 slug —— 这时它是**唯一**能指认"坏的是谁"的东西 */
 .featslug { font-family: var(--mono); font-size: 10px; color: var(--text-critical); word-break: break-all; }
@@ -1007,7 +1007,7 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 
 /* ══ 「加一个产品」选择器 —— 与上面那排精选卡同一套视觉 ══ */
 .featadd { margin-top: var(--space-16); }
-.featadd-head { font-size: 12.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-8); }
+.featadd-head { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-8); }
 
 /* 🔴 与 `.card-featured .featgrid` **同一套断点**：后台看到的排列 == 首页看到的排列。
    ⛔ 别为选择器另立一套列数 —— 那会让同一批产品在两处排得不一样。 */
