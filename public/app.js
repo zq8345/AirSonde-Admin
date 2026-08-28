@@ -2057,7 +2057,28 @@ function renderFeatured(form) {
       "不影响保存，也不会让构建失败，只是看起来会缺一角。"));
   }
 
-  const byStatus = new Map((f?.items || []).map((x) => [x.slug, x]));
+  // 🔴 查找表要**同时**盖住两种条目，⛔ 不能只用服务端算的那一份。
+  //
+  // ⚠️ 真事（Joe 2026-08-28）：他把 AK36 加进精选，那张卡渲染成
+  //    「无图 /（无型号）/ wbgt-heat-index-monitor」，而**同一个下拉里型号和标题都在**。
+  //    成因：`featured.items` 是服务端按**已保存的** featuredSlugs 算出来的 ——
+  //    刚从下拉加进草稿的那个 slug **根本不在这张表里** ⇒ `st` 为 undefined ⇒
+  //    图取不到、型号回落成「（无型号）」、标题回落成 slug。
+  //    ⇒ **数据一直是对的**（保存 envelope 里那条 slug 在、官网也正常），坏的只是这一处渲染。
+  //    ⛔ "刷新一下就好了"不算修好 —— 刷新之所以好，正是因为服务端这时才把它算进 items。
+  //
+  // 🔴 为什么图片卡没有这个病：`state.imgList` 里的新条目是**自带渲染数据的**
+  //    （`kind:"new"` 带着 url/size）。而精选草稿里存的**只有一个 slug**，
+  //    自己描述不了自己 ⇒ 只能靠查表 ⇒ 表不全就露馅。**同族只此一处**（全文件仅两个 `new Map`，另一个是产品详情缓存）。
+  //
+  // 顺序：先铺「选得到的」当**兜底**（它带着 name/model/image），
+  //       再让服务端的 `items` **覆盖**上去 —— 它才知道哪些是坏条目（已下架/不存在）。
+  const byStatus = new Map();
+  for (const p of (f?.["选得到的"] || [])) {
+    byStatus.set(p.slug, { slug: p.slug, exists: true, status: "published",
+                           name: p.name, image: p.image, model: p.model, ok: true });
+  }
+  for (const x of (f?.items || [])) byStatus.set(x.slug, x);
   // ⭐ 卡片网格，**4 列**（Joe 2026-08-27）。
   //    🔴 4 不是随便挑的：官网首页就是 4 列 ⇒ **后台看到的排列 == 首页看到的排列**，
   //       排序时不用在脑子里做一次转换。这才是这一块改成可视化的价值。
@@ -2065,7 +2086,11 @@ function renderFeatured(form) {
   const ul = el("div", "featgrid");
   list.forEach((slug, i) => {
     const st = byStatus.get(slug);
-    const bad = st && !st.ok;
+    // 🔴 `st` 压根查不到，也是**坏条目**，⛔ 不能当成"正常卡但字段恰好都空"。
+    //    原来写的是 `st && !st.ok` ⇒ `st` 为 undefined 时它是 undefined（假值）⇒
+    //    那张卡既不标红、也没有型号和标题，看起来像"一张普通卡片坏了" ——
+    //    **把"查不到"和"查到了但已下架"混成了同一种样子**，而这两者的修法完全不同。
+    const bad = !st || !st.ok;
     const cardEl = el("div", "featcard" + (bad ? " is-bad" : ""));
     cardEl.draggable = true;
 
@@ -2084,8 +2109,10 @@ function renderFeatured(form) {
 
     if (bad) {
       // 🔴 分得清是哪一种：「不存在」与「已下架」的修法完全不同
-      const tag = el("span", "featbad", st.exists ? `已下架` : "产品不存在");
-      tag.title = st.exists
+      // ⚠️ `st?.` 不是防御性写法凑数：`bad` 现在在 `st` 为 undefined 时也为 true，
+      //    写成 `st.exists` 会当场抛错（原来它靠 `bad` 恒假才没炸）。
+      const tag = el("span", "featbad", st?.exists ? `已下架` : "产品不存在");
+      tag.title = st?.exists
         ? "它现在没有官网页面 —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
         : "真源里找不到这个产品 —— 多半是被删了或改过 slug。";
       cardEl.append(tag);
