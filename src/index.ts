@@ -1064,10 +1064,8 @@ app.put("/api/site-content", async (c) => {
 
     // ⚠️ 乐观锁：expectedSha 是"这次编辑所基于的那一版"。不带的话，两个人先后保存，
     //    后一个会**静默覆盖**前一个 —— 而两边都看到"保存成功"。
-    if (body.expectedSha && body.expectedSha !== f.sha) {
-      return c.json({ wrote: false, error: "并发冲突",
-        detail: `文件在你打开它之后被改过了（你基于 ${String(body.expectedSha).slice(0, 7)}，现在是 ${String(f.sha).slice(0, 7)}）。请重新读一次再改 —— 直接覆盖会把别人的改动弄丢。` }, 409);
-    }
+    const scConflict = staleConflict(body.expectedSha, f.sha, "这个文件");
+    if (scConflict) return c.json(scConflict, 409);
 
     const merged = mergeSiteContent(existing, body.patch);
     const v = validateSiteContent(merged);
@@ -1171,10 +1169,8 @@ app.put("/api/taxonomy", async (c) => {
 
   try {
     const { tax, sha, path } = await loadTaxonomy(c.env);
-    if (body.expectedSha && body.expectedSha !== sha) {
-      return c.json({ wrote: false, error: "并发冲突",
-        detail: `分类轴在你打开它之后被改过了（你基于 ${String(body.expectedSha).slice(0, 7)}，现在是 ${sha.slice(0, 7)}）。请重新读一次再改。` }, 409);
-    }
+    const taxConflict = staleConflict(body.expectedSha, sha, "分类轴");
+    if (taxConflict) return c.json(taxConflict, 409);
 
     let next: Taxonomy;
     let what: string;
