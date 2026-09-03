@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=78">
+<link rel="stylesheet" href="/style.css?v=80">
 </head>
 <body>
 
@@ -95,31 +95,25 @@
   <main class="main">
     <!-- ══════ 列表视图 ══════ -->
     <section id="listView">
+      <!-- crm-skin B 批（§3）：⛔ 原 全部/在线/未上架 tab 条 + 「全部机型」下拉已删（元素 + 绑定 + state.tab 三处）。
+           筛选住列头：「状态」= 两段切换 在线|未上架（默认无选中 = 全部）；「机型」= 漏斗菜单。「产品」列头不放任何控件。 -->
       <div class="page-head">
-        <h1>产品</h1>
+        <h1>产品</h1><span class="page-sub" id="listSub"></span>
         <button type="button" class="primary" id="newBtn">+ 新建产品</button>
       </div>
 
-      <div class="toolbar">
-        <div class="tabs-status" id="statusTabs"></div>
-        <!-- 搜索框已搬到顶栏（常驻、不随滚动消失）。这里只留机型筛选。 -->
-        <div class="toolbar-right">
-          <select id="catFilter"><option value="">全部机型</option></select>
-        </div>
-      </div>
-
-      <div class="table-wrap">
+      <div class="table-wrap card table">
         <table class="ptable">
           <thead><tr>
             <th class="col-ck"><input type="checkbox" id="ckAll" title="全选当前筛选结果"></th>
             <th class="col-img"></th>
             <th>产品</th>
-            <th class="col-st">状态</th>
+            <th class="col-st ac" id="thStatus"></th>
             <!-- A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
                  独立一列他扫一眼就知道哪些还是 AS-（挤在 slug 后面做不到）。
                  A15 可点排序（Joe 2026-08-28）：原生 button（键盘可达），箭头由 app.js 填。 -->
             <th class="col-model" id="thModel"><button type="button" class="th-sortbtn" id="sortModelBtn" title="按型号排序，再点反序">型号<span id="sortModelArrow" aria-hidden="true"></span></button></th>
-            <th class="col-cat">机型</th>
+            <th class="col-cat filt" id="thCat">机型</th>
             <th class="col-act"></th>
           </tr></thead>
           <tbody id="rows"></tbody>
@@ -155,34 +149,34 @@
          🔴 删除在用的取值时官网构建**不会**兜底（实测，见 src/taxonomy.ts 顶部四层实验）
             ⇒ 这一页的引用计数是唯一防线，它必须准，而且拒绝时必须把"谁在用"列出来。 -->
     <section id="catsView" hidden>
-      <div class="page-head"><h1>分类 <span class="h3sub">机型 category · 传感器 sensors</span></h1></div>
+      <!-- crm-skin B 批（§5）：页头副标由真值算（原绿色横幅撤）；两张表卡并排；卡头 = 标题 + 灰副标 + 右端「管理」；
+           机型只留显示名一行（取值收进 title / 管理态）；传感器排两列，两卡等高。 -->
+      <div class="page-head"><h1>分类</h1><span class="page-sub" id="catsSub"></span></div>
       <div id="catsSummary"></div>
       <!-- 🔴 写入结果**独占一格**，与上面的实况对账分开。
            实测过混在一起的样子：一次被拒的提交留在屏幕上，下一次提交的结果叠在它旁边 ——
            两条关于两次操作的消息同时在场，人只会读离得近的那条。
            分开之后，"这一格里永远只有最近一次提交的结果"是**结构上成立**的，不靠记得去清。 -->
       <div id="catsResult"></div>
-      <div class="axiscols">
+      <div class="two">
         <!-- ⭐ 管理态开关（Joe 2026-08-26 定：改名/删除/新增要点「管理」才出现）。
-             沿用 wanew 后台那一套（manageMode + 🔧 管理 / ✓ 管理中），⛔ 不造第三种交互。
              🔴 **两栏各有各的开关**：管机型时不该把传感器那栏也解锁。
-             ⚠️ 新增本身不具破坏性、本可常驻 —— 但三个动作收进同一个开关是**一条规则、不留特例**。 -->
-        <div class="axisbox">
-          <h2 class="axishead">机型 <span class="h3sub">category · 每个产品一个</span>
-            <button type="button" class="managebtn" aria-pressed="false" data-axis="categories"
-                    title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
-          </h2>
-          <div class="table-wrap">
-            <table class="ptable">
-              <thead><tr>
-                <th>机型</th>
-                <th class="col-st">在用</th>
-                <th class="col-cat">官网筛选栏</th>
-                <th class="col-act"></th>
-              </tr></thead>
-              <tbody id="catsRows"></tbody>
-            </table>
+             ⚠️ 新增本身不具破坏性、本可常驻 —— 但三个动作收进同一个开关是**一条规则、不留特例**。
+             按钮内容（扳手线条图标 + 管理/管理中）由 syncManageBtns() 填。 -->
+        <div class="card table">
+          <div class="cth"><span class="sec-title">机型</span><span class="sec-sub">每个产品一个</span>
+            <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="categories"
+                    title="进入管理态才能改名 / 删除 / 新增">管理</button>
           </div>
+          <table class="ptable">
+            <thead><tr>
+              <th>机型</th>
+              <th class="col-st ac">在用</th>
+              <th class="col-cat">官网筛选栏</th>
+              <th class="col-act"></th>
+            </tr></thead>
+            <tbody id="catsRows"></tbody>
+          </table>
           <form class="axisadd" id="addCategories" hidden>
             <input type="text" name="value" placeholder="取值（英文，如 wall-mounted）" autocomplete="off">
             <input type="text" name="label" placeholder="显示名（官网上显示的，如 Wall-mounted）" autocomplete="off">
@@ -190,19 +184,19 @@
           </form>
         </div>
 
-        <div class="axisbox">
-          <h2 class="axishead">传感器 <span class="h3sub">sensors · 每个产品可多个</span>
-            <button type="button" class="managebtn" aria-pressed="false" data-axis="sensors"
-                    title="进入管理态才能改名 / 删除 / 新增">🔧 管理</button>
-          </h2>
-          <div class="table-wrap">
+        <div class="card table">
+          <div class="cth"><span class="sec-title">传感器</span><span class="sec-sub">每个产品可多个</span>
+            <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="sensors"
+                    title="进入管理态才能改名 / 删除 / 新增">管理</button>
+          </div>
+          <div class="two-in">
             <table class="ptable">
-              <thead><tr>
-                <th>传感器</th>
-                <th class="col-st">在用</th>
-                <th class="col-act"></th>
-              </tr></thead>
-              <tbody id="sensorsRows"></tbody>
+              <thead><tr><th>传感器</th><th class="col-st ac">在用</th><th class="col-act"></th></tr></thead>
+              <tbody id="sensorsRowsA"></tbody>
+            </table>
+            <table class="ptable">
+              <thead><tr><th>传感器</th><th class="col-st ac">在用</th><th class="col-act"></th></tr></thead>
+              <tbody id="sensorsRowsB"></tbody>
             </table>
           </div>
           <form class="axisadd" id="addSensors" hidden>
@@ -212,20 +206,20 @@
           </form>
         </div>
       </div>
-      <div id="catsNote"></div>
     </section>
 
     <!-- ══════ 审计日志 ══════ -->
     <section id="auditView" hidden>
-      <div class="page-head"><h1>审计日志</h1></div>
+      <!-- crm-skin B 批（§8）：顶部两条横幅撤，结论进副标；来源 / 操作人 列头挂漏斗；时间与操作人 mono。 -->
+      <div class="page-head"><h1>审计日志</h1><span class="page-sub" id="auditSub"></span></div>
       <div id="auditSummary"></div>
-      <div class="table-wrap">
+      <div class="table-wrap card table">
         <table class="ptable">
           <thead><tr>
             <th class="col-st">时间</th>
-            <th class="col-cat">来源</th>
+            <th class="col-cat ac filt" id="thAuditSrc">来源</th>
             <th>操作</th>
-            <th class="col-cat">操作人</th>
+            <th class="col-cat filt" id="thAuditOp">操作人</th>
             <th class="col-st">commit</th>
           </tr></thead>
           <tbody id="auditRows"></tbody>
@@ -453,7 +447,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=78"></script>
+<script src="/app.js?v=80"></script>
 </body>
 </html>
 

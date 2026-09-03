@@ -244,10 +244,7 @@ body {
 .list .li-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list .li-sub { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.badge { flex: 0 0 auto; font-size: 12px; padding: var(--space-1) var(--space-6); border-radius: 999px; font-family: var(--mono); }
-.badge-published { background: var(--bg-success-soft); color: var(--text-success); }
-.badge-draft { background: var(--bg-caution-soft); color: var(--text-caution); }
-.badge-unknown { background: var(--bg-app); color: var(--text-secondary); }
+/* ⛔ .badge / .badge-published / .badge-draft / .badge-unknown 已删（B 批）：列表状态、分类「显示」、审计「来源」全部改用 .pill（同一族，附录 C.7 语义色只用于信息）。 */
 
 .empty { padding: var(--space-20) var(--space-16); color: var(--text-secondary); font-size: 13px; }
 .empty code { font-family: var(--mono); font-size: 12px; }
@@ -418,18 +415,54 @@ button:disabled, [disabled] {
 .page-head .page-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .page-head > .primary { margin-left: auto; }
 
-.toolbar { display: flex; flex-wrap: wrap; gap: var(--space-12); justify-content: space-between; align-items: center; margin-bottom: var(--space-12); }
-.toolbar-right { display: flex; gap: var(--btn-gap); }
-.toolbar-right input, .toolbar-right select {
-  padding: var(--space-6) var(--space-8); font: inherit; font-size: 13px; background: var(--bg-surface);
-  color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
-}
-.toolbar-right input { min-width: 200px; }
-
-.tabs-status { display: flex; gap: var(--space-2); background: var(--bg-app); padding: var(--space-2); border-radius: 7px; }
-.stab { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
-.stab.is-on { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px var(--shadow-md); }
-.stab-n { font-family: var(--mono); font-size: 12px; }   /* ⚠️ 原来带 opacity:.8 —— 与 .shint 同一个病，上屏只有 4.54:1。降权交给色值。 */
+/* ⛔ .toolbar / .toolbar-right 已删（crm-skin B 批 §3）：产品页的 全部/在线/未上架 tab 条与「全部机型」下拉没了，筛选住列头。
+   ⚠️ .tabs-status / .stab / .stab-n **暂留**：图片页（#mediaTabs）还在用同一套 tab 条，那一页归 E 批重做（§7 两段切换 + 红标），
+      到 E 批连元素、绑定、这三条规则一起撤。⛔ 现在删会让图片页的 tab 当场失去样式。 */
+.tabs-status { display: flex; gap: var(--space-2); background: var(--panel); padding: var(--space-2); border-radius: 7px; }
+.stab { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.stab.is-on { background: var(--bg); color: var(--text-primary); box-shadow: 0 1px 2px var(--shadow-md); }
+.stab-n { font-family: var(--mono); font-size: 12px; }
+/* 下面是全站仅有的两种筛选控件（§1）。 */
+/* 两段切换（二值维度）：照 mockup .seg */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; background: var(--bg); vertical-align: middle; font-weight: 400; }
+.seg-s { padding: 3px 10px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; background: none; border: 0; }
+.seg-s + .seg-s { border-left: 1px solid var(--border-strong); }
+.seg-s.on { background: var(--brand-tint); color: var(--brand); font-weight: 600; }
+.seg-s i { font-style: normal; color: var(--hint); margin-left: 3px; }
+.seg-s.on i { color: var(--brand); }
+/* 漏斗菜单（多值维度）：挂在列头，th.filt 定位、.th-filt 是那个可点的列头词 */
+th.filt { position: relative; overflow: visible; }
+.th-filt { all: unset; cursor: pointer; font: inherit; color: inherit; display: inline-flex; align-items: center; gap: 4px; }
+.th-filt:hover { color: var(--text-primary); }
+.th-filt.on { color: var(--brand); }
+.fcaret { display: inline-flex; align-items: center; color: var(--hint); vertical-align: -1px; }
+.fcaret svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.th-filt.on .fcaret { color: var(--brand); }
+.hdrmenu { position: absolute; left: 0; top: calc(100% + 2px); z-index: 50; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 5px; min-width: 150px; box-shadow: 0 8px 24px rgba(0,0,0,.12); font-weight: 400; text-align: left; white-space: nowrap; }
+.hdrmenu .mi { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: none; cursor: pointer; font: inherit; font-size: 13px; color: var(--text-primary); text-align: left; }
+.hdrmenu .mi:hover { background: var(--panel); }
+.hdrmenu .mi.sel { color: var(--brand); font-weight: 600; }
+.hdrmenu .mi .cnt { color: var(--hint); font-size: 12px; }
+.hdrmenu .mi.sel .cnt { color: var(--brand); }
+/* 表格页表本身就是卡（padding 0）；卡头 .cth；并排两卡 .two；卡内并排两表 .two-in */
+.card.table { padding: 0; overflow: hidden; }
+.cth { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.cth .sec-title { font-size: 15px; font-weight: 600; }
+.cth .sec-sub { font-size: 12px; color: var(--muted); }
+.cth .managebtn { margin-left: auto; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
+@media (max-width: 1080px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.two > .card { margin: 0; }
+.two-in { display: grid; grid-template-columns: 1fr 1fr; }
+.two-in table + table { border-left: 1px solid var(--border); }
+.btn-mini { padding: 5px 10px; font-size: 12px; }
+.pname { font-weight: 600; color: var(--text-primary); }
+.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.mono-link { font-family: var(--mono); font-size: 12px; }
+.hint0 { color: var(--hint); }
+.n { font-weight: 600; color: var(--text-primary); }
+.ac { text-align: center; }
+.page-sub.is-bad { color: var(--red); font-weight: 600; }
 
 /* 🔴 吸底（AU2 ④）。它原来在表格**之前**且占文档流 ⇒ 勾选一行，正在看的那行当场下移
    **145px**（1440 档实测 y 278 → 423）。人一勾选，要操作的那行就跑了。
@@ -440,7 +473,7 @@ button:disabled, [disabled] {
       与旧 `.editbar{top:40px}` 那种偏移假设不是一回事。 */
 .batchbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-12);
   margin: var(--space-12) 0 0; position: sticky; bottom: 0; z-index: 14;
-  background: var(--bg-selected); border: 1px solid var(--border-accent); border-radius: 7px; font-size: 13px; }
+  background: var(--brand-tint); border: 1px solid var(--brand); border-radius: 7px; font-size: 13px; }   /* 换皮：品牌绿 tint（B 批） */
 /* 🔴 `:not(.linkish)` 不是特例，是把这条规则的**意图**写准（AU2 ⑥）。
    原来是 `.batchbar button`（特异性 0,1,1）⇒ 它把批量条里的 `.linkish`（0,1,0）也吃了，
    于是「取消选择」与旁边的「批量上架」**逐属性完全相同**（实测 74x31 / 12.5px / 黑字白底 /
@@ -453,10 +486,11 @@ button:disabled, [disabled] {
 .batchbar button:hover { border-color: var(--border-accent); color: var(--text-accent); }
 .batch-note { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
 
-.table-wrap { overflow-x: auto; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; }
-.ptable { width: 100%; border-collapse: collapse; font-size: 14px; }
-.ptable th { text-align: left; font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: var(--table-cell-padding-roomy); border-bottom: 1px solid var(--border); white-space: nowrap; }
-.ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--border); vertical-align: middle; }
+/* 表格页：表本身就是那张白卡（圆角 12、padding 0）。⚠️ overflow 不能 hidden：列头的漏斗菜单要伸出表头。 */
+.table-wrap { overflow: visible; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; }
+.ptable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ptable th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 9px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 13px; }
 /* 型号列的排序按钮（A15）：视觉上就是那个表头词，⛔ 不引入新的按钮观感。
    字体五项全继承 th（12px/600/次级色），差别只有 hover 变主文字色 + pointer。 */
 .th-sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; }
@@ -527,7 +561,7 @@ button:disabled, [disabled] {
    ⚠️ 取 64px 不是照抄 wanew 的 40：AirSonde 眼下最大的问题恰恰是产品图
       （审计记录有被判死的图仍在生产上，含一张可辨识儿童照出现在 16 个 URL），
       列表缩略图还要承担"一眼看出这张图有问题"的职责，40px 做不到。 */
-.thumb-sm { width: 64px; height: 64px; border-radius: 5px; }
+.thumb-sm { width: 44px; height: 44px; border-radius: 6px; background: var(--bg); }   /* 列表缩略图 44 圆角 6（crm-skin §3） */
 .thumb-empty { color: var(--text-secondary); font-size: 12px; }
 .filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 13px; font-weight: 600; cursor: pointer;
   background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); margin: 0 0 var(--space-6); }
@@ -612,10 +646,8 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 
 /* 两个轴并排。⚠️ minmax(0,1fr) 而不是 1fr：1fr 的最小尺寸是 auto，表格里一个长取值
    就会把那一列撑出去、把另一列挤没。窄屏塌成一列。 */
-.axiscols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-20); align-items: start; }
-@media (max-width: 1080px) { .axiscols { grid-template-columns: minmax(0, 1fr); } }
-.axishead { margin: 0 0 var(--space-8); font-size: 14px; font-weight: 600; }
-.axisadd { display: flex; gap: var(--space-8); margin-top: var(--space-12); }
+/* ⛔ .axiscols / .axishead 已删（B 批）：分类页两卡改用 .two + .cth。 */
+.axisadd { display: flex; gap: var(--space-8); padding: 12px 16px; border-top: 1px solid var(--border); }
 .axisadd input { flex: 1 1 0; min-width: 0; font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8);
   border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 .axisadd button { white-space: nowrap; }
@@ -829,17 +861,8 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    这里的东西官网上一个都看不到。 */
 .pv-internal { margin-top: var(--space-36); padding-top: var(--space-20); border-top: 2px dashed var(--border); max-width: 980px; }
 
-/* 管理态开关（沿用 wanew 后台：🔧 管理 / ✓ 管理中）。⛔ 不造第三种交互。 */
-.axishead { display: flex; align-items: baseline; gap: var(--space-8); }
-.axishead .h3sub { flex: 1 1 auto; min-width: 0; }
-.managebtn {
-  flex: 0 0 auto; font: inherit; font-size: 12px; font-weight: 400; padding: var(--space-4) var(--space-12); cursor: pointer;
-  background: var(--bg-surface); color: var(--text-secondary);
-  border: 1px solid var(--border); border-radius: 6px;
-}
-.managebtn:hover { color: var(--text-primary); border-color: var(--border-subtle); }
-/* 开着的时候要一眼看出来 —— 否则"我到底在不在管理态"只能靠点一下试试。 */
-.managebtn.on { background: var(--bg-accent); color: var(--on-accent); border-color: var(--border-accent); font-weight: 600; }
+/* 管理态开关：次动作描边小按钮（.btn-secondary.btn-mini）+ 扳手线条图标；开着 = 绿字绿边（不实心：一屏只许一个实心主按钮）。 */
+.managebtn.on { color: var(--brand); border-color: var(--brand); font-weight: 600; }
 
 /* 🔴 `--card` 这个变量**从来没被定义过**（:root 里没有它）。用它的声明在计算值阶段
    直接作废 ⇒ background 退回初始值 transparent。实测：`var(--card)` 算出来是
@@ -896,22 +919,26 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
    ⛔ 对齐**不用固定 px 去凑**：`min-height` 撑到缩略图那么高、`space-between` 顶开两端。
       写死数字的话，字号或缩略图尺寸一改那个数就错，而且没有症状 ——
       `.topbar{top:40px}` 与批量条的 `margin-top` 都是这么坏的。 */
-.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 64px; }
+.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 44px; gap: 4px; }   /* 撑到 44 的缩略图那么高 */
 
 /* 🔴 标题**恒占 2 行**：短的补足（min-height）、长的截断带省略号（line-clamp）。
    两边都要 —— 只截不补，短标题那行会矮一截，等高就没了。
    ⚠️ 2 行的高度由 line-height 算出来（2 × 1.35em），不写死像素。 */
+/* 🔴 标题**允许换行、最多两行**（line-clamp）。⛔ 不许 nowrap：表格单元里 nowrap 会让这一列取 max-content，
+   最长的那条标题（AK17 那条 120 字）会把整张表撑出卡片，状态/型号/机型/操作四列全部挤到看不见 ——
+   B 批第一版就是这么坏的（1278 实测：四个列头全在卡片右边界之外）。 */
 .ptable .li-name {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-  overflow: hidden; line-height: 1.35; min-height: 2.7em;
+  overflow: hidden; line-height: 1.4; word-break: break-word;
 }
 
 /* 传感器行：**绝不换行**（换行会顶高行高，等高当场就没了）。
    放不下的收成 `+N` —— N 是**被藏起来的个数**，「…」说不出数量。 */
 .senrow { display: flex; align-items: center; gap: var(--space-4); overflow: hidden; white-space: nowrap; min-width: 0; }
+/* 传感器 chip 照 mockup .chip：12px 灰底细边圆角 10，⛔ 不再等宽字体 */
 .senchip {
-  flex: 0 0 auto; font-size: 12px; line-height: 1.6; padding: 0 var(--space-6); border-radius: 999px;
-  background: var(--bg-app); color: var(--text-secondary); border: 1px solid var(--border); font-family: var(--mono);
+  flex: 0 0 auto; font-size: 12px; line-height: 18px; padding: 0 7px; border-radius: 10px;
+  background: var(--panel); color: var(--muted); border: 1px solid var(--border);
 }
 .senchip.sen-none { background: none; border-color: transparent; font-style: italic; }
 .senmore { flex: 0 0 auto; font-size: 12px; color: var(--text-secondary); font-family: var(--mono); cursor: help; }

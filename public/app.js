@@ -26,7 +26,11 @@ const state = {
   write: null,      // { enabled, gateOpen, tokenConfigured }
   lastPreview: null,
   repo: null, branch: null,
-  tab: "all",                 // 状态 tab：all | published | draft
+  // 列表筛选（crm-skin B 批 §3）：⛔ 原 tab 条（state.tab）与机型下拉（#catFilter）已撤 —— 元素、绑定、状态三处一起。
+  statusSeg: null,            // 「状态」列头两段切换：null = 全部 · "published" · "draft"（点同一段再点 = 取消）
+  catSel: "",                 // 「机型」列头漏斗：""=全部机型 · 某个 category value
+  auditSrc: "",               // 审计页「来源」漏斗：""=全部 · admin · other
+  auditOp: "",                // 审计页「操作人」漏斗：""=全部 · 某个 operator
   /**
    * 型号列排序（Joe 2026-08-28：「产品列表加一个按照型号排序」）。
    * 0 = 不排（保持仓里的文件顺序）· 1 = 升序 · -1 = 降序。点表头在 1/-1 间切换。
@@ -234,9 +238,9 @@ const modelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity:
 /** 当前筛选下的行。tabs 计数与表格必须用**同一个函数**，否则数字和内容会对不上。 */
 function filteredRows() {
   const q = $("#q").value.trim().toLowerCase();
-  const cat = $("#catFilter").value;
+  const cat = state.catSel;
   const rows = state.list.filter((it) => {
-    if (state.tab !== "all" && it.status !== state.tab) return false;
+    if (state.statusSeg && it.status !== state.statusSeg) return false;
     if (cat && it.category !== cat) return false;
     if (q && !`${it.slug} ${it.name || ""} ${it.model || ""}`.toLowerCase().includes(q)) return false;
     return true;
@@ -266,8 +270,8 @@ function filteredRows() {
 //    正是因为这两个词看起来是两件事。
 //    ⭐ 动词保持「上架/下架」不变：**动词描述动作，tab 描述状态**，本来就不必同词。
 const STATUS_LABEL = { all: "全部", published: "在线", draft: "未上架" };
-/** tab 的显示顺序（Joe 定：全部 / 在线 / 未上架），与契约枚举顺序无关。 */
-const TAB_ORDER = ["published", "draft"];
+// ⛔ `TAB_ORDER` 已撤（crm-skin B 批）：全部/在线/未上架 那排 tab 没了，
+//    状态筛选住「状态」列头的两段切换（在线 | 未上架，默认无选中 = 全部），顺序写在 renderList 里。
 /**
  * ⚠️ 认不出的值**原样显示**，不显示空白也不显示"未知" ——
  *    一个超出枚举的 status 是**数据出问题的信号**，把它吞成空白等于把信号删掉。
@@ -321,35 +325,73 @@ function siteLink(slug, status, text) {
   return a;
 }
 
-function renderList() {
-  // ── 机型筛选：**选项**从真实数据里长（筛一个没有产品的机型只会得到空列表），
-  //    但**显示名**取自契约。两件事分开：谁可筛 ← 数据；叫什么 ← taxonomy.json。
-  // ⚠️ 轴里没有的散值（数据脏了才会出现）就原样显示 value —— 那时看见原值正是我们要的。
-  const cats = [...new Set(state.list.map((i) => i.category).filter(Boolean))].sort();
-  const sel = $("#catFilter"), keep = sel.value;
-  sel.innerHTML = "";
-  sel.append(new Option("全部机型", ""));
-  cats.forEach((c) => sel.append(new Option(catLabel(c), c)));
-  sel.value = cats.includes(keep) ? keep : "";
+// ═══ 筛选控件（crm-skin §1：全站只有这两种）═══
+// 两段切换：二值维度。点一段只看一段，再点同一段取消 = 全部；**默认无选中 = 全部**。
+function segControl(items, current, onPick) {
+  const seg = el("span", "seg");
+  items.forEach(([key, label, n]) => {
+    const s = el("button", "seg-s" + (current === key ? " on" : "")); s.type = "button";
+    s.setAttribute("aria-pressed", String(current === key));
+    s.append(document.createTextNode(label));
+    if (n !== undefined) s.append(el("i", null, `(${n})`));
+    s.onclick = () => onPick(current === key ? null : key);
+    seg.append(s);
+  });
+  return seg;
+}
+// 漏斗菜单：多值维度，挂在列头。点列头开菜单，选一项即筛并关；点外面关。
+function funnelHeader(th, label, items, current, onPick) {
+  th.innerHTML = "";
+  const btn = el("button", "th-filt" + (current ? " on" : "")); btn.type = "button";
+  btn.append(document.createTextNode(label));
+  const caret = el("span", "fcaret");
+  caret.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="21 4 3 4 10 12.5 10 19 14 21 14 12.5"/></svg>';
+  btn.append(caret);
+  th.append(btn);
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const old = th.querySelector(".hdrmenu");
+    document.querySelectorAll(".hdrmenu").forEach((m) => m.remove());
+    if (old) return;                       // 再点同一个列头 = 关
+    const menu = el("div", "hdrmenu");
+    items.forEach(([key, text, n]) => {
+      const mi = el("button", "mi" + (current === key ? " sel" : "")); mi.type = "button";
+      mi.append(el("span", null, text));
+      if (n !== undefined) mi.append(el("span", "cnt", String(n)));
+      mi.onclick = (ev) => { ev.stopPropagation(); menu.remove(); onPick(key); };
+      menu.append(mi);
+    });
+    th.append(menu);
+    const close = () => { menu.remove(); document.removeEventListener("click", close); };
+    setTimeout(() => document.addEventListener("click", close), 0);
+  };
+}
+/** 审计/记录用的时间格式：`2026-9-3 03:55`（mockup） */
+function fmtStamp(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso || "—");
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
-  // ── 状态 tabs（带计数）──
-  const counts = { all: state.list.length };
-  (state.contract?.statuses || ["published", "draft"]).forEach((s) => {
-    counts[s] = state.list.filter((i) => i.status === s).length;
-  });
-  const tabs = $("#statusTabs"); tabs.innerHTML = "";
-  // ⚠️ tab 顺序由 TAB_ORDER 定，**不跟着契约枚举的顺序走**：
-  //    契约里是 draft|published（数据顺序），而人要的是 全部/在线/未上架（Joe 定）。
-  //    只列契约里真有的状态 —— 枚举将来加一个，这里不会凭空多出一个空 tab。
-  const known = new Set(state.contract?.statuses || []);
-  ["all", ...TAB_ORDER.filter((k) => known.has(k))].forEach((k) => {
-    const b = el("button", "stab" + (state.tab === k ? " is-on" : ""));
-    b.setAttribute("aria-pressed", String(state.tab === k));
-    b.type = "button";
-    b.append(document.createTextNode(statusLabel(k)), el("span", "stab-n", String(counts[k] ?? 0)));
-    b.onclick = () => { state.tab = k; state.selected.clear(); renderList(); };
-    tabs.append(b);
-  });
+function renderList() {
+  // ── 页头副标由真值算（§3）：「26 个 · 全部在线」/「26 个 · 未上架 2」 ──
+  const total = state.list.length;
+  const nPub = state.list.filter((i) => i.status === "published").length;
+  const nDraft = state.list.filter((i) => i.status === "draft").length;
+  $("#listSub").textContent = total ? `${total} 个 · ${nDraft ? `未上架 ${nDraft}` : "全部在线"}` : "";
+
+  // ── 「状态」列头 = 两段切换 在线 (N) | 未上架 (N)（Joe：「一共就 2 种状态」）──
+  //    ⛔ 「产品」列头不放任何控件（Joe 先指产品列、后定两段切换；切换住状态列）。
+  const thS = $("#thStatus"); thS.innerHTML = "";
+  thS.append(segControl([["published", "在线", nPub], ["draft", "未上架", nDraft]], state.statusSeg,
+    (v) => { state.statusSeg = v; state.selected.clear(); renderList(); }));
+
+  // ── 「机型」列头 = 漏斗菜单：全部机型 / Desktop (17) / …（数字为当前列表口径）──
+  //    选项从真实数据里长，显示名取契约（谁可筛 ← 数据；叫什么 ← taxonomy.json）。
+  const cats = [...new Set(state.list.map((i) => i.category).filter(Boolean))].sort();
+  if (state.catSel && !cats.includes(state.catSel)) state.catSel = "";
+  const catItems = [["", "全部机型", total], ...cats.map((c) => [c, catLabel(c), state.list.filter((i) => i.category === c).length])];
+  funnelHeader($("#thCat"), "机型", catItems, state.catSel, (v) => { state.catSel = v; state.selected.clear(); renderList(); });
 
   const rows = filteredRows();
   const tb = $("#rows"); tb.innerHTML = "";
@@ -414,10 +456,9 @@ function renderList() {
     }
     tr.append(tdName);
 
-    const tdSt = el("td", "col-st");
-    // ⚠️ 类名保持 badge-published / badge-draft（它承载颜色，与显示文本无关）——
-    //    ⛔ 不把类名也改成中文。文本走 statusLabel，与 tab **同一张表**。
-    tdSt.append(el("span", `badge badge-${it.status || "unknown"}`, statusLabel(it.status)));
+    const tdSt = el("td", "col-st ac");
+    // 状态 pill：在线 = 绿 tint · 未上架 = 灰（语义色只用于信息，附录 C.7）；文本走 statusLabel，与两段切换**同一张表**
+    tdSt.append(el("span", `pill ${it.status === "published" ? "pill-ok" : "pill-gray"}`, statusLabel(it.status)));
     tr.append(tdSt);
 
     // A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
@@ -950,7 +991,7 @@ function renderView(p) {
     const td = el("td"); td.append(typeof v === "string" ? el("code", null, v) : v); tr.append(td); t.append(tr);
   };
   row("slug", p.slug || "—");
-  row("状态", el("span", `badge badge-${p.status || "unknown"}`, statusLabel(p.status)));
+  row("状态", el("span", `pill ${p.status === "published" ? "pill-ok" : "pill-gray"}`, statusLabel(p.status)));   // 旧 .badge 已撤（B 批），同族改 pill
   row("moq", p.moq == null ? "面议（未设 moq）" : String(p.moq));
   if (p.supplierRef) row("supplierRef", p.supplierRef, "internal-row");
   // A12-③：文件路径从顶部挪到这里 —— Joe 不看仓，但排查时它有用
@@ -1749,7 +1790,7 @@ $("#q").oninput = () => {
   if (state.nav !== "products") showNav("products");
   renderList();
 };
-$("#catFilter").onchange = renderList;
+// ⛔ `$("#catFilter").onchange` 已撤（B 批）：机型筛选住列头漏斗，绑定在 funnelHeader 里。
 // ── 型号列排序（A15）：点一下升序，再点反序 ──
 // ⚠️ 没有"第三态回到原顺序"：Joe 要的是「排序 / 反序」两件事，多一态就多一次看不懂的点击。
 $("#sortModelBtn").onclick = () => {
@@ -2599,46 +2640,32 @@ function renderCats() {
   const known = new Set(c.categories.map((x) => x.value));
   const good = state.list.filter((p) => !p.error);
   const strays = good.filter((p) => !known.has(p.category));
+  // ── 页头副标由真值算（§5）：「机型 6 · 传感器 19 · 26 个产品全部落在 6 个机型里」；对账不成立时红字写差几个。
+  //    ⛔ 原来那条绿色横幅撤了 —— 结论压进副标；只有**坏消息**（散值 / 读不出来）才以红字通知出现。
+  const total = c.productCount ?? good.length;
+  const partial = c.unreadable > 0;
+  const sub = $("#catsSub");
+  sub.classList.toggle("is-bad", !!(strays.length || partial));
   if (strays.length) {
+    sub.textContent = `机型 ${c.categories.length} · 传感器 ${c.sensors.length} · 有 ${strays.length} 个产品的机型不在轴里`;
     sum.append(mkNotice("bad",
       `🔴 有 **${strays.length}** 个产品的机型不在这一轴里，下表统计不到它们：` +
       strays.map((p) => `${p.slug}(${p.category || "空"})`).join("、")));
+  } else if (partial) {
+    // 🔴 有产品读不出来时**不许说"全部落在"** —— 这句只覆盖读得出来的那些（2026-08-26 真出过：和 19、产品 23 仍写着对账成立）
+    sub.textContent = `机型 ${c.categories.length} · 传感器 ${c.sensors.length} · 只对上了 ${good.length}/${total} 个产品，另 ${c.unreadable} 个读不出来`;
   } else {
-    // ⚠️ 对账成立时也要**出一行**：什么都不显示的话，"查过了，没问题"和"这个检查根本没跑"
-    //    在界面上长得一模一样。
-    // 与每一行的「官网筛选栏」同源：都数服务端盖的 `onSite`，不在这里另算一遍。
-    const onSite = c.categories.filter((cat) => cat.onSite).length;
-    // 🔴 有产品读不出来时**不许说"对账成立"**。
-    //    2026-08-26 真出过一次（我自己把匿名配额打满，4 个产品读不出来）：
-    //    逐机型引用之和 19，产品数 23 —— 数字自己就不自洽，而那一行照样写着"对账成立"。
-    //    ⇒ 这一行必须说清它只覆盖了读得出来的那些，否则它是在替一份残缺的统计背书。
-    //    （闸本身当时是对的：unreadable>0 ⇒ 每一条 canDelete 都是 false，一个都删不了。）
-    const partial = c.unreadable > 0;
-    const total = c.productCount ?? good.length;
-    sum.append(mkNotice(partial ? "warn" : "ok",
-      partial
-        // ⚠️ 这句话里**不出现"对账成立"四个字**，哪怕是在否定它。
-        //    我自己的判据刚被这一点骗过：`includes("对账成立")` 在这句上返回 true。
-        //    否定句里嵌着肯定词，对扫字符串的人和工具都是陷阱 —— 换个说法就没有这个洞。
-        ? `⚠️ 这份统计**不完整**：只对上了读得出来的 **${good.length}/${total}** 个产品，` +
-          `另外 ${c.unreadable} 个读不出来，**它们的机型没算进下表**。`
-        : `${good.length} 个产品全部落在 ${c.categories.length} 个机型里（对账成立）· ` +
-          `官网筛选栏上会出现 **${onSite}** 个机型 · 真源 ${c.path}`));
+    sub.textContent = `机型 ${c.categories.length} · 传感器 ${c.sensors.length} · ${good.length} 个产品全部落在 ${c.categories.length} 个机型里`;
   }
 
   renderAxis("categories", $("#catsRows"), c.categories, good);
-  renderAxis("sensors", $("#sensorsRows"), c.sensors, good);
+  // 传感器排两列（10 + 9），两卡等高（§5）—— 同一份 renderAxis 各画一半，⛔ 不写第二份渲染
+  const half = Math.ceil(c.sensors.length / 2);
+  renderAxis("sensors", $("#sensorsRowsA"), c.sensors.slice(0, half), good);
+  renderAxis("sensors", $("#sensorsRowsB"), c.sensors.slice(half), good);
   syncManageBtns();
-
-  const note = $("#catsNote"); note.innerHTML = "";
-  const ul = el("ul", "catnote");
-  [
-    "**取值（value）创建之后不能改** —— 它已经写进每个产品的 JSON，改它等于改数据。要换叫法，改**显示名**。",
-    "**删除只对没人在用的取值开放。** 官网构建**不会**替我们拦这一步（实测），所以拦在这里。要删一个在用的：先把那些产品改成别的，再回来删。",
-    "**官网筛选栏**只列有已上架产品的机型。一个 0 个已上架的机型，在站上是看不见的。",
-    "改产品的**归属**是另一件事：列表里勾选后用「批量改机型」，或在产品编辑页改。",
-  ].forEach((t) => ul.append(appendMd(el("li"), t)));
-  note.append(ul);
+  // ⛔ 页底那四条常驻说明（取值不可改 / 删除只对没人用的开放 / 筛选栏只列已上架 / 归属另改）已撤（§6 说明规则）：
+  //    「取值不可改」在改名行内本来就写着；「删除为什么灰」挂在 td 的 title 上；「不显示」那格自带"没有已上架产品"。
 }
 
 /** 两个轴共用一份渲染 —— 写成两份的话，改了一边忘了另一边不会有任何症状。 */
@@ -2652,29 +2679,28 @@ function renderAxis(axis, tb, items, good) {
     const tr = el("tr");
 
     const tdName = el("td");
-    tdName.append(el("div", "li-name", it.label || it.value));
-    // ⚠️ 显示名与取值**逐字节相同**时只显示一次。传感器那栏 14 行现在几乎全是
-    //    `CO2 / CO2` 这样把同一个串印两遍 —— 重复的字符串不携带信息，
-    //    只是把真正有区别的那几行（如 `Wall-mounted / wall-mounted`）淹掉。
-    // ⚠️ 判据是"逐字节相同"，不是"忽略大小写相同"：`Desktop` 与 `desktop` 不是一回事，
-    //    进产品 JSON 和官网 URL 的是小写那个，看得见它才不会照着显示名去填。
-    if (it.label && it.label !== it.value) tdName.append(el("div", "li-sub", it.value));
+    const nm = el("div", "pname", it.label || it.value);
+    // 机型**只留显示名一行**（Joe：「机型只保留一种描述即可」）。取值 slug 收进 title（hover 可见），
+    // 管理态才把它显示出来 —— 那时人要核对"进产品 JSON 的是哪个串"。
+    if (it.label && it.label !== it.value) { nm.title = `取值 ${it.value}（写进产品 JSON 与官网 URL 的是它）`; }
+    tdName.append(nm);
+    if (manage && it.label && it.label !== it.value) tdName.append(el("div", "li-sub", it.value));
     tr.append(tdName);
 
     // 在用数取服务端的 refCount（此刻仓里的真相），不是前端 state.list 的再数一遍。
-    const tdN = el("td", "col-st");
+    const tdN = el("td", "col-st ac");
     if (it.refCount && isCat) {
       // 机型有筛选栏，点得过去。
-      const b = el("button", "linkish", String(it.refCount)); b.type = "button";
+      const b = el("button", "linkish n", String(it.refCount)); b.type = "button";
       b.title = it.refs.join("、");
-      b.onclick = () => { showNav("products"); $("#catFilter").value = it.value; state.tab = "all"; renderList(); };
+      b.onclick = () => { showNav("products"); state.catSel = it.value; state.statusSeg = null; renderList(); };
       tdN.append(b);
     } else if (it.refCount) {
       // ⚠️ 传感器**没有**列表筛选。做成按钮的话点了什么也不会发生 ——
       //    一个骗人的按钮比一个纯数字糟。列表在 title 里，够用。
-      const s = el("span", null, String(it.refCount)); s.title = it.refs.join("、");
+      const s = el("b", "n", String(it.refCount)); s.title = it.refs.join("、");
       tdN.append(s);
-    } else tdN.append(el("span", "li-sub", "0"));
+    } else tdN.append(el("span", "hint0", "0"));   // 0 在用照常显示灰 0（§5）
     tr.append(tdN);
 
     if (isCat) {
@@ -2683,10 +2709,10 @@ function renderAxis(axis, tb, items, good) {
       //    ⛔ 不在这里拿 state.list 再数一遍：那样这一行上的两个数字会来自两次不同的读取，
       //       "在用 0"与"筛选栏显示"就可能同时出现，而看的人无从知道为什么。
       const tdOn = el("td", "col-cat");
-      if (it.onSite) tdOn.append(el("span", "badge badge-published", "显示"));
+      if (it.onSite) tdOn.append(el("span", "pill pill-ok", "显示"));
       else {
-        tdOn.append(el("span", "badge badge-unknown", "不显示"));
-        tdOn.append(el("div", "li-sub", "没有已上架产品"));
+        tdOn.append(el("span", "pill pill-gray", "不显示"));
+        tdOn.append(el("div", "hint", "没有已上架产品"));
       }
       tr.append(tdOn);
     }
@@ -2758,7 +2784,9 @@ function syncManageBtns() {
     const on = canWrite && !!state.axisManage[axis];
     const b = document.querySelector(`.managebtn[data-axis="${axis}"]`);
     if (b) {
-      b.textContent = on ? "✓ 管理中" : "🔧 管理";
+      // 扳手线条图标（⛔ 不用 emoji，附录 C.6）；path 抄 mockup 的 I.tool
+      b.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
+      b.append(document.createTextNode(on ? " 管理中" : " 管理"));
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", String(on));   // 管理态是个开关，语义上就是 pressed
       // 写入闸没开时禁用并说明原因 —— 让人点了没反应，正是这一批在修的病。
@@ -2822,42 +2850,56 @@ async function loadAudit() {
 
 function renderAudit() {
   const a = state.audit; if (!a) return;
-  const sum = $("#auditSummary"); sum.innerHTML = "";
-  // ⚠️ 必须说清楚日志**包含别处推的改动**，否则人会以为"这就是后台干的全部"
-  sum.append(mkNotice("ok", `最近 **${a.total}** 条改动 · 本后台写的 **${a.fromAdmin}** · 别处推的 **${a.fromOther}**`));
-  sum.append(mkNotice("warn", a.note));
+  $("#auditSummary").innerHTML = "";   // 顶部两条横幅撤（§8）；这一格只留给读取失败时用
+  // 副标由真值算：「最近 60 条 · 本后台 60 · 别处推的 0」。⚠️ "包含别处推的改动"这件事仍然说了 —— 在副标里，不在横幅里。
+  $("#auditSub").textContent = `最近 ${a.total} 条 · 本后台 ${a.fromAdmin} · 别处推的 ${a.fromOther}`;
+
+  // 列头漏斗：来源（admin/other）· 操作人（从真实条目里长）；数字为当前口径
+  const cnt = (f) => a.entries.filter(f).length;
+  funnelHeader($("#thAuditSrc"), "来源",
+    [["", "全部", a.entries.length], ["admin", "后台", cnt((e) => e.source === "admin")], ["other", "别处", cnt((e) => e.source !== "admin")]],
+    state.auditSrc, (v) => { state.auditSrc = v; renderAudit(); });
+  const ops = [...new Set(a.entries.map((e) => e.operator || "—"))].sort();
+  funnelHeader($("#thAuditOp"), "操作人",
+    [["", "全部", a.entries.length], ...ops.map((o) => [o, o, cnt((e) => (e.operator || "—") === o)])],
+    state.auditOp, (v) => { state.auditOp = v; renderAudit(); });
+
+  const rows = a.entries.filter((e) =>
+    (!state.auditSrc || (state.auditSrc === "admin" ? e.source === "admin" : e.source !== "admin")) &&
+    (!state.auditOp || (e.operator || "—") === state.auditOp));
 
   const tb = $("#auditRows"); tb.innerHTML = "";
-  a.entries.forEach((e) => {
+  rows.forEach((e) => {
     const tr = el("tr");
-    const d = new Date(e.date);
-    tr.append(el("td", "col-st li-sub", isNaN(d) ? e.date : d.toLocaleString("zh-CN", { hour12: false })));
+    tr.append(el("td", "col-st mono", fmtStamp(e.date)));
 
-    const src = el("td", "col-cat");
-    src.append(el("span", `badge badge-${e.source === "admin" ? "published" : "unknown"}`, e.source === "admin" ? "后台" : "别处"));
+    const src = el("td", "col-cat ac");
+    src.append(el("span", `pill ${e.source === "admin" ? "pill-ok" : "pill-gray"}`, e.source === "admin" ? "后台" : "别处"));
     tr.append(src);
 
     const act = el("td");
     if (e.action) {
       const label = { create: "新建", update: "修改", delete: "删除", bulk: "批量" }[e.action] || e.action;
-      const line = el("div", "li-name", `${label} ${e.slugs.join("、") || "—"}`);
-      act.append(line);
-      if (e.fields) act.append(el("div", "li-sub", "字段：" + e.fields));
+      act.append(el("div", "pname", `${label} ${e.slugs.join("、") || "—"}`));
+      if (e.fields) act.append(el("div", "mono hint0", "字段：" + e.fields));
     } else {
       // 🔴 解析不出来就**原样显示 commit 标题**，不猜 —— 猜错的审计条目会被当成事实引用
-      act.append(el("div", "li-name", e.subject || "(无标题)"));
-      act.append(el("div", "li-sub", "未按后台格式记录，只能显示原始标题"));
+      act.append(el("div", "pname", e.subject || "(无标题)"));
+      act.append(el("div", "mono hint0", "未按后台格式记录，只能显示原始标题"));
     }
     tr.append(act);
 
-    tr.append(el("td", "col-cat li-sub", e.operator || "—"));
+    tr.append(el("td", "col-cat mono", e.operator || "—"));
 
     const sha = el("td", "col-st");
-    const link = el("a", "linkish", e.shortSha);
+    const link = el("a", "lnk mono-link", e.shortSha);
     link.href = e.url; link.target = "_blank"; link.rel = "noopener";
     sha.append(link); tr.append(sha);
     tb.append(tr);
   });
+  if (!rows.length) {
+    const tr = el("tr"); const td = el("td", "hint"); td.colSpan = 5; td.textContent = "没有匹配的记录。"; tr.append(td); tb.append(tr);
+  }
 }
 
 /** 左导航切视图。⚠️ 只切实做出来的这几个，SOON 项不可点（见 index.html 的 .soon）。 */
