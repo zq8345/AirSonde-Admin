@@ -1969,14 +1969,18 @@ function renderMedia() {
 // ⚠️ 字段清单不是我照着源码列的，是**照产出页实测过**的：每一条都在构建产物里
 //    渲染得出来。渲染不出来的（那两个 heading、整个 CAPABILITIES）**故意没放进来**。
 const SITE_SECTIONS = {
-  home: { title: "首页文案", key: "home" },
-  contact: { title: "联系方式", key: "contact" },
-  seo: { title: "站级 SEO", key: "seo" },
+  // sub = 页头副标（C 批 §6：那条绿横幅压成这一句）；"保存 ≠ 上线"的完整版挂副标 title
+  home: { title: "首页", key: "home", sub: "官网首页文案 · 保存后约 1 分钟上线" },
+  contact: { title: "联系方式", key: "contact", sub: "站上的邮箱 / 电话 / 地图链接都由它们派生" },
+  seo: { title: "SEO", key: "seo", sub: "站级默认 + 逐页 title / description" },
 };
 
 async function loadSite(which) {
   state.siteSection = which;
   $("#siteTitle").textContent = SITE_SECTIONS[which].title;
+  const ss = $("#siteSub");
+  ss.textContent = SITE_SECTIONS[which].sub;
+  ss.title = "保存 = 官网仓一次 commit ⇒ Cloudflare Pages 重建 ⇒ 约 1 分钟后站上可见。保存成功不等于站上已经变了，中间隔着一次构建。";
   $("#siteNotes").innerHTML = '<div class="notice notice-warn">读取中…</div>';
   $("#siteForm").innerHTML = "";
   // ⚠️ 读取期间必须**禁用**保存：一个空表单配一个看起来可点的保存按钮，
@@ -2000,15 +2004,23 @@ async function loadSite(which) {
   }
 }
 
-/** 表单控件：一行 label + input/textarea，带说明。值写回 state.siteDraft。 */
+/**
+ * 表单控件：label（+ 灰 meta + (?) + 右侧计数）+ input/textarea。值写回 state.siteDraft。
+ * crm-skin C 批（§6）：**常驻说明全撤** ——「为什么」进 label 旁 (?) 的 title（零 JS），
+ * 「填什么」进 placeholder（opts.ph），「填错」交给保存时校验红字（现有闸）。
+ * ⚠️ appendMd 的 **粗体** 语法在 title 里没有意义 ⇒ 塞进 (?) 前把星号剥掉。
+ */
 function siteField(parent, path, label, hint, opts = {}) {
   const wrap = el("div", "field");
   const id = "sf_" + path.replace(/\W/g, "_");
-  const lab = el("label", null, label); lab.htmlFor = id;
+  const lab = el("label", "flab", label); lab.htmlFor = id;
+  if (opts.meta) lab.append(el("span", "fmeta", opts.meta));
+  if (hint) { const q = el("span", "q2", "?"); q.title = String(hint).replace(/\*\*/g, ""); lab.append(q); }
   wrap.append(lab);
   const cur = path.split(".").reduce((o, k) => (o == null ? o : o[k]), state.siteDraft) ?? "";
   const input = el(opts.multiline ? "textarea" : "input");
   input.id = id; input.value = cur;
+  if (opts.ph) input.placeholder = opts.ph;
   if (opts.multiline) input.rows = opts.rows || 3;
   input.oninput = () => {
     // 写回草稿：一路建出中间对象，缺哪层补哪层
@@ -2044,29 +2056,23 @@ function siteField(parent, path, label, hint, opts = {}) {
   }
 
   if (opts.counter) {
-    // ── D：计数器**三态**，不是两态 ──
-    // ⚠️ `0 / 160`（留空）与 `155 / 160`（快到上限）原来长得一模一样 ——
-    //    一个"这一页在继承别人的文案"和一个"再写五个字就超了"，用同一种灰色说。
-    const cnt = el("div", "shint");
+    // ── 计数放 **label 右侧**（§6），三态不变 ──
+    // ⚠️ `0 / 160`（留空）与 `155 / 160`（快到上限）不能长一样：一个是"在继承别人的文案"，
+    //    一个是"再写五个字就超了"。空 = 灰斜体；正常 = 绿；超限 = 变红（title 里说会被截断）。
+    const cnt = el("span", "fcnt");
     const paint = () => {
       const n = input.value.trim().length;
       cnt.classList.remove("cnt-empty", "cnt-ok", "cnt-over");
-      if (n === 0) {
-        cnt.classList.add("cnt-empty");
-        cnt.textContent = opts.inheritFrom ? "留空 —— 继承站点默认描述" : "留空";
-      } else if (n > opts.counter) {
-        cnt.classList.add("cnt-over");
-        cnt.textContent = `${n} / ${opts.counter} 字符 —— 超出部分会在搜索结果里被截断`;
-      } else {
-        cnt.classList.add("cnt-ok");
-        cnt.textContent = `${n} / ${opts.counter} 字符`;
-      }
+      cnt.textContent = `${n} / ${opts.counter}`;
+      if (n === 0) { cnt.classList.add("cnt-empty"); cnt.title = opts.inheritFrom ? "留空 —— 继承站点默认描述" : "留空"; }
+      else if (n > opts.counter) { cnt.classList.add("cnt-over"); cnt.title = "超出部分会在搜索结果里被截断"; }
+      else { cnt.classList.add("cnt-ok"); cnt.title = ""; }
     };
     input.addEventListener("input", paint); paint();
-    wrap.append(cnt);
+    lab.append(cnt);
   }
   paintInherit();
-  if (hint) wrap.append(appendMd(el("p", "hint"), hint));
+  // ⛔ 常驻 `<p class="hint">` 已撤（C 批）：hint 现在进 label 旁 (?) 的 title，见函数头。
   parent.append(wrap);
 }
 
@@ -2091,10 +2097,9 @@ function renderSite(keepDraft = false) {
   }
 
   const notes = $("#siteNotes"); notes.innerHTML = "";
+  // ⚠️ "不能保存"是真警告，保留；⛔ 那条常驻绿横幅（真源 · 保存 ≠ 上线）已撤（C 批 §6）——
+  //    结论压进页头副标一句（loadSite 里设），"保存 ≠ 上线"那半句挂在副标的 title 上。
   if (!state.write?.enabled) notes.append(mkNotice("warn", "当前**不能保存**（写入闸或 token 未就绪）——改动不会提交。"));
-  notes.append(mkNotice("ok",
-    `真源：官网仓 ${b.path}。保存 = 一次 commit ⇒ Cloudflare Pages 重建 ⇒ **约 1 分钟后**站上可见。` +
-    `**保存成功不等于站上已经变了**，中间隔着一次构建。`));
 
   const form = $("#siteForm"); form.innerHTML = "";
   // ⚠️ 表单重画 ⇒ 上一批继承框的画笔全部作废。不清的话它们指向已被移除的节点，
@@ -2104,29 +2109,30 @@ function renderSite(keepDraft = false) {
 
   if (sec === "contact") {
     const c = siteCard("联系数据", "站上的链接由它们派生");
-    siteField(c, "contact.email", "邮箱", "页面上的 **mailto:** 链接由它拼出来。写错 = 死链接，而页面看不出异常。");
-    siteField(c, "contact.phone", "电话", "🔴 **WhatsApp 与拨号链接都由这一个号码派生**（wa.me / tel:）。所以号码只存这一处，不可能出现「号码改了链接没改」。建议以 + 和国家码开头。");
-    siteField(c, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
-    siteField(c, "contact.address", "地址", "⭐ Google 地图链接**由地址算出来**，不单独存 —— 改了地址，地图自动跟着走。");
-    siteField(c, "contact.hours", "营业时间");
-    siteField(c, "contact.response", "响应时间");
+    siteField(c, "contact.email", "邮箱", "页面上的 mailto: 链接由它拼出来。写错 = 死链接，而页面看不出异常。");
+    const r1 = el("div", "row2"); c.append(r1);
+    siteField(r1, "contact.phone", "电话", "WhatsApp 与拨号链接都由这一个号码派生（wa.me / tel:）。号码只存这一处，不可能出现「号码改了链接没改」。以 + 和国家码开头。");
+    siteField(r1, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
+    siteField(c, "contact.address", "地址", "Google 地图链接由地址算出来，不单独存 —— 改了地址，地图自动跟着走。");
+    const r2 = el("div", "row2"); c.append(r2);
+    siteField(r2, "contact.hours", "营业时间");
+    siteField(r2, "contact.response", "响应时间");
     form.append(c);
   } else if (sec === "home") {
     const h = siteCard("Hero", "首页第一屏");
-    siteField(h, "home.hero.eyebrow", "小标（eyebrow）");
-    siteField(h, "home.hero.headline", "大标题（H1）", "⚠️ 这是首页的 H1，搜索引擎最看重的一行。");
+    siteField(h, "home.hero.eyebrow", "小标", null, { meta: "eyebrow" });
+    siteField(h, "home.hero.headline", "大标题", "首页的 H1，搜索引擎最看重的一行。", { meta: "H1" });
     siteField(h, "home.hero.body", "副文案", null, { multiline: true, rows: 2 });
-    siteField(h, "home.hero.primaryCtaLabel", "主按钮文字", "⚠️ 只能改**文字**。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
-    siteField(h, "home.hero.secondaryCtaLabel", "次按钮文字");
+    const rc = el("div", "row2"); h.append(rc);
+    siteField(rc, "home.hero.primaryCtaLabel", "主按钮文字", "只能改文字。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
+    siteField(rc, "home.hero.secondaryCtaLabel", "次按钮文字");
     form.append(h);
 
-    const v = siteCard("卖点卡", "首页那几张小卡");
-    const box = el("div", "repeat");
+    // 卖点卡（§6 mockup）：每张 = row2（标题 | 正文），右上「删掉这张」红字；卡底「+ 加一张」描边小按钮
+    const v = siteCard("卖点卡", `首页那几张小卡 · ${(state.siteDraft.home.valueProps || []).length} 张`);
     (state.siteDraft.home.valueProps || []).forEach((_, i) => {
-      const row = el("div", "card");
-      siteField(row, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
-      siteField(row, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
-      const del = el("button", "linkish", "删掉这张"); del.type = "button";
+      const row = el("div", "vprop");
+      const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
       del.onclick = () => {
         // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
         state.siteDraft.home.valueProps.splice(i, 1);
@@ -2134,10 +2140,12 @@ function renderSite(keepDraft = false) {
         renderSite(true);
       };
       row.append(del);
-      box.append(row);
+      const r = el("div", "row2"); row.append(r);
+      siteField(r, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
+      siteField(r, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+      v.append(row);
     });
-    v.append(box);
-    const add = el("button", "add", "+ 加一张"); add.type = "button";
+    const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
     add.onclick = () => { state.siteDraft.home.valueProps.push({ title: "", body: "" }); renderSite(true); };
     v.append(add);
     form.append(v);
@@ -2165,13 +2173,11 @@ function renderSite(keepDraft = false) {
 
     // ── B：组织描述**独立成块**，不再和「默认标题/默认描述」同卡 ──
     // 它和那两个不是同一种东西：那两个是页面 meta 的兜底，它是公司简介，不属于任何一页。
-    const org = siteCard("公司简介", "进 JSON-LD 的 Organization —— 不是任何一页的 meta");
+    // 公司简介：左侧 3px 品牌绿粗线（它进 JSON-LD，与其它卡不同类，§6）；那段"为什么"收进 (?)
+    const org = siteCard("公司简介", "进 JSON-LD 的 Organization · AI 与搜索引擎读「AirSonde 是什么」读的就是这一条 · 不受 160 字限制");
     org.classList.add("card-org");
-    org.append(appendMd(el("p", "hint"),
-      "🔴 **AI 与搜索引擎读「AirSonde 这家公司是什么」，读的就是这一条。** " +
-      "所以它要有主语、要有公司名 —— 一句产品文案放进来，机器读到的是「一堆产品」而不是「一家做贴牌代工的厂」。" +
-      "⚠️ 它**不受 160 字符限制**（那是页面 meta 的规矩，与这里无关）。"));
-    siteField(org, "seo.organisationDescription", "公司简介", null, { multiline: true });
+    siteField(org, "seo.organisationDescription", "公司简介",
+      "要有主语、要有公司名 —— 一句产品文案放进来，机器读到的是「一堆产品」而不是「一家做贴牌代工的厂」。", { multiline: true });
     form.append(org);
 
     // ── 站点默认：现在只剩真正属于"页面 meta 兜底"的两个 ──
@@ -2186,15 +2192,12 @@ function renderSite(keepDraft = false) {
       const box = siteCard(url, key);
       box.classList.add("card-page");
 
-      // ── E：那条 title 警告挪到**与 title 相邻处** ──
-      // ⚠️ 它只关于 title，压在整块顶部时，下面 title 与 description 是混排的。
-      //    ⛔ 这句话本身是真的（构建时数唯一 title 数），不许顺手删。
-      siteField(box, `seo.pages.${key}.title`, "标题", null, { counter: lim.title });
-      box.append(appendMd(el("p", "hint hint-tight"),
-        "⚠️ **两页 title 相同会让官网构建直接失败**（构建时数唯一 title 数）—— 后台会先拦住，改动上不了线。"));
-
+      // title 那条警告收进 (?)（C 批 §6）。⛔ 句子本身不许删 —— 它是真的（构建时数唯一 title 数）。
+      siteField(box, `seo.pages.${key}.title`, "标题",
+        "两页 title 相同会让官网构建直接失败（构建时数唯一 title 数）—— 后台会先拦住，改动上不了线。",
+        { counter: lim.title });
       siteField(box, `seo.pages.${key}.description`, "描述", null,
-        { multiline: true, counter: lim.description, inheritFrom: defDesc });
+        { multiline: true, counter: lim.description, inheritFrom: defDesc, ph: "留空 = 继承站点默认描述" });
       form.append(box);
     });
   }

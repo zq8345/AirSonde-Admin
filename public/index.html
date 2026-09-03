@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=80">
+<link rel="stylesheet" href="/style.css?v=81">
 </head>
 <body>
 
@@ -235,7 +235,7 @@
             死字段接上去 = 让人改一段改了不会变的字，比没有这个输入框更糟。 -->
     <section id="siteView" hidden>
       <div class="page-head">
-        <h1 id="siteTitle">—</h1>
+        <h1 id="siteTitle">—</h1><span class="page-sub" id="siteSub"></span>
         <button type="button" class="primary" id="siteSave">保存</button>
       </div>
       <div id="siteNotes"></div>
@@ -447,7 +447,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=80"></script>
+<script src="/app.js?v=81"></script>
 </body>
 </html>
 

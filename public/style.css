@@ -289,12 +289,27 @@ form { margin-top: var(--space-16); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-16); }
 @media (max-width: 620px) { .row2 { grid-template-columns: 1fr; } }
 label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--space-4); }
+/* 站点表单的 label 行（C 批 §6）：label 13/600 + 12 灰 meta + (?) + 右侧计数 */
+.flab { display: flex; align-items: baseline; gap: 8px; }
+.fmeta { font-weight: 400; font-size: 12px; color: var(--hint); }
+.fcnt { margin-left: auto; font-weight: 400; font-size: 12px; }
+.fcnt.cnt-empty { color: var(--hint); font-style: italic; }
+.fcnt.cnt-ok { color: var(--green); }
+.fcnt.cnt-over { color: var(--red); font-weight: 600; }
+/* 卖点卡的一张（§6 mockup）：右上「删掉这张」红字，内容 row2 */
+.vprop { position: relative; padding: 12px 0 0; border-top: 1px solid var(--border); margin-top: 12px; }
+.vprop:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+.vprop-del { position: absolute; right: 0; top: 8px; background: none; border: 0; color: var(--red); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.vprop:first-of-type .vprop-del { top: -4px; }
+.vprop-del:hover { background: var(--tint-red); }
 .req { color: var(--text-critical); font-size: 12px; font-weight: 600; margin-left: var(--space-4); }
 .internal { color: var(--text-critical); background: var(--bg-critical-soft); font-size: 12px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
+/* 输入框照 mockup .inp：白底 · --border-strong 描边 · 圆角 8 · 14px（C 批 §6，全站一次换） */
 input, select, textarea {
-  width: 100%; padding: var(--space-8) var(--space-8); font: inherit; font-size: 14px;
-  background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
+  width: 100%; padding: var(--space-8) var(--space-12); font: inherit; font-size: 14px;
+  background: var(--bg); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 8px;
 }
+textarea { line-height: 1.6; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--border-focus); outline-offset: -1px; }
 input.bad, select.bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 .hint { margin: var(--space-4) 0 0; font-size: 12px; color: var(--text-secondary); }
@@ -877,13 +892,13 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
       Joe 想改 /products/ 的描述，粘进了「组织描述」，覆盖公司简介并上了生产。
       ⇒ 下面这些不是装饰，是**让"这三个不是同一种东西"一眼看得出来**。 */
 
-/* 公司简介独立成块，左侧一道色带 —— 它不属于任何一页，视觉上就不该混在页面 meta 里 */
-.card-org { border-left: 3px solid var(--border-accent); background: var(--bg-selected); }
-.card-org textarea { background: var(--bg-surface); }
+/* 公司简介独立成块，左侧 3px 品牌绿粗线（§6 / mockup .set-card.org）—— 它进 JSON-LD，与其它卡不同类。
+   ⛔ tint 底已撤：mockup 只有色带没有底色，tint 底会和选中态（--brand-tint）撞语义。 */
+.card-org { border-left: 3px solid var(--brand); }
 
 /* 每页一张卡，路径当标题（原来路径是框外一行极小灰字，容易漏） */
 .card-page > h3 { font-family: var(--mono); font-size: 14px; }
-.hint-tight { margin-top: calc(-1 * var(--space-4)); }
+/* ⛔ .hint-tight 已删（C 批）：title 重复警告收进 (?)，没有第二个使用者。 */
 
 /* ── 留空时显示"继承来的那一句" ──
    🔴 必须**明显是只读的**：灰底、无边框、不是表单控件。
