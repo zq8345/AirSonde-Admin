@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=84">
+<link rel="stylesheet" href="/style.css?v=86">
 </head>
 <body>
 
@@ -253,14 +253,20 @@
       <div id="settingsBody"></div>
     </section>
 
-    <!-- ══════ 媒体库 ══════ -->
+    <!-- ══════ 媒体库（crm-skin E 批 §7）══════
+         页头右（从左到右）：未被引用/草稿 红标（>0 才出现，点=筛）· 两段切换 在线|原图存档 ·
+         「新建文件夹」描边 · 「上传图片」绿实心（本页唯一主按钮）。
+         ⛔ 旧 tab 条（#mediaTabs）已删 —— 元素、绑定、.tabs-status/.stab 样式三处一起（B 批欠的账在这还清）。
+         列表按文件夹分组（#mediaGroups）；操作结果独占一格（#mediaResult，照 catsResult 模式）。 -->
     <section id="mediaView" hidden>
       <div class="page-head">
-        <h1>图片</h1>
-        <div class="tabs-status" id="mediaTabs"></div>
+        <h1>图片</h1><span class="page-sub" id="mediaSub"></span>
+        <div class="page-right" id="mediaHead"></div>
       </div>
       <div id="mediaSummary"></div>
-      <div class="gallery gallery-lib" id="mediaGrid"></div>
+      <div id="mediaResult"></div>
+      <div class="card mpanel" id="mediaPanel" hidden></div>
+      <div id="mediaGroups"></div>
       <div class="empty" id="mediaEmpty" hidden></div>
     </section>
 
@@ -455,7 +461,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=84"></script>
+<script src="/app.js?v=86"></script>
 </body>
 </html>
 

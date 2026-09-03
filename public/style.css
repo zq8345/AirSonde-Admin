@@ -426,12 +426,7 @@ button:disabled, [disabled] {
 .page-head > .primary { margin-left: auto; }
 
 /* ⛔ .toolbar / .toolbar-right 已删（crm-skin B 批 §3）：产品页的 全部/在线/未上架 tab 条与「全部机型」下拉没了，筛选住列头。
-   ⚠️ .tabs-status / .stab / .stab-n **暂留**：图片页（#mediaTabs）还在用同一套 tab 条，那一页归 E 批重做（§7 两段切换 + 红标），
-      到 E 批连元素、绑定、这三条规则一起撤。⛔ 现在删会让图片页的 tab 当场失去样式。 */
-.tabs-status { display: flex; gap: var(--space-2); background: var(--panel); padding: var(--space-2); border-radius: 7px; }
-.stab { display: flex; align-items: center; gap: var(--space-6); padding: var(--space-4) var(--space-12); border: 0; background: none; border-radius: 5px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
-.stab.is-on { background: var(--bg); color: var(--text-primary); box-shadow: 0 1px 2px var(--shadow-md); }
-.stab-n { font-family: var(--mono); font-size: 12px; }
+   ⛔ .tabs-status / .stab / .stab-n 已随图片页重做一起撤（E 批）—— B 批欠的账在此还清。
 /* 下面是全站仅有的两种筛选控件（§1）。 */
 /* 两段切换（二值维度）：照 mockup .seg */
 .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; background: var(--bg); vertical-align: middle; font-weight: 400; }
@@ -807,11 +802,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .editbar .spacer { margin-left: auto; }
 .card .field:last-child { margin-bottom: 0; }
 
-/* ── A8 媒体库 ── */
-.gallery-lib { gap: var(--space-12); }
-.mcard { width: 150px; }
-.mcard .thumb { width: 150px; height: 150px; }
-.mcard .gtag { white-space: normal; line-height: 1.35; }
+/* ⛔ 旧媒体卡族（.gallery-lib/.mcard/.gtag 用法）已删（E 批）—— 新的是下面 .mgal/.micard。 */
 /* 未被引用的压黄边 —— 但**只是提示**，界面不提供一键删除 */
 .mcard.is-orphan .thumb { border-color: var(--border-caution); background: var(--bg-caution-soft); }
 
@@ -1048,3 +1039,25 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 /* ⛔ 这里原来有一份 `.featadd` + `.featadd select`，**而且一模一样的两份**（931 与 1005 行）。
    `<select>` 已被可视化选择器替掉 ⇒ 那两条选择器规则成了死代码，一并删。
    📌 本仓前例：`.topbar` 那条死规则躺了很久，一加顶栏当场复活并覆盖了 padding。**用不上就删。** */
+
+/* ══ 媒体库（crm-skin E 批 §7）══ */
+/* 红标：未被引用/草稿，>0 才渲染；点=筛，再点取消 */
+.mtag { background: var(--tint-red); color: var(--red); border: 0; border-radius: 10px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mtag.on { outline: 2px solid var(--red); outline-offset: 1px; }
+.mgroup-h { display: flex; align-items: baseline; gap: 6px; margin: 18px 0 8px; }
+.mgroup-h:first-child { margin-top: 0; }
+.mgroup-t { font-size: 15px; font-weight: 600; }
+.cnt-g { font-size: 12px; color: var(--hint); }
+.mgal { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .mgal { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.micard { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; font-size: 12px; }
+.micard.is-orphan { border-color: var(--amber); }
+.mthumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 8px; background: var(--bg); }
+.micard .iname { font-family: var(--mono); font-size: 12px; color: var(--text-primary); word-break: break-all; margin-top: 8px; }
+.micard .iuse { color: var(--muted); margin-top: 3px; }
+.micard .iuse.is-warn { color: var(--amber); font-weight: 600; }
+.micard .imeta2 { color: var(--hint); margin-top: 4px; }
+/* 新建文件夹 / 上传 的内联面板 */
+.mpanel { padding: 14px 16px; }
+.mrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mrow input, .mrow select { width: auto; min-width: 240px; }

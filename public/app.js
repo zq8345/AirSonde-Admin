@@ -1828,7 +1828,8 @@ document.querySelectorAll(".add[data-add]").forEach((b) => {
 // ⛔ **只报告，绝不提供"一键清理孤儿"。** 判错一张在用的图 = 官网当场缺图，而删除不可逆。
 //    要删就去那个产品的编辑页逐张确认 —— 多点两下，换的是"删错了没法撤"这件事不会发生。
 async function loadMedia() {
-  const grid = $("#mediaGrid"); grid.innerHTML = "";
+  // ⚠️ #mediaGrid 已随 E 批换成 #mediaGroups —— 这里跟着换，⛔ 摸已删元素会让整个函数第一行就抛
+  $("#mediaGroups").innerHTML = "";
   $("#mediaSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
   try {
     const { body } = await api("/api/media");
@@ -1841,75 +1842,184 @@ async function loadMedia() {
 }
 
 function renderMedia() {
+  // crm-skin E 批（§7）：tab 条撤 → 页头右侧 = 红标（>0 才出现）+ 两段切换 + 新建文件夹 + 上传图片；
+  // 列表按文件夹分组。⚠️ 「孤儿」判据仍只有服务端盖的 f.orphan（media.ts isOrphan）——
+  // ⛔ 这里不写第二遍 `!referencedBy.length`（那个双真源已出过一次事：38 张原图被标成可删）。
   const m = state.media; if (!m) return;
-  $("#navMediaCount").textContent = `(${m.total})`;   // 左栏计数内联「(204)」（crm-skin §2）
+  $("#navMediaCount").textContent = `(${m.total})`;
 
+  // 副标由真值算；对账红 / missing 红是**真警告**，留在 #mediaSummary
+  $("#mediaSub").textContent = `共 ${m.total} 张 · 在用 ${m.referenced} · 原图存档 ${m.archived}`;
   const sum = $("#mediaSummary"); sum.innerHTML = "";
-  // 🔴 对账不成立 ⇒ 这次扫描本身有问题，结论不可用。放最前面，红着说。
   if (!m.reconciled) sum.append(mkNotice("bad", "🔴 **对账不成立**（被引用 + 孤儿 ≠ 总数）—— 本次扫描结果不可用。"));
-  // 🔴 有产品读不出来 ⇒ 它声明的引用看不见 ⇒ 那些图会被误判成孤儿
   if (!m.orphansTrustworthy) sum.append(mkNotice("bad", m.note));
-  sum.append(mkNotice(m.orphans ? "warn" : "ok",
-    `在用 **${m.referenced}** · 未被引用 **${m.orphans}** · 原图存档 **${m.archived}**（有意保留，不算孤儿）· 共 ${m.total} 张` +
-    (m.missing?.length ? ` · ⚠️ 产品声明了但仓里没有：**${m.missing.length}** 处` : "")));
   if (m.missing?.length) {
-    // ⚠️ 这是与孤儿**相反**的一种病：不是"图没人要"，是"要的图不在"。修法也不同。
+    // ⚠️ 与孤儿**相反**的病：不是"图没人要"，是"要的图不在"（官网会缺图）。
     sum.append(mkNotice("bad", "以下引用指向不存在的文件（官网会缺图）：" +
       m.missing.map((x) => `${x.slug} → ${x.rel}`).join("；")));
   }
 
-  const tabs = $("#mediaTabs"); tabs.innerHTML = "";
-  const defs = [["all", "全部", m.total], ["orphan", "未被引用", m.orphans],
-                ["originals", "原图存档", m.archived],
-                ["published", "在线", m.files.filter((f) => f.area === "published").length],
-                ["draft", "草稿", m.files.filter((f) => f.area === "draft").length]];
-  defs.forEach(([k, label, n]) => {
-    const b = el("button", "stab" + (state.mediaTab === k ? " is-on" : "")); b.type = "button";
-    b.append(document.createTextNode(label), el("span", "stab-n", String(n)));
-    b.onclick = () => { state.mediaTab = k; renderMedia(); };
-    tabs.append(b);
-  });
+  // ── 页头右侧 ──
+  const head = $("#mediaHead"); head.innerHTML = "";
+  const draftN = m.files.filter((f) => f.area === "draft").length;
+  const redTag = (key, label, n) => {
+    if (!n) return;                          // =0 不出现（§7：不做常驻段）
+    const b = el("button", "mtag" + (state.mediaTab === key ? " on" : "")); b.type = "button";
+    b.append(document.createTextNode(`${label} ${n}`));
+    b.title = state.mediaTab === key ? "再点取消筛选" : `只看${label}的那 ${n} 张`;
+    b.onclick = () => { state.mediaTab = state.mediaTab === key ? "" : key; renderMedia(); };
+    head.append(b);
+  };
+  redTag("orphan", "未被引用", m.orphans);
+  redTag("draft", "草稿", draftN);
+  head.append(segControl(
+    [["published", "在线", m.files.filter((f) => f.area === "published").length], ["originals", "原图存档", m.archived]],
+    ["published", "originals"].includes(state.mediaTab) ? state.mediaTab : null,
+    (v) => { state.mediaTab = v || ""; renderMedia(); }));
+  const nf = el("button", "btn-secondary", "新建文件夹"); nf.type = "button";
+  nf.onclick = () => mediaPanel("folder");
+  const up = el("button", "primary", "上传图片"); up.type = "button";
+  up.onclick = () => mediaPanel("upload");
+  if (!state.write?.enabled) {
+    nf.disabled = true; up.disabled = true;
+    nf.title = up.title = "当前不能保存（写入闸或 token 未就绪）";
+  }
+  head.append(nf, up);
 
-  // 🔴 "孤儿"的判据只有一处：服务端盖在每个文件上的 `f.orphan`（media.ts 的 isOrphan）。
-  //    ⛔ 这里**不再**写 `!referencedBy.length` —— 那是第二个真源，而且已经出过事：
-  //       顶部计数排除 originals（说「未被引用 0」），卡片黄标不排除（38 张原图全被标成
-  //       「未被引用」）⇒ 同一个词、同一屏、两个定义。而人会照卡片去删原图。
+  // ── 筛选 + 按文件夹分组 ──
   const rows = m.files.filter((f) => {
     if (state.mediaTab === "orphan") return f.orphan;
-    if (["published","draft","originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
+    if (["published", "draft", "originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
     return true;
   });
-
-  const grid = $("#mediaGrid"); grid.innerHTML = "";
+  // 文件夹 = rel 去掉 products/ 后的目录部分；根 = 产品图（官网构建从这里取）
+  const folderOf = (rel) => {
+    const rest = rel.replace(/^products\//, "");
+    const i = rest.indexOf("/");
+    return i < 0 ? "" : rest.slice(0, i);
+  };
+  const groups = new Map();
   rows.forEach((f) => {
-    const card = el("div", "gcard mcard");
-    if (f.orphan) card.classList.add("is-orphan");
-    const t = el("div", "thumb"); setThumb(t, rawUrl(f.rel), f.rel);
-    card.append(t);
-    card.append(el("span", "gtag", f.rel.replace(/^products\//, "").replace(/^_draft\//, "")));
-    const use = el("span", "gtag");
-    if (f.referencedBy.length) {
-      use.textContent = "用于 " + f.referencedBy.join("、");
-      // 点一下直接跳到引用它的产品 —— 想删它就得从那里改
-      card.style.cursor = "pointer";
-      card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
-    } else if (f.orphan) {
-      use.textContent = "未被引用";
-      use.style.color = "var(--warn)";
-    } else {
-      // 🔴 原图存档也是"零引用"，但它**不是**孤儿 —— 它是整条图片管线的源材料
-      //    （`images:build` 从这里读）。给它自己的标，⛔ 绝不复用「未被引用」那个词：
-      //    那个词已经有主了，而它在这里的含义是"可以删"。
-      use.textContent = "原图存档 · 不参与打包";
-      use.style.color = "var(--muted)";
-    }
-    card.append(use, el("span", "gtag", `${(f.size / 1024).toFixed(0)}KB · ${f.area}`));
-    grid.append(card);
+    const k = folderOf(f.rel);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  });
+  const groupLabel = (k) => k === "" ? "产品图（官网构建从这里取）" : k === "_draft" ? "草稿区（不进构建）" : k === "originals" ? "原图存档（不进构建）" : `${k}/（不进构建）`;
+  // 根排最前，其余按名称；保留目录排最后
+  const order = [...groups.keys()].sort((a, b) => {
+    const w = (k) => k === "" ? 0 : k === "_draft" ? 8 : k === "originals" ? 9 : 1;
+    return w(a) - w(b) || a.localeCompare(b);
+  });
+
+  const box = $("#mediaGroups"); box.innerHTML = "";
+  order.forEach((k) => {
+    const fs = groups.get(k);
+    const h = el("div", "mgroup-h");
+    h.append(el("span", "mgroup-t", groupLabel(k)));
+    h.append(el("span", "cnt-g", `(${fs.length})`));
+    box.append(h);
+    const grid = el("div", "mgal");
+    fs.forEach((f) => {
+      const card = el("div", "micard");
+      if (f.orphan) card.classList.add("is-orphan");
+      const t = el("div", "thumb mthumb"); setThumb(t, rawUrl(f.rel), f.rel);
+      card.append(t);
+      card.append(el("div", "iname", f.rel.split("/").pop()));
+      const use = el("div", "iuse");
+      if (f.referencedBy.length) {
+        use.textContent = "用于 " + f.referencedBy.join("、");
+        card.style.cursor = "pointer";
+        card.title = "点击打开引用它的产品";
+        card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
+      } else if (f.orphan) {
+        use.textContent = "未被引用";
+        use.classList.add("is-warn");
+      } else {
+        // 原图存档零引用但**不是**孤儿 —— 它是图片管线的源材料，⛔ 不复用「未被引用」那个词
+        use.textContent = "存档 · 不参与打包";
+      }
+      card.append(use, el("div", "imeta2", `${(f.size / 1024).toFixed(0)}KB`));
+      grid.append(card);
+    });
+    box.append(grid);
   });
 
   const empty = $("#mediaEmpty");
   empty.hidden = rows.length > 0;
   if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
+}
+
+/**
+ * 新建文件夹 / 上传图片的内联面板（E 批）。同一时间只开一个；再点同一个按钮 = 关。
+ * 🔴 上传**必须选文件夹**（服务端硬闸同款理由）：官网 glob 是根目录 eager `*.webp`，
+ *    传根 = 未引用的素材也全部进构建产物。保留目录（_draft/originals）不在可选里。
+ */
+function mediaPanel(kind) {
+  const p = $("#mediaPanel");
+  if (p.dataset.kind === kind && !p.hidden) { p.hidden = true; p.dataset.kind = ""; return; }
+  p.dataset.kind = kind; p.hidden = false; p.innerHTML = "";
+  const res = $("#mediaResult");
+
+  const folders = [...new Set((state.media?.files || [])
+    .map((f) => { const rest = f.rel.replace(/^products\//, ""); const i = rest.indexOf("/"); return i < 0 ? "" : rest.slice(0, i); })
+    .filter((k) => k && k !== "_draft" && k !== "originals"))].sort();
+
+  if (kind === "folder") {
+    const row = el("div", "mrow");
+    const inp = el("input"); inp.placeholder = "文件夹名（小写字母数字连字符，如 banners）"; inp.spellcheck = false;
+    const ok = el("button", "primary btn-mini", "建"); ok.type = "button";
+    ok.onclick = async () => {
+      const name = inp.value.trim().toLowerCase();
+      res.innerHTML = "";
+      ok.disabled = true;
+      try {
+        const { status, body } = await api("/api/media/folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+        if (!body?.wrote) { res.append(mkNotice("bad", `🔴 ${body?.error || status}${body?.detail ? " —— " + body.detail : ""}`)); return; }
+        res.append(mkNotice("ok", `✅ ${body.what} —— commit ${String(body.commitSha || "").slice(0, 7)}`));
+        p.hidden = true;
+        await loadMedia();
+      } catch (e) { res.append(mkNotice("bad", "新建失败：" + e.message)); }
+      finally { ok.disabled = false; }
+    };
+    row.append(inp, ok);
+    p.append(row);
+    inp.focus();
+    return;
+  }
+
+  // ── 上传 ──
+  const row = el("div", "mrow");
+  const sel = el("select");
+  sel.append(new Option("选择文件夹…", ""));
+  folders.forEach((k) => sel.append(new Option(k + "/", k)));
+  const pick = el("label", "btn-secondary btn-mini");
+  const fi = el("input"); fi.type = "file"; fi.accept = "image/*"; fi.multiple = true; fi.hidden = true;
+  pick.append(fi, document.createTextNode("选图片…"));
+  const note = el("span", "hint0", folders.length ? "自动转 WebP · 单张 ≤2MB · 不挂产品，传完会出现在「未被引用」" : "还没有文件夹 —— 先「新建文件夹」（不能传到根目录：根目录的图会被官网构建全部打包）");
+  row.append(sel, pick, note);
+  p.append(row);
+  fi.onchange = async () => {
+    const folder = sel.value;
+    res.innerHTML = "";
+    if (!folder) { res.append(mkNotice("bad", "先选一个文件夹 —— ⛔ 不能传到根目录（根目录的图会被官网构建全部打包，哪怕没人用）。")); fi.value = ""; return; }
+    const files = [...fi.files]; fi.value = "";
+    if (!files.length) return;
+    res.append(mkNotice("warn", `转码并上传 ${files.length} 张到 ${folder}/ …（一次上传 = 官网仓一个 commit）`));
+    try {
+      const payload = [];
+      for (const f of files) {
+        const w = await toWebp(f);       // 复用产品图那条链：转 WebP + ≤2MB，超标就抛
+        const stem = f.name.toLowerCase().replace(/\.[a-z0-9]+$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-") || "image";
+        payload.push({ name: stem, base64: await blobToBase64(w.blob) });
+      }
+      const { status, body } = await api("/api/media/upload", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ folder, files: payload }) });
+      res.innerHTML = "";
+      if (!body?.wrote) { res.append(mkNotice("bad", `🔴 ${body?.error || status}${body?.detail ? " —— " + body.detail : ""}`)); return; }
+      res.append(mkNotice("ok", `✅ ${body.what} —— commit ${String(body.commitSha || "").slice(0, 7)}。${body.note || ""}`));
+      p.hidden = true;
+      await loadMedia();
+    } catch (e) { res.innerHTML = ""; res.append(mkNotice("bad", "上传失败：" + e.message)); }
+  };
 }
 
 // ═══════════════ 站点内容：首页 / 联系方式 / SEO ═══════════════

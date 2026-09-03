@@ -11,7 +11,7 @@ import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToByt
 //    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
 //    留着它 = 留一份看起来还在用、其实指错方向的代码。
 import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_PAGES, SEO_LIMITS } from "./sitecontent";
-import { crossReference } from "./media";
+import { crossReference, PRODUCT_IMG_PREFIX } from "./media";
 import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
@@ -395,6 +395,81 @@ app.get("/api/media", async (c) => {
   } catch (e) {
     console.error(JSON.stringify({ evt: "media_failed", msg: String(e) }));
     return c.json({ error: "读取媒体库失败", detail: String(e) }, 502);
+  }
+});
+
+// ─────────── 图片页新能力（crm-skin E 批 §7，Joe 点名）───────────
+//
+// 🔴 前置事实（实测官网 src/lib/products.ts）：产品图的 glob 是 **单层 `products/*.webp` 且 eager:true** ——
+//    ① 任何子目录（_draft/、originals/、以及这里新建的文件夹）都**天然在构建之外**；
+//    ② 反过来，**上传到 products/ 根的图会被 eager glob 全部打进产物**，哪怕没人引用。
+//    ⇒ 上传**必须选文件夹，⛔ 不许传根** —— 传根等于把素材直接塞进官网构建物。
+//
+// ⚠️ 传上去的图不挂任何产品 ⇒ 在媒体页会立刻出现在「未被引用」里（areaOf 把 products/<folder>/ 判为
+//    published 区、referencedBy 为空 ⇒ orphan）—— 这是它的**可见出口**（SPEC §7：⛔ 不能传了就消失）。
+
+/** 文件夹名/文件名的形状闸：小写字母数字连字符。查询值要进 GitHub API 路径，⛔ 什么都收等于让人注入路径。 */
+const MEDIA_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** 保留目录：语义已有主，⛔ 不许当普通文件夹建/传。 */
+const MEDIA_RESERVED = new Set(["_draft", "originals"]);
+
+app.post("/api/media/folder", async (c) => {
+  const body = await c.req.json().catch(() => null) as { name?: string } | null;
+  const name = String(body?.name || "").trim().toLowerCase();
+  if (!MEDIA_NAME_RE.test(name)) return c.json({ wrote: false, error: "文件夹名只能用小写字母、数字和连字符（如 banners、expo-2026）。" }, 422);
+  if (MEDIA_RESERVED.has(name)) return c.json({ wrote: false, error: `「${name}」是保留目录（草稿区/原图存档），不能当普通文件夹建。` }, 422);
+  try {
+    // 已存在就拒 —— "建了但其实早就有"会让人以为自己丢了东西
+    const probe = await ghFetch(c.env, `/repos/${c.env.GITHUB_REPO}/contents/${PRODUCT_IMG_PREFIX}${name}?ref=${encodeURIComponent(c.env.GITHUB_BRANCH!)}`);
+    if (probe.ok) return c.json({ wrote: false, error: `文件夹「${name}」已经存在。` }, 409);
+    const r = await commitFiles(c.env, {
+      message: `admin: create media folder ${name} (${operatorOf(c)})`,
+      // .gitkeep：git 不存空目录，占位文件让目录立刻可见
+      files: [{ path: `${PRODUCT_IMG_PREFIX}${name}/.gitkeep`, text: "" }],
+    });
+    return c.json({ wrote: true, what: `新建文件夹 ${name}`, commitSha: r.commitSha, commitUrl: r.commitUrl });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "出站被本地策略拒绝", detail: String((e as Error).message) }, 403);
+    console.error(JSON.stringify({ evt: "media_folder_failed", msg: String(e) }));
+    return c.json({ wrote: false, error: "新建文件夹失败", detail: String(e) }, 502);
+  }
+});
+
+app.post("/api/media/upload", async (c) => {
+  const body = await c.req.json().catch(() => null) as { folder?: string; files?: { name?: string; base64?: string }[] } | null;
+  const folder = String(body?.folder || "").trim().toLowerCase();
+  const files = Array.isArray(body?.files) ? body!.files! : [];
+  // 🔴 必须选文件夹（见顶部前置事实②）；⛔ 根、⛔ 保留目录
+  if (!MEDIA_NAME_RE.test(folder)) return c.json({ wrote: false, error: "必须选择一个文件夹 —— 传到根目录会被官网构建全部打包，哪怕没人用。" }, 422);
+  if (MEDIA_RESERVED.has(folder)) return c.json({ wrote: false, error: `「${folder}」是保留目录，不能往里传 —— 草稿区/原图存档由产品保存流程管理。` }, 422);
+  if (!files.length || files.length > 20) return c.json({ wrote: false, error: "一次 1–20 张。" }, 422);
+  try {
+    const commits: { path: string; base64: string }[] = [];
+    const seen = new Set<string>();
+    for (const f of files) {
+      const stem = String(f.name || "").trim().toLowerCase().replace(/\.webp$/, "");
+      if (!MEDIA_NAME_RE.test(stem)) return c.json({ wrote: false, error: `文件名「${f.name}」不合规：小写字母、数字、连字符（界面应先规范化）。未产生任何 commit。` }, 422);
+      if (!f.base64) return c.json({ wrote: false, error: `「${stem}.webp」没有内容。未产生任何 commit。` }, 422);
+      try { assertWebp(base64ToBytes(f.base64), `图片(${stem}.webp)`); }
+      catch (e) { return c.json({ wrote: false, error: "图片不合格，未产生任何 commit", detail: String((e as Error).message) }, 422); }
+      const path = `${PRODUCT_IMG_PREFIX}${folder}/${stem}.webp`;
+      if (seen.has(path)) return c.json({ wrote: false, error: `这一批里有两个「${stem}.webp」。未产生任何 commit。` }, 422);
+      seen.add(path);
+      // 已存在就整批拒 —— ⛔ 静默覆盖：素材库里同名不同图是查不出来的账
+      const probe = await ghFetch(c.env, `/repos/${c.env.GITHUB_REPO}/contents/${path}?ref=${encodeURIComponent(c.env.GITHUB_BRANCH!)}`);
+      if (probe.ok) return c.json({ wrote: false, error: `「${folder}/${stem}.webp」已存在，⛔ 不覆盖。换个文件名再传。未产生任何 commit。` }, 409);
+      commits.push({ path, base64: f.base64 });
+    }
+    const r = await commitFiles(c.env, {
+      message: `admin: upload ${commits.length} image(s) to ${folder}/ (${operatorOf(c)})`,
+      files: commits,
+    });
+    return c.json({ wrote: true, what: `上传 ${commits.length} 张到 ${folder}/`, commitSha: r.commitSha, commitUrl: r.commitUrl,
+      note: "这些图还没挂任何产品 ⇒ 会出现在「未被引用」里 —— 那是它们的入口，不是错误。" });
+  } catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "出站被本地策略拒绝", detail: String((e as Error).message) }, 403);
+    console.error(JSON.stringify({ evt: "media_upload_failed", msg: String(e) }));
+    return c.json({ wrote: false, error: "上传失败", detail: String(e) }, 502);
   }
 });
 
