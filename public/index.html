@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=73">
+<link rel="stylesheet" href="/style.css?v=74">
 </head>
 <body>
 
@@ -112,8 +112,9 @@
             <th>产品</th>
             <th class="col-st">状态</th>
             <!-- A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
-                 独立一列他扫一眼就知道哪些还是 AS-（挤在 slug 后面做不到）。 -->
-            <th class="col-model">型号</th>
+                 独立一列他扫一眼就知道哪些还是 AS-（挤在 slug 后面做不到）。
+                 A15 可点排序（Joe 2026-08-28）：原生 button（键盘可达），箭头由 app.js 填。 -->
+            <th class="col-model" id="thModel"><button type="button" class="th-sortbtn" id="sortModelBtn" title="按型号排序，再点反序">型号<span id="sortModelArrow" aria-hidden="true"></span></button></th>
             <th class="col-cat">机型</th>
             <th class="col-act"></th>
           </tr></thead>
@@ -432,7 +433,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=73"></script>
+<script src="/app.js?v=74"></script>
 </body>
 </html>
 

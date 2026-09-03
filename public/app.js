@@ -27,6 +27,12 @@ const state = {
   lastPreview: null,
   repo: null, branch: null,
   tab: "all",                 // 状态 tab：all | published | draft
+  /**
+   * 型号列排序（Joe 2026-08-28：「产品列表加一个按照型号排序」）。
+   * 0 = 不排（保持仓里的文件顺序）· 1 = 升序 · -1 = 降序。点表头在 1/-1 间切换。
+   * ⛔ 只有型号这一列 —— 别的列他没要，不加。
+   */
+  modelSort: 0,
   nav: "products",            // 左导航当前视图：products | media
   media: null, mediaTab: "all",
   audit: null,
@@ -241,16 +247,37 @@ async function loadList() {
   renderList();
 }
 
+/**
+ * 型号的比较器：**自然排序**，不是字符串排序。
+ * 🔴 型号是 AK3 / AK8 / AK13B 这种 —— 字符串排序会把 AK3、AK8 甩到 AK13B 后面
+ *    （字符 '3' > '1'），那一眼看上去就是乱的。numeric:true 让 3 < 8 < 13 按数比。
+ * ⛔ 不自己写正则拆数字（总工点名）—— Collator 是现成的、带 locale 语义的实现。
+ */
+const modelCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 /** 当前筛选下的行。tabs 计数与表格必须用**同一个函数**，否则数字和内容会对不上。 */
 function filteredRows() {
   const q = $("#q").value.trim().toLowerCase();
   const cat = $("#catFilter").value;
-  return state.list.filter((it) => {
+  const rows = state.list.filter((it) => {
     if (state.tab !== "all" && it.status !== state.tab) return false;
     if (cat && it.category !== cat) return false;
     if (q && !`${it.slug} ${it.name || ""} ${it.model || ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
+  // 排序也在这里做，⛔ 不在别处另排一遍 —— 全选/批量取的都是这同一个函数的结果。
+  if (state.modelSort) {
+    rows.sort((a, b) => {
+      const am = String(a.model || "").trim(), bm = String(b.model || "").trim();
+      // ⚠️ 没填型号的（列表显示 —，含读坏的行）一律沉底，**升序降序都沉底** ——
+      //    所以空值判断不乘方向；否则降序时一排 — 会顶到最上面。
+      if (!am && !bm) return 0;
+      if (!am) return 1;
+      if (!bm) return -1;
+      return modelCollator.compare(am, bm) * state.modelSort;
+    });
+  }
+  return rows;
 }
 
 // ══ 状态口径的**单一真源**（A11-4 / A12-2 / A12-④）══
@@ -1787,6 +1814,15 @@ $("#q").oninput = () => {
   renderList();
 };
 $("#catFilter").onchange = renderList;
+// ── 型号列排序（A15）：点一下升序，再点反序 ──
+// ⚠️ 没有"第三态回到原顺序"：Joe 要的是「排序 / 反序」两件事，多一态就多一次看不懂的点击。
+$("#sortModelBtn").onclick = () => {
+  state.modelSort = state.modelSort === 1 ? -1 : 1;
+  // 箭头与 aria-sort 只在这里改 —— modelSort 也只在这里变，两者不可能漂移。
+  $("#sortModelArrow").textContent = state.modelSort === 1 ? " ▲" : " ▼";
+  $("#thModel").setAttribute("aria-sort", state.modelSort === 1 ? "ascending" : "descending");
+  renderList();
+};
 $("#newBtn").onclick = startNew;
 $("#backBtn").onclick = () => {
   $("#detailView").hidden = true; $("#listView").hidden = false;
