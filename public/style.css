@@ -496,6 +496,10 @@ th.filt { position: relative; overflow: visible; }
 .ptable { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ptable th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 9px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .ptable td { padding: var(--table-cell-padding); border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 13px; }
+/* 「产品」列是唯一没写宽度的列（其余都是 width:1% + nowrap 或定宽）⇒ auto 布局下它吃掉所有剩余，
+   但它的**最小宽**由内容定。max-width 让它在窄档先收自己（标题截断 / chip 收 +N），
+   ⛔ 而不是把后面四列推出卡片。⚠️ 值不写死 px：990 与 1278 都要成立 ⇒ 用百分比对着表宽。 */
+.ptable td:not([class]) { max-width: 0; }
 /* 型号列的排序按钮（A15）：视觉上就是那个表头词，⛔ 不引入新的按钮观感。
    字体五项全继承 th（12px/600/次级色），差别只有 hover 变主文字色 + pointer。 */
 .th-sortbtn { all: unset; cursor: pointer; font: inherit; color: inherit; }
@@ -892,7 +896,11 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
    ⛔ 对齐**不用固定 px 去凑**：`min-height` 撑到缩略图那么高、`space-between` 顶开两端。
       写死数字的话，字号或缩略图尺寸一改那个数就错，而且没有症状 ——
       `.topbar{top:40px}` 与批量条的 `margin-top` 都是这么坏的。 */
-.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 44px; gap: 4px; }   /* 撑到 44 的缩略图那么高 */
+/* 🔴 min-width:0 必须**整条链**都有（990 分屏档实测抓到）：.senrow 自己写了，
+   但父级 .namestack 没有 ⇒ flex 子项按内容算最小宽 ⇒ chip 行把「产品」列顶到 460px，
+   把 型号/机型/操作 三列挤出卡片右缘（实测 998/1101/1201 > 卡右 943，表格出横滚）。
+   ⚠️ 症状出现在**别的列**上，而病根在这一列的最小宽 —— 只看"谁被挤没了"会查错地方。 */
+.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 44px; gap: 4px; min-width: 0; }   /* 撑到 44 的缩略图那么高 */
 
 /* 🔴 标题**恒占 2 行**：短的补足（min-height）、长的截断带省略号（line-clamp）。
    两边都要 —— 只截不补，短标题那行会矮一截，等高就没了。

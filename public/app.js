@@ -3141,7 +3141,29 @@ $("#deleteBtn").onclick = async () => {
 
 // ⚠️ 列宽随视口变 ⇒ 能放下几个传感器也跟着变。不重收的话，
 //    窗口拉宽之后那个 `+3` 会一直挂着，而旁边明明空着一大片。
+//
+// 🔴 **判据从 resize 事件改成"列宽真的变了"**（2026-09-03，990 分屏档实测抓到）：
+//    Joe 常态是分屏 ~990、最大化 1278 之间来回切。实测 1278 档名称列 479px 却只显示
+//    2 个 chip 挂着 `+8` —— 手动 `dispatchEvent(new Event("resize"))` 后立刻变 7 个 + `+3`，
+//    ⇒ **处理器是好的，是它没被调用**：改窗口宽度未必等于 window resize 事件按时到达
+//    （受控视口/分屏/DevTools 缩放/内容自身导致的列宽变化，都可能不发或晚发这个事件）。
+//    ⛔ 修法不是"再多绑一个事件试试"——那是继续赌事件。**改成观察被测对象本身**：
+//      列宽变了就重收，与"是什么导致它变的"无关。
+//    ⚠️ ResizeObserver 的回调里再改 hidden 会再次触发布局 ⇒ 用 rAF 合帧，且只在**宽度真变**时才做，
+//      否则自己改自己会成环（fitSensorRows 会改 chip 的 hidden，进而可能改容器高度）。
 addEventListener("resize", () => { try { fitSensorRows(); } catch {} });
+if (typeof ResizeObserver === "function") {
+  let lastW = 0, pending = 0;
+  const ro = new ResizeObserver((ents) => {
+    const w = Math.round(ents[0]?.contentRect?.width || 0);
+    if (!w || w === lastW) return;      // 只认**宽度**变化：高度变化多半正是我们自己改出来的
+    lastW = w;
+    if (pending) cancelAnimationFrame(pending);
+    pending = requestAnimationFrame(() => { pending = 0; try { fitSensorRows(document.getElementById("rows")); } catch {} });
+  });
+  const tb = document.getElementById("rows");
+  if (tb) ro.observe(tb);
+}
 
 // ── 起步 ──
 (async () => {
