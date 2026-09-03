@@ -313,8 +313,8 @@ input.bad, select.bad { border-color: var(--border-critical); background: var(--
 .chip input { width: auto; margin: 0; }
 .chip:has(input:checked) { background: var(--bg-selected); border-color: var(--border-accent); color: var(--text-accent); }
 
-.repeat, .kv { display: flex; flex-direction: column; gap: var(--space-6); }
-.repeat-row, .kv-row { display: flex; gap: var(--space-6); }
+.kv { display: flex; flex-direction: column; gap: var(--space-6); }   /* ⚠️ .repeat / .repeat-row 已随卖点逐条输入框一起撤（A17） */
+.kv-row { display: flex; gap: var(--space-6); }
 .kv-row .k { flex: 0 0 32%; }
 .del-row { flex: 0 0 auto; width: 30px; padding: 0; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; font-size: 15px; line-height: 1; }
 .del-row:hover { color: var(--text-critical); border-color: var(--border-critical); }
@@ -896,12 +896,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    ⚠️ 它与真值仍然分得开：真值走 --text，约 17:1，比 placeholder 明显重。 */
 input::placeholder, textarea::placeholder { color: var(--text-secondary); opacity: 1; }
 
-/* 卖点每行自己的字数（Joe 2026-08-27：顶部那一整块提示挪到各自那一行）。
-   ⚠️ 复用 SEO 页那套三态（.cnt-empty / .cnt-ok / .cnt-over），⛔ 不造第二套。
-   🔴 屏幕上只留**一个数字 + 一个颜色**：完整理由挂在 title 上（hover 再看）——
-      把那段 30 字的说明抄到七行里，是把一块噪音拆成七块。 */
-.repeat-row { align-items: center; }
-.rowcnt { flex: 0 0 auto; padding: 0; border: 0; margin: 0 0 0 var(--space-8); font-size: 11px; white-space: nowrap; cursor: help; }
+/* ⛔ 卖点每行字数（.repeat-row / .rowcnt）已随逐条输入框一起撤（A17，Joe 2026-09-03）。 */
 
 /* ══ 列表行：标题与缩略图【上】对齐、传感器与缩略图【下】对齐（Joe 2026-08-27）══
    ⛔ 对齐**不用固定 px 去凑**：`min-height` 撑到缩略图那么高、`space-between` 顶开两端。

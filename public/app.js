@@ -793,14 +793,8 @@ function setPreviewTabEnabled(on) {
 
 // ═══════════════ 校验结果 ═══════════════
 /** 哪个字段的提示贴到哪个输入框下面。不在表里的留在顶部。 */
-/**
- * 卖点的"短句"上限 —— **从服务端拿**（/api/contract 的 limits.highlight）。
- * 🔴 我第一版在这里写了个常量 90，而校验器里是 80：**当场就是两个真源**。
- *    那种分家的症状是"界面上是绿的、保存后服务端仍报警"，人只会觉得后台在骗他。
- * ⇒ 不抄数字，问服务端要。⚠️ 拿不到时返回 0 = **不显示计数**，
- *    ⛔ 绝不猜一个默认值——猜错的那个数会安静地误导人。
- */
-const hlLimit = () => state.contract?.limits?.highlight || 0;
+// ⛔ 原来这里有 `hlLimit()`（卖点"短句"上限，读 /api/contract 的 limits.highlight）。
+//    A17 起卖点长度不限，服务端也不再下发那一项 —— 常量、warning、计数三处一起撤，不留空转函数。
 
 const FIELD_ANCHOR = { model: "f_model", name: "f_name", slug: "f_slug", category: "f_category", sensors: "f_sensors" };
 
@@ -1267,45 +1261,9 @@ async function addImageFiles(files) {
 //    "主图"和"更多图片"不再是两个入口 —— 留着它就是留一条**没人走但仍能写 state 的**路径。
 //    上传统一走 addImageFiles()。
 
-/**
- * 重复行（卖点）。⭐ 每一行**认领自己的字段名**（`highlights[N]`）并**自己报字数**。
- *
- * 🔴 为什么不是把那段 30 字的完整说明抄到每一行：那是把一块噪音拆成七块。
- *    **一个数字 + 一个颜色就够**，完整理由放 title（hover 再看）。
- * ⚠️ 计数用的是 SEO 页那套**三态**（留空 / 正常 / 超标），⛔ 不造第二套。
- */
-function repeatRow(container, value, opts = {}) {
-  const r = el("div", "repeat-row");
-  const i = el("input"); i.value = value || "";
-  const d = el("button", "del-row", "×"); d.type = "button";
-  const cnt = opts.limit ? el("div", "shint rowcnt") : null;
-
-  // ⚠️ 下标由**它在容器里的实际位置**算，不是创建顺序 —— 删掉中间一行之后
-  //    后面几行的下标会整体前移，而校验器报的是新下标。
-  const reindex = () => {
-    [...container.querySelectorAll(".repeat-row > input")].forEach((inp, n) => {
-      inp.dataset.anchor = `${opts.field || "highlights"}[${n}]`;
-    });
-  };
-  const paint = () => {
-    if (!cnt) return;
-    const n = i.value.trim().length;
-    cnt.classList.remove("cnt-empty", "cnt-ok", "cnt-over");
-    if (n === 0) { cnt.classList.add("cnt-empty"); cnt.textContent = "留空"; cnt.title = ""; }
-    else if (n > opts.limit) {
-      cnt.classList.add("cnt-over");
-      cnt.textContent = `${n} 字符`;
-      // 完整理由挂 title —— 屏幕上只留数字和颜色
-      cnt.title = `契约说的是"短句"（建议 ${opts.limit} 字符以内）。详情页的参数表用 specs，别塞进卖点。` +
-        "⚠️ 卖点过长会把官网产品页那一栏撑窄。";
-    } else { cnt.classList.add("cnt-ok"); cnt.textContent = `${n} 字符`; cnt.title = ""; }
-  };
-  d.onclick = () => { r.remove(); reindex(); };
-  i.addEventListener("input", paint);
-  r.append(i, d); if (cnt) r.append(cnt);
-  container.append(r);
-  reindex(); paint();
-}
+// ⛔ `repeatRow()`（卖点逐条输入框 + 每行字数三态）已整个撤掉（A17，Joe 2026-09-03）：
+//    卖点现在是一个大输入框（见 parseHighlights / paintHighlightsCount），
+//    ⛔ 不留一个零调用的函数 —— 下一个人会以为它还有用。
 function kvRow(container, k, v) {
   const r = el("div", "kv-row");
   const ik = el("input", "k"); ik.value = k || ""; ik.placeholder = "键";
@@ -1333,8 +1291,9 @@ function fillForm(p) {
 
   $("#f_sensors").querySelectorAll("input").forEach((cb) => { cb.checked = (p.sensors || []).includes(cb.value); });
 
-  const h = $("#f_highlights"); h.innerHTML = "";
-  (p.highlights || []).forEach((x) => repeatRow(h, x, { field: "highlights", limit: hlLimit() }));
+  // 卖点：数组 → 一行一条（A17）。⚠️ 用 "\n" 不用 "\r\n"：textarea 的 value 内部一律是 LF。
+  $("#f_highlights").value = (p.highlights || []).join("\n");
+  paintHighlightsCount();
   const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
   // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
   state.imgList = imgListFromDraft(p);
@@ -1350,10 +1309,6 @@ function fillForm(p) {
  */
 function readForm() {
   const nz = (v) => (v.trim() === "" ? null : v.trim());
-  const list = (sel) => {
-    const a = [...$(sel).querySelectorAll("input")].map((i) => i.value.trim()).filter(Boolean);
-    return a.length ? a : null;
-  };
   // gallery 现在由缩略图管理，不再是一排文本框；把草稿里的原值原样带回去，
   // 具体搬到哪个目录由服务端的 planImages 决定 —— 前端不拼路径。
   const galleryFromDraft = state.draft?.images?.gallery || null;
@@ -1382,7 +1337,7 @@ function readForm() {
     //    送 `null` 的语义是「显式清空」，那会把现存产品的 moq 静默抹掉；
     //    键不出现的语义是「我没收到」，mergeProduct 会保持原样。
     //    输入框撤了 ≠ 数据该被清掉。（A10 验收第 4 条量的就是这件事：diff 里不许有 -"moq"。）
-    highlights: list("#f_highlights"),
+    highlights: parseHighlights($("#f_highlights").value),   // 一行一条 → string[]；全空 ⇒ null（显式清空）
     // 空 ⇒ null ⇒ 服务端 mergeProduct 删键 ⇒ 仓里**没有**这个字段（SPEC §2："空值保存时不写该字段"）。
     // ⛔ 别送 ""：契约把空串当错误（与 moq 同一条规矩），官网模板也不该看到一个假值。
     metaDescription: nz($("#f_metadesc").value),
@@ -1850,6 +1805,27 @@ function paintMetaDesc() {
   $("#previewBtn").title = over ? "Meta description 超过上限，删到上限以内才能保存" : "";
 }
 $("#f_metadesc").addEventListener("input", paintMetaDesc);
+
+// ── 卖点大输入框（A17）：一行一条 ⇄ highlights: string[] ──
+// 🔴 拆行时清三样：① 不可见字符（零宽 U+200B–D/U+2060、BOM、U+FFFC 对象替换符、U+FFF9–B、
+//    私用区 U+E000–F8FF、软连字符、LRM/RLM）—— 从网页/AI 复制时最常带进来，存进仓就是产品页上的「□」；
+//    ② 行首项目符号/序号（• · - * – — ▪ ◦ ● ○ ■ □ ➢ ➤ ► ✓ ✔ ①…⑳、"1." "1)" "(1)" "1、"）——
+//       ⚠️ 数字序号只在**后面跟着空白**时才算序号："1.5-inch display" 的 "1." 不是序号，不能吃掉；
+//    ③ 每行 trim，空行丢弃。全空 ⇒ null（显式清空，与其它选填字段同一语义）。
+const HL_INVISIBLE = /[​-‍⁠﻿￼￹-￻-­‎‏]/g;
+const HL_LEAD_MARK = /^(?:[\s•·\-\*–—▪◦●○■□➢➤►✓✔①-⑳]+|\(?\d{1,3}(?:[.)]\s+|、\s*))+/;
+function parseHighlights(text) {
+  const out = String(text || "").split(/\r?\n/)
+    .map((l) => l.replace(HL_INVISIBLE, "").replace(HL_LEAD_MARK, "").trim())
+    .filter(Boolean);
+  return out.length ? out : null;
+}
+function paintHighlightsCount() {
+  const cnt = $("#f_highlights_cnt"); if (!cnt) return;
+  const n = (parseHighlights($("#f_highlights").value) || []).length;
+  cnt.textContent = `共 ${n} 条`;   // 只有这一行灰字，⛔ 不再有"短句"警告
+}
+$("#f_highlights").addEventListener("input", paintHighlightsCount);
 $("#backBtn").onclick = () => {
   $("#detailView").hidden = true; $("#listView").hidden = false;
   state.slug = null; state.isNew = false; resetPending(); $("#preview").hidden = true;
@@ -1874,11 +1850,10 @@ $("#editPane").onsubmit = doPreview;
 // ⚠️ 「还原」按钮已撤（Joe 2026-08-26）。绑定必须一起删：
 //    对着不存在的元素 `.onclick=` 会当场抛 TypeError，而它在模块顶层 ⇒
 //    **整份 app.js 停在这一行**，症状是"整个后台白屏"，看起来完全不像是删了个按钮。
+// ⚠️ 卖点的「+ 加一条」也已撤（A17：卖点改成一个大输入框）—— 元素和这里的分支一起删，
+//    ⛔ 不留 `else repeatRow(...)` 那种对着不存在容器的死绑定。现在只剩 specs 一个 data-add。
 document.querySelectorAll(".add[data-add]").forEach((b) => {
-  b.onclick = () => {
-    if (b.dataset.add === "specs") kvRow($("#f_specs"), "", "");
-    else repeatRow($("#f_highlights"), "", { field: "highlights", limit: hlLimit() });
-  };
+  b.onclick = () => { if (b.dataset.add === "specs") kvRow($("#f_specs"), "", ""); };
 });
 // ═══════════════ A8 媒体库 ═══════════════
 //

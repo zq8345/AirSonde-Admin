@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=74">
+<link rel="stylesheet" href="/style.css?v=76">
 </head>
 <body>
 
@@ -400,10 +400,15 @@
             <div class="shint" id="f_metadesc_cnt"></div>
           </div>
 
+          <!-- A17 卖点改成一个大输入框（Joe 2026-09-03）：「留个大输入框，我们一次性复制粘贴进去；
+               卖点基本是 AI 写的或从电商平台复制的，现在要复制 6 次」。
+               一行一条。保存时按换行拆回 highlights: string[]（契约不变，官网不用动）；
+               每行 trim、去行首项目符号/序号、去不可见字符（零宽/BOM/U+FFFC/私用区），空行丢弃。
+               ⚠️ 原来的逐条输入框 + 「N 个字符，契约说的是短句」黄字已撤，只留一行灰字「共 N 条」。 -->
           <div class="field">
-            <label>卖点 <span class="h3sub">highlights</span></label>
-            <div class="repeat" id="f_highlights"></div>
-            <button type="button" class="add" data-add="highlights">+ 加一条</button>
+            <label for="f_highlights">卖点 <span class="h3sub">highlights · 一行一条，可整段粘贴</span></label>
+            <textarea id="f_highlights" name="highlights" rows="8" spellcheck="true" data-anchor="highlights"></textarea>
+            <div class="shint" id="f_highlights_cnt"></div>
           </div>
 
           <div class="field">
@@ -443,7 +448,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=75"></script>
+<script src="/app.js?v=76"></script>
 </body>
 </html>
 

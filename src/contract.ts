@@ -47,15 +47,13 @@ export const SAMPLE_SENSORS = [
   "SAMPLE-CO2", "SAMPLE-PM2.5", "SAMPLE-TVOC", "SAMPLE-temperature",
 ] as const;
 
-/**
- * 卖点"短句"的上限。**界面也要用它** —— 由 /api/contract 发出去。
- * 🔴 界面自己抄一个数的话，两边一旦分家，症状是"界面上是绿的、保存后服务端仍报警"，
- *    而人只会觉得后台在骗他。（我写这一版时就抄错过：界面 90、这里 80。）
- */
-export const HIGHLIGHT_MAX = 80;
+// ⛔ 原来这里有 `HIGHLIGHT_MAX = 80`（卖点"短句"上限，经 /api/contract 下发给界面计数）。
+//    已连同校验器里的 too_long warning 一起撤（Joe 2026-09-03：卖点是整段粘贴的，长度不限）。
+//    ⚠️ 撤的是**常量 + warning + 界面计数**三处一起，⛔ 不留一个没人读的常量。
+
 /**
  * `metaDescription` 的硬上限（总工派单 2026-09-03，Joe 确认「安排」）。
- * 🔴 与 HIGHLIGHT_MAX 不同，这条是**硬拒**不是 warning：官网模板按契约**不截断也不校验**
+ * 🔴 这条是**硬拒**不是 warning：官网模板按契约**不截断也不校验**
  *    （SPEC §1：后台已守门），所以超长的字符串一旦写进仓，搜索结果里就是被截断的样子。
  *    两边约定：Web 侧 zod 同样 `.max(160)`，⛔ 两处数字必须一致，改一处必改另一处。
  */
@@ -387,11 +385,9 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
     } else {
       const bad = badStringItems(p.highlights);
       if (bad.length) errors.push(err("highlights", "type", `highlights 第 ${bad.join(", ")} 项不是非空字符串。`));
-      p.highlights.forEach((h, i) => {
-        if (typeof h === "string" && h.length > HIGHLIGHT_MAX) {
-          warnings.push(err(`highlights[${i}]`, "too_long", `${h.length} 个字符，契约说的是"短句"。详情页参数表用 specs，别塞进 highlights。`));
-        }
-      });
+      // ⛔ 原来这里有一条「N 个字符，契约说的是"短句"」的 too_long warning（上限 80）—— 已撤（Joe 2026-09-03）。
+      //    Joe 的真实用法是整段 AI 写的或从电商平台复制的卖点，一条常常远超 80 字；
+      //    一个 100% 命中的警告零区分信息，只是在跟真实用法作对。长度交给人判断。
     }
   }
 

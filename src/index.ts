@@ -17,7 +17,7 @@ import { commitFiles, type CommitFile } from "./gitcommit";
 import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount, INFO_CODES,
-  STATUSES, HIGHLIGHT_MAX, META_DESCRIPTION_MAX, modelKey, type Axes,
+  STATUSES, META_DESCRIPTION_MAX, modelKey, type Axes,
 } from "./contract";
 import {
   validateTaxonomy, axesOf, valuesOf, refsOf, unreadableCount, addItem, editItem, deleteItem,
@@ -1276,7 +1276,8 @@ app.get("/api/contract", async (c) => {
     //    在这里再发一份就是第二张表，两张表迟早分家。
     statuses: STATUSES,
     // 界面的每行字数计数器用它 —— ⛔ 界面不许自己抄一个数。
-    limits: { highlight: HIGHLIGHT_MAX, metaDescription: META_DESCRIPTION_MAX },
+    // ⚠️ `highlight` 那一项已撤（A17：卖点长度不再限、不再警告 —— Joe 2026-09-03）；界面也不再读它。
+    limits: { metaDescription: META_DESCRIPTION_MAX },
     // ⚠️ 判据落在**集合**上，界面不抄第二份：哪些 warning 属于"状态说明、不是待办"
     //    由契约说了算。界面写 `if (code === "internal_field")` 的话，
     //    下一个加同类 warning 的人不会知道有这条规矩。
