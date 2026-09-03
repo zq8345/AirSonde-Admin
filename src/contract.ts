@@ -53,6 +53,13 @@ export const SAMPLE_SENSORS = [
  *    而人只会觉得后台在骗他。（我写这一版时就抄错过：界面 90、这里 80。）
  */
 export const HIGHLIGHT_MAX = 80;
+/**
+ * `metaDescription` 的硬上限（总工派单 2026-09-03，Joe 确认「安排」）。
+ * 🔴 与 HIGHLIGHT_MAX 不同，这条是**硬拒**不是 warning：官网模板按契约**不截断也不校验**
+ *    （SPEC §1：后台已守门），所以超长的字符串一旦写进仓，搜索结果里就是被截断的样子。
+ *    两边约定：Web 侧 zod 同样 `.max(160)`，⛔ 两处数字必须一致，改一处必改另一处。
+ */
+export const META_DESCRIPTION_MAX = 160;
 
 export const STATUSES = ["draft", "published"] as const;
 
@@ -69,6 +76,8 @@ export interface Product {
   category: Category;
   sensors: Sensor[];
   highlights?: string[];
+  /** 产品页 <meta name="description"> / og:description。选填；trim 后空 = 未填（字段不写）。 */
+  metaDescription?: string;
   specs?: Record<string, string>;
   moq?: number;
   images: { main: string; gallery?: string[] };
@@ -98,7 +107,7 @@ export const modelKey = (model: unknown): string =>
 /** 契约 v1 的**全部**顶层键。多一个都算错（见 checkUnknownKeys 的理由）。 */
 const TOP_LEVEL_KEYS = new Set([
   "slug", "name", "model", "category", "sensors",
-  "highlights", "specs", "moq", "images", "supplierRef", "status",
+  "highlights", "metaDescription", "specs", "moq", "images", "supplierRef", "status",
 ]);
 
 export interface Issue {
@@ -386,6 +395,19 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
     }
   }
 
+  // ---- metaDescription（选填，单行字符串，硬限 160）----
+  // ⚠️ 空串是**错误**不是"清空"：清空的唯一写法是不带这个字段（前端送 null → mergeProduct 删键）。
+  //    放行空串的话，仓里会出现 `"metaDescription": ""`，官网模板 `trim() || 回落` 虽然能兜住，
+  //    但那是把"没填"写成了一个假值 —— 与 moq "想表达面议就不要这个字段" 同一条规矩。
+  if (p.metaDescription !== undefined) {
+    if (typeof p.metaDescription !== "string" || !p.metaDescription.trim()) {
+      errors.push(err("metaDescription", "type", "Meta description 必须是非空字符串（选填）。要清空就把它删空再保存，别留一个空值。"));
+    } else if (p.metaDescription.trim().length > META_DESCRIPTION_MAX) {
+      errors.push(err("metaDescription", "too_long",
+        `${p.metaDescription.trim().length} 个字符，上限 ${META_DESCRIPTION_MAX}。搜索结果只显示前 ${META_DESCRIPTION_MAX} 个，多出来的会被截掉 —— 请自己删到上限以内。`));
+    }
+  }
+
   // ---- specs（选填，自由键值；值必须是字符串）----
   if (p.specs !== undefined) {
     if (!isPlainObject(p.specs)) {
@@ -477,7 +499,7 @@ export function checkSlugMatchesPath(slug: string, filename: string): Issue | nu
 export function serializeProduct(p: Record<string, unknown>): string {
   // ⚠️ 固定键序不是洁癖：不固定的话，改一个字段会产生一份**整体重排**的 diff，
   //    于是 review 的人看不出这次到底改了什么，而 git 历史也失去价值。
-  const ORDER = ["slug", "name", "model", "category", "sensors", "highlights", "specs", "moq", "images", "supplierRef", "status"];
+  const ORDER = ["slug", "name", "model", "category", "sensors", "highlights", "metaDescription", "specs", "moq", "images", "supplierRef", "status"];
   const out: Record<string, unknown> = {};
   for (const k of ORDER) if (k in p) out[k] = p[k];
   for (const k of Object.keys(p)) if (!(k in out)) out[k] = p[k];  // 契约外的键（校验会拒，但序列化不静默吞）

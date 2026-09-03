@@ -388,7 +388,17 @@
 
         <!-- ══ 更多（选填）══ 新建时收起，编辑时展开 -->
         <details class="more" id="moreFields">
-          <summary>更多（选填）<span class="h3sub">卖点 · 参数表 · 内部字段</span></summary>
+          <summary>更多（选填）<span class="h3sub">Meta description · 卖点 · 参数表 · 内部字段</span></summary>
+
+          <!-- A16 Meta description（总工派单 2026-09-03，Joe 确认「安排」）。
+               官网产品页 <meta name="description"> 与 og:description 都用它；留空 ⇒ 官网沿用自动拼接。
+               ⚠️ 硬限 160：超出计数变红且**保存按钮禁用**（服务端契约同样硬拒，界面只是先告诉你）。
+               ⚠️ 空值保存 = 字段不写（readForm 送 null ⇒ 服务端删键），⛔ 不是写空串。 -->
+          <div class="field">
+            <label for="f_metadesc">Meta description <span class="h3sub">metaDescription · 搜索结果里那句话</span></label>
+            <textarea id="f_metadesc" name="metaDescription" rows="2" spellcheck="true" data-anchor="metaDescription"></textarea>
+            <div class="shint" id="f_metadesc_cnt"></div>
+          </div>
 
           <div class="field">
             <label>卖点 <span class="h3sub">highlights</span></label>
@@ -433,7 +443,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=74"></script>
+<script src="/app.js?v=75"></script>
 </body>
 </html>
 

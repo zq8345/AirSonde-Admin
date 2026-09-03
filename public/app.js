@@ -1328,6 +1328,8 @@ function fillForm(p) {
   //    **契约字段没动**，现存值也不会被碰 —— 见 readForm 里那段。
   $("#f_imgmain").value = p.images?.main || "";
   $("#f_supplier").value = p.supplierRef || "";
+  $("#f_metadesc").value = p.metaDescription || "";
+  paintMetaDesc();   // 计数与"保存"可用态跟着新值走 —— 换产品时不能留着上一个的红字/禁用
 
   $("#f_sensors").querySelectorAll("input").forEach((cb) => { cb.checked = (p.sensors || []).includes(cb.value); });
 
@@ -1381,6 +1383,9 @@ function readForm() {
     //    键不出现的语义是「我没收到」，mergeProduct 会保持原样。
     //    输入框撤了 ≠ 数据该被清掉。（A10 验收第 4 条量的就是这件事：diff 里不许有 -"moq"。）
     highlights: list("#f_highlights"),
+    // 空 ⇒ null ⇒ 服务端 mergeProduct 删键 ⇒ 仓里**没有**这个字段（SPEC §2："空值保存时不写该字段"）。
+    // ⛔ 别送 ""：契约把空串当错误（与 moq 同一条规矩），官网模板也不该看到一个假值。
+    metaDescription: nz($("#f_metadesc").value),
     specs,
     supplierRef: nz($("#f_supplier").value),
     // images 是个对象：整体送，缺 main 让校验器报
@@ -1824,6 +1829,27 @@ $("#sortModelBtn").onclick = () => {
   renderList();
 };
 $("#newBtn").onclick = startNew;
+// ── Meta description 计数 + 超限禁存（A16）──
+// ⚠️ 上限从 /api/contract 的 limits.metaDescription 拿，⛔ 界面不抄第二份 160（与 hlLimit 同一条规矩）。
+//    契约没到时 limit=0 ⇒ 只计数不判超，不会把人锁在一个未知的上限外面。
+// ⚠️ 三态复用 SEO 页那套 .cnt-empty/.cnt-ok/.cnt-over，⛔ 不造第二套。
+// 🔴 禁用的是"保存"（= 进预览）这一步：超限的内容连预览都不该跑 —— 服务端契约会硬拒，
+//    但等它拒再告诉人，等于让人先填完再被打回来。
+const mdLimit = () => state.contract?.limits?.metaDescription || 0;
+function paintMetaDesc() {
+  const ta = $("#f_metadesc"), cnt = $("#f_metadesc_cnt");
+  if (!ta || !cnt) return;
+  const n = ta.value.trim().length, lim = mdLimit();
+  cnt.classList.remove("cnt-empty", "cnt-ok", "cnt-over");
+  let over = false;
+  if (n === 0) { cnt.classList.add("cnt-empty"); cnt.textContent = "留空 —— 官网沿用自动拼接的描述"; }
+  else if (lim && n > lim) { over = true; cnt.classList.add("cnt-over"); cnt.textContent = `${n} / ${lim} 字符 —— 超出上限，保存已禁用，请删到 ${lim} 以内`; }
+  else { cnt.classList.add("cnt-ok"); cnt.textContent = lim ? `${n} / ${lim} 字符` : `${n} 字符`; }
+  // ⚠️ 只在这里改 previewBtn.disabled，全仓再无第二处 ⇒ 不会出现"谁禁的、谁该解"的漂移
+  $("#previewBtn").disabled = over;
+  $("#previewBtn").title = over ? "Meta description 超过上限，删到上限以内才能保存" : "";
+}
+$("#f_metadesc").addEventListener("input", paintMetaDesc);
 $("#backBtn").onclick = () => {
   $("#detailView").hidden = true; $("#listView").hidden = false;
   state.slug = null; state.isNew = false; resetPending(); $("#preview").hidden = true;

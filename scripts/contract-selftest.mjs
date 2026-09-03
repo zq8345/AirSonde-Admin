@@ -328,5 +328,49 @@ const ALIBABA = "https://www.alibaba.com/product-detail/16-in-1-Air-Quality_1601
 }
 
 console.log(results.join("\n"));
+// ════════ 14 metaDescription（A16：选填 · 硬限 160 · 空＝不写字段）════════
+// ⚠️ 正反各有：160 过 / 161 拒 是同一条规则只差一个字符的两侧；空串拒 与 null 清空 是"空"的两种语义。
+{
+  const r = mut((p) => { p.metaDescription = "x".repeat(160); });
+  check("14-1 正好 160 字必须通过（正对照）", r.ok && !hasErr(r, "too_long"), JSON.stringify(codes(r)));
+}
+{
+  const r = mut((p) => { p.metaDescription = "x".repeat(161); });
+  check("14-2 161 字必须硬拒（error 不是 warning）", hasErr(r, "too_long") && !r.ok, JSON.stringify(codes(r)));
+}
+{
+  // 🔴 判据落在 trim 后：两头各 5 个空格不算数，160 个实字仍要过
+  const r = mut((p) => { p.metaDescription = "     " + "x".repeat(160) + "     "; });
+  check("14-3 上限按 trim 后的长度算（首尾空白不计）", r.ok, JSON.stringify(codes(r)));
+}
+{
+  const r = mut((p) => { p.metaDescription = "   "; });
+  check("14-4 纯空白必须拒（空值的唯一写法是不带字段）", hasErr(r, "type"), JSON.stringify(codes(r)));
+}
+{
+  const r = mut((p) => { p.metaDescription = 160; });
+  check("14-5 非字符串必须拒", hasErr(r, "type"), JSON.stringify(codes(r)));
+}
+{
+  // 🔴 反向自证：供应商痕迹闸对**新字段**同样生效 —— 它走的是通用遍历，不是字段清单；这条钉住这一点
+  const r = mut((p) => { p.metaDescription = "Same as " + ALIBABA; });
+  check("14-6 metaDescription 里的供应商链接必须硬拒（泄漏闸覆盖新字段）", hasErr(r, "supplier_leak"), JSON.stringify(codes(r)));
+}
+{
+  // "空＝不写字段"：前端送 null ⇒ mergeProduct 删键 ⇒ 序列化产物里**没有**这个键
+  const { merged, cleared } = mergeProduct({ ...GOOD, metaDescription: "old" }, { metaDescription: null });
+  check("14-7 送 null 清空 ⇒ 字段从产品里消失", !("metaDescription" in merged) && cleared.includes("metaDescription"), JSON.stringify(Object.keys(merged)));
+  check("14-8 序列化产物里不含 metaDescription 键", !serializeProduct(merged).includes("metaDescription"));
+}
+{
+  // 键序：与 highlights 同级、排在它后面（SPEC §1）
+  const s = serializeProduct({ ...GOOD, metaDescription: "m" });
+  check("14-9 序列化键序：highlights → metaDescription → specs", s.indexOf('"highlights"') < s.indexOf('"metaDescription"') && s.indexOf('"metaDescription"') < s.indexOf('"specs"'));
+}
+{
+  const r = validateProduct({ ...GOOD, metaDescription: "A concise, honest description of the product for search results." });
+  check("14-10 正常值通过且零 warning", r.ok && r.warnings.length === 0, `errors=${JSON.stringify(codes(r))} warnings=${JSON.stringify(wcodes(r))}`);
+}
+
 console.log(`\n${pass} 通过 / ${fail} 失败`);
 process.exit(fail === 0 ? 0 : 1);
