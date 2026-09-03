@@ -1053,3 +1053,17 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 .mpanel { padding: 14px 16px; }
 .mrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .mrow input, .mrow select { width: auto; min-width: 240px; }
+
+/* ══ 站点三页两态（C 批，Joe 定）：只读 = 字段纯文字 ══
+   同一份 markup：.ro 皮 + 控件 disabled（disabled 挡 Tab 聚焦，pointer-events 挡不住）。
+   ⚠️ 全局 :disabled 的灰化（opacity .5 + grayscale）对只读态不适用 —— 它不是"残废"是"展示"。
+      两条都 !important ⇒ 平特异性按源序，本段必须在那条全局规则**之后**（文件尾，成立）。 */
+#siteForm.ro input, #siteForm.ro textarea, #siteForm.ro select {
+  opacity: 1 !important; filter: none !important; cursor: default !important;
+  border-color: transparent; background: none; padding-left: 0; resize: none; color: var(--text-primary);
+}
+#siteForm.ro input::placeholder, #siteForm.ro textarea::placeholder { color: transparent; }  /* 只读态不显示"填什么" */
+#siteForm.ro .q2, #siteForm.ro .fcnt, #siteForm.ro .inherit { display: none; }               /* 无提示（Joe 原话） */
+#siteForm.ro button, #siteForm.ro .vprop-del, #siteForm.ro .add { display: none; }           /* 动作全部不出现，不是灰着 */
+#siteForm.ro .featcard { pointer-events: none; }                                             /* 精选卡只读：不拖不删 */
+#siteForm.ro .featadd, #siteForm.ro .featpickgrid, #siteForm.ro .featadd-head { display: none; }

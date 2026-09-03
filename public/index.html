@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=86">
+<link rel="stylesheet" href="/style.css?v=88">
 </head>
 <body>
 
@@ -106,7 +106,7 @@
         <table class="ptable">
           <thead><tr>
             <th class="col-ck"><input type="checkbox" id="ckAll" title="全选当前筛选结果"></th>
-            <th class="col-img"></th>
+            <th class="col-img">图片</th>
             <th>产品</th>
             <th class="col-st ac" id="thStatus"></th>
             <!-- A12-③ 型号独立成列：Joe 要逐个核对 23 个型号，
@@ -114,7 +114,7 @@
                  A15 可点排序（Joe 2026-08-28）：原生 button（键盘可达），箭头由 app.js 填。 -->
             <th class="col-model" id="thModel"><button type="button" class="th-sortbtn" id="sortModelBtn" title="按型号排序，再点反序">型号<span id="sortModelArrow" aria-hidden="true"></span></button></th>
             <th class="col-cat filt" id="thCat">机型</th>
-            <th class="col-act"></th>
+            <th class="col-act">操作</th>
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
@@ -177,9 +177,9 @@
             </tr></thead>
             <tbody id="catsRows"></tbody>
           </table>
+          <!-- 单输入（Joe 2026-09-03）：取值由名字自动派生（机型 slugify），⛔ 不再让人填第二个框 -->
           <form class="axisadd" id="addCategories" hidden>
-            <input type="text" name="value" placeholder="取值（英文，如 wall-mounted）" autocomplete="off">
-            <input type="text" name="label" placeholder="显示名（官网上显示的，如 Wall-mounted）" autocomplete="off">
+            <input type="text" name="label" placeholder="名字（如 Wall-mounted）" autocomplete="off">
             <button type="submit" class="primary">新增机型</button>
           </form>
         </div>
@@ -200,8 +200,7 @@
             </table>
           </div>
           <form class="axisadd" id="addSensors" hidden>
-            <input type="text" name="value" placeholder="取值（如 PM1.0、NO2）" autocomplete="off">
-            <input type="text" name="label" placeholder="显示名（留空就用取值本身）" autocomplete="off">
+            <input type="text" name="label" placeholder="名字（如 PM1.0、NO2）" autocomplete="off">
             <button type="submit" class="primary">新增传感器</button>
           </form>
         </div>
@@ -234,9 +233,15 @@
          🔴 这里只放**改了真会变**的字段：实测过每一条都在产出页里渲染得出来。
             死字段接上去 = 让人改一段改了不会变的字，比没有这个输入框更糟。 -->
     <section id="siteView" hidden>
+      <!-- crm-skin C 批两态（Joe 2026-09-03）：默认只读（字段纯文字）· 描边「编辑」；
+           点编辑 → 「取消」+「保存」，字段变输入框。同一份 markup 两种皮（.ro 类 + disabled），⛔ 不写两套。 -->
       <div class="page-head">
         <h1 id="siteTitle">—</h1><span class="page-sub" id="siteSub"></span>
-        <button type="button" class="primary" id="siteSave">保存</button>
+        <div class="page-right">
+          <button type="button" class="btn-secondary" id="siteEdit">编辑</button>
+          <button type="button" class="btn-secondary" id="siteCancel" hidden>取消</button>
+          <button type="button" class="primary" id="siteSave" hidden>保存</button>
+        </div>
       </div>
       <div id="siteNotes"></div>
       <div id="siteForm"></div>
@@ -461,7 +466,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=86"></script>
+<script src="/app.js?v=88"></script>
 </body>
 </html>
 

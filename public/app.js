@@ -2036,8 +2036,26 @@ const SITE_SECTIONS = {
   seo: { title: "SEO", key: "seo", sub: "站级默认 + 逐页 title / description" },
 };
 
+/**
+ * 站点三页的两态开关（C 批，Joe 定）：只读 = 字段纯文字（.ro 皮 + 控件 disabled），页头只有描边「编辑」；
+ * 编辑 = 输入框 + 「取消」「保存」。🔴 同一份 markup —— 这里只换 class 和 disabled，⛔ 不重画字段。
+ * ⚠️ disabled 而不只是 pointer-events:none：后者挡不住 Tab 键聚焦后打字。
+ *    全局 :disabled 的灰化对只读态不适用（它不是"残废"是"展示"）—— .ro 里有覆盖（style.css）。
+ */
+function setSiteEditing(on) {
+  state.siteEditing = !!on;
+  const form = $("#siteForm");
+  form.classList.toggle("ro", !on);
+  form.querySelectorAll("input, textarea, select, button").forEach((el2) => { el2.disabled = !on; });
+  $("#siteEdit").hidden = on;
+  $("#siteCancel").hidden = !on;
+  $("#siteSave").hidden = !on;
+}
+
 async function loadSite(which) {
   state.siteSection = which;
+  state.siteEditing = false;               // 每次进视图回到只读态（Joe 定的默认）
+  $("#siteEdit").disabled = true;          // 数据没到之前编辑不可点；到了 renderSite 再放开
   $("#siteTitle").textContent = SITE_SECTIONS[which].title;
   const ss = $("#siteSub");
   ss.textContent = SITE_SECTIONS[which].sub;
@@ -2055,6 +2073,7 @@ async function loadSite(which) {
       $("#siteNotes").innerHTML = "";
       $("#siteNotes").append(mkNotice("bad", `读不到站点内容：${body.hint || body.error || status}`));
       btn.textContent = "保存";   // 仍然 disabled —— 读不到就绝不允许写
+      $("#siteEdit").disabled = true; $("#siteEdit").title = "读取失败 —— 修好数据源之前不能编辑";   // 加载失败禁用编辑（Joe 定）
       return;
     }
     state.site = body;
@@ -2263,6 +2282,10 @@ function renderSite(keepDraft = false) {
     });
   }
   updateSiteDirty();
+  // 两态皮在**每次重画后**统一恢复（增删卖点的 renderSite(true) 会造出新控件，默认是 enabled 的）——
+  // 只在切态时设的话，重画一次就掉回混合态。数据到了，编辑才可点。
+  $("#siteEdit").disabled = false; $("#siteEdit").title = "";
+  setSiteEditing(state.siteEditing);
 }
 
 /**
@@ -2471,6 +2494,9 @@ function siteChangedPaths() {
   return out;
 }
 
+// C 批两态：编辑进入 / 取消回只读（取消 = 丢弃草稿重画，renderSite 默认从服务端那份重拷）
+$("#siteEdit").onclick = () => setSiteEditing(true);
+$("#siteCancel").onclick = () => { state.siteEditing = false; renderSite(); };
 $("#siteSave").onclick = async () => {
   const sec = SITE_SECTIONS[state.siteSection].key;
   const changed = siteChangedPaths();
@@ -2581,7 +2607,9 @@ function renderSettings() {
     const now = d.writeEnabled ? pill("ok", "可以保存") : pill("bad", `不能保存 · 缺 ${missing.join("、") || "未知原因"}`);
     row(c, "现在", now, q("两个条件缺一不可：写入闸（ALLOW_GITHUB_WRITE）开着 + GitHub token 在。任一缺失这里会变成红色并写明缺哪个。" +
       (w.request.isLocalDev ? " ⚠️ 本机另有一道闸：永远写不到官网数据仓（硬编码黑名单），所以本地的「可以保存」不代表能改官网。" : "")));
-    row(c, "存到哪", "官网仓 ", el("code", null, d.repo || "—"), ` · 每次保存 = 一次 commit（${d.branch || "?"} 分支，目录 ${d.productsDir || "?"}）`);
+    // 分支/目录收进 (?)（Joe：那行太长）
+    row(c, "存到哪", "官网仓 ", el("code", null, d.repo || "—"), " · 每次保存 = 一次 commit",
+      q(`分支 ${d.branch || "?"} · 产品目录 ${d.productsDir || "?"}`));
     row(c, "多久上线", "约 1 分钟", q("保存成功 ≠ 站上已经变了，中间隔着一次官网构建（Cloudflare Pages）。"),
       link("看官网 ↗", "https://airsonde.com/", { right: true }));
     box.append(c);
@@ -2592,8 +2620,11 @@ function renderSettings() {
     const c = card("版本", "出问题时把这一行发给开发");
     const g = w.git, dep = w.deploy;
     const who = g.deploySource || (w.request.isLocalDev ? "本地 dev" : "未知");
-    // 构建时间显示成人读的本地时间（mockup：`2026-9-3 13:15`）；解析不了就原样放，⛔ 不猜
-    const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? String(iso || "—") : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+    // 构建时间显示成人读的本地时间（mockup：`2026-9-3 13:15`）；解析不了就原样放，⛔ 不猜。
+    // 🔴 纯数字串先 Number()：生产的 BUILD_TIME 是 **epoch 毫秒**（"1788446135099"），
+    //    `new Date("1788446135099")` 是 Invalid ⇒ 上一版的"原样放"兜底把 epoch 裸露上了生产（Joe 抓的）。
+    //    dev 的 BUILD_TIME 恰好是 ISO 串 ⇒ dev 验证没盖住生产的数据形态 —— 又一课。
+    const fmtTime = (v) => { const d = new Date(/^[0-9]+$/.test(String(v)) ? Number(v) : v); return isNaN(d) ? String(v || "—") : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
     const line = `${g.shortSha || "无 sha"} · ${g.buildTime ? fmtTime(g.buildTime) : "—"} · ${who}`;
     const v = el("span", "mono", line);
     const btn = el("button", "linkish lnk-right"); btn.type = "button"; btn.textContent = "复制";
@@ -2744,11 +2775,11 @@ function renderAxis(axis, tb, items, good) {
 
     const tdName = el("td");
     const nm = el("div", "pname", it.label || it.value);
-    // 机型**只留显示名一行**（Joe：「机型只保留一种描述即可」）。取值 slug 收进 title（hover 可见），
-    // 管理态才把它显示出来 —— 那时人要核对"进产品 JSON 的是哪个串"。
+    // 只留一个名字（Joe 2026-09-03：「取值和显示名保持一致，用一个就行」）——
+    // 行内**不再显示取值副行（含管理态）**；两者不同的存量（如 Wall-mounted/wall-mounted、App/APP）
+    // 取值只在 title 里留一条可查（hover），⛔ 不占一行。
     if (it.label && it.label !== it.value) { nm.title = `取值 ${it.value}（写进产品 JSON 与官网 URL 的是它）`; }
     tdName.append(nm);
-    if (manage && it.label && it.label !== it.value) tdName.append(el("div", "li-sub", it.value));
     tr.append(tdName);
 
     // 在用数取服务端的 refCount（此刻仓里的真相），不是前端 state.list 的再数一遍。
@@ -2826,7 +2857,7 @@ function startRename(tr, tdName, axis, it) {
   const no = el("button", "linkish", "取消"); no.type = "button";
   box.append(inp, ok, no);
   tdName.append(box);
-  tdName.append(el("div", "li-sub", `${it.value}（取值不可改）`));
+  // ⚠️ 「取值不可改」那行副行已撤（只留一个名字）；事实没变 —— 改名只动 label，value 由 taxonomyOp 层保证不动。
   inp.focus(); inp.select();
 
   const cancel = () => renderCats();
@@ -2880,10 +2911,16 @@ function syncManageBtns() {
   if (!form) return;
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const value = form.value.value.trim();
+    // 单输入（Joe 2026-09-03：「取值和显示名保持一致，用一个就行」）—— 取值由名字**按轴的既有惯例**派生：
+    //   机型 = slugify（存量 6/6 满足 value===slugify(label)，实测核过）
+    //   传感器 = 名字原样（存量 19 个里 14 个保留大小写/点号：PM2.5、Data-History ——
+    //            slugify 会分叉出第二套惯例；唯一历史例外 App→APP，存量不动）
+    // ⚠️ 官网筛选栏 / 产品 JSON 里的 value 机制不变，只是后台不再让人填第二个框。
     const label = form.label.value.trim();
-    if (!value) { form.value.focus(); return; }
-    const okDone = await taxonomyOp({ axis, op: "add", value, label: label || value }, form.querySelector("button"));
+    if (!label) { form.label.focus(); return; }
+    const value = axis === "categories" ? slugify(label) : label;
+    if (!value) { form.label.focus(); return; }
+    const okDone = await taxonomyOp({ axis, op: "add", value, label }, form.querySelector("button"));
     if (!okDone) return;
     form.reset();
     // ⚠️ 这一句是**事实**，不是客套：官网的 productTypePhrase 是 src/lib/products.ts 里
