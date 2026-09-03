@@ -55,7 +55,6 @@ const state = {
   siteBase: null,   // 打开时的那一份：改动计数比的是它，不是"敲过几下键盘"
   siteSection: "home",
   /** 当前详情页 tab（view | edit）。提示贴在顶部还是字段旁，取决于它。 */
-  activeView: "view",
   /** 最近一次校验结果 —— 切 tab 时用它重画提示，不重新校验。 */
   lastValidation: undefined,
   /** 数据文件在仓里的路径。⚠️ 不再显示在顶部（Joe 不看仓）—— 收进详情态底部的内部信息区。 */
@@ -687,7 +686,7 @@ const cache = new Map();
  * 离开一个产品时要清掉的**全部**面板与状态 —— 收在一处（A12 追加①）。
  *
  * 🔴 Joe 实测：在「新建产品」页点「详情」，看到的是**上一个产品的全部字段，包括 supplierRef**。
- *    根因是 `startNew()` 从不清 `#viewPane`。
+ *    根因是 `startNew()` 从不清预览面板（已随 D 批撤）。
  * ⚠️ 但那**不止一处** —— 我按总工的提醒系统排查了一遍，实测还有两个：
  *      · `#preview` 残留 1036 字符（虽然 hidden，但内容还在：谁一 un-hide 就露出上一个产品的 diff）
  *      · `state.lastValidation` 残留（切 tab 会拿它重画 —— 画的是上一个产品的提示）
@@ -696,7 +695,7 @@ const cache = new Map();
  *   而漏加的话两条路径**一起**漏，不会出现"编辑页清了、新建页没清"这种半修状态。
  */
 function clearProductPanes() {
-  $("#viewPane").innerHTML = "";
+  // ⚠️ 预览面板本体已随预览态一起撤（D 批）——"上一个产品的字段漏进新建页"那个洞的另外两处仍在这里清。
   const pv = $("#preview"); pv.innerHTML = ""; pv.hidden = true;
   $("#issues").innerHTML = "";
   clearFieldIssues();
@@ -712,6 +711,10 @@ async function select(slug, opts = {}) {
   $("#listView").hidden = true; $("#detailView").hidden = false;
   $("#preview").hidden = true;
   $("#dTitle").textContent = slug;
+  // 🔴 数据到达前把表单藏起来（D 批）：双态撤了之后编辑面板常显，不藏的话加载中会露出
+  //    **上一个产品的残留值**（dev 下长达数秒）——人在那期间打的字会被 fillForm 覆盖。
+  $("#editPane").hidden = true; $("#previewBtn").hidden = true;
+  $("#dSiteLink").hidden = true; $("#recordCard").hidden = true;
   state.filePath = "读取中…";
   renderList();
 
@@ -721,30 +724,96 @@ async function select(slug, opts = {}) {
   if (status === 422) {
     state.filePath = body.path || "";
     renderIssues({ ok: false, errors: [{ field: "(文件)", code: "invalid_json", message: body.hint + " " + body.parseError }], warnings: [] });
-    $("#viewPane").innerHTML = ""; $("#editPane").hidden = true;
+    $("#editPane").hidden = true; $("#previewBtn").hidden = true;
     return;
   }
 
   const p = body.product || {};
   cache.set(slug, p);
-  // A12-3：详情页标题也链官网。⚠️ 用**已保存的** state.slug，不是输入框里的值 ——
-  //    刚改完 slug 还没提交时，官网上仍是旧那页，跟着新值走会指向一个不存在的地址。
-  $("#dTitle").textContent = "";
-  $("#dTitle").append(siteLink(state.slug, p.status, p.name || slug));
+  // D 批：编辑即详情 —— 标题就是产品名（纯文字，17/700 省略）；「看官网页 ↗」住头部右端，仅已上架。
+  //    ⚠️ 链接用**已保存的** state.slug，不是输入框里的值 —— 刚改完还没提交时官网仍是旧地址。
+  $("#dTitle").textContent = p.name || slug;
+  const sl = $("#dSiteLink");
+  sl.hidden = p.status !== "published";
+  sl.href = siteUrl(state.slug);
+  sl.title = p.status === "published" ? "在官网打开这一页（新标签）" : "";
   state.filePath = body.path;
 
   const v = body.validation || { ok: true, errors: [], warnings: [] };
   if (body.slugPathIssue) v.errors = [...v.errors, body.slugPathIssue];
   renderIssues(v);
-  renderView(p);
   state.draft = JSON.parse(JSON.stringify(p));
   fillForm(state.draft);
   // 编辑一个已存在的产品：**不简化**，全部展开。slug 也不再跟随标题（它已经是 URL 了）。
   state.slugTouched = true;
   setFormMode(false);
-  setPreviewTabEnabled(true);
-  if (opts.view === "edit") switchView("edit");
+  $("#editPane").hidden = false; $("#previewBtn").hidden = false;
+  void opts;                       // 旧签名 opts.view 已无意义（只有一个态），参数留着不破坏调用方
+  $("#recordCard").hidden = false;
+  loadRecord(slug);                // 懒加载，不 await —— 记录晚到不挡编辑
   renderList();
+}
+
+/** 侧栏「记录」卡：这个产品的数据文件的 commit 记录（/api/audit?slug=）。 */
+async function loadRecord(slug) {
+  const box = $("#recordBody");
+  box.innerHTML = ""; box.append(el("span", "hint0", "读取中…"));
+  try {
+    const { body } = await api(`/api/audit?slug=${encodeURIComponent(slug)}&limit=100`);
+    if (state.slug !== slug) return;      // 人已经切走了 —— 迟到的响应不许画到别的产品身上
+    box.innerHTML = "";
+    const es = body.entries || [];
+    if (!es.length) { box.append(el("span", "hint0", "还没有记录。")); return; }
+    const row = (k, ...nodes) => {
+      const r = el("div", "krow"); r.append(el("span", "k", k));
+      const v = el("span", "v"); nodes.forEach((n) => v.append(typeof n === "string" ? document.createTextNode(n) : n));
+      r.append(v); box.append(r);
+    };
+    const last = es[0];
+    row("最后修改", el("span", "mono", `${fmtStamp(last.date)} · ${(last.operator || "—").replace(/@.*$/, "")}`));
+    if (last.fields) row("改了", el("span", "mono", last.fields));
+    // 创建 = 这份记录里最早的一条。⚠️ 拿满 100 条说明更早的没取到 —— 那时**不冒充**它是创建时间。
+    if (es.length < 100) row("创建", el("span", "mono", fmtStamp(es[es.length - 1].date)));
+    const a = el("a", "lnk mono-link", last.shortSha); a.href = last.url; a.target = "_blank"; a.rel = "noopener";
+    row("commit", a);
+    const all = el("button", "linkish", "这条产品的全部改动 →"); all.type = "button";
+    // ⚠️ 不清 state.audit：审计缓存是全量那份，过滤在渲染层做 —— 清了会白拉一次 20s 的接口
+    all.onclick = () => { state.auditSlug = slug; showNav("audit"); if (state.audit) renderAudit(); };
+    row("", all);
+  } catch (e) {
+    box.innerHTML = ""; box.append(el("span", "hint0", "记录读取失败：" + e.message));
+  }
+}
+
+/** 侧栏上架状态：两段切换是 f_status（隐藏 select）的 UI —— 点击 = 设值 + dispatch change，⛔ 不是第二个真源。 */
+function paintStatusSeg() {
+  const host = $("#statusSeg"); if (!host) return;
+  host.innerHTML = "";
+  const cur = $("#f_status").value || "draft";
+  host.append(segControl([["published", "在线"], ["draft", "未上架"]], cur, (v) => {
+    // 状态是二值必填 —— 再点同一段（v=null）不是"全部"，保持原值不变
+    if (!v || v === cur) return;
+    const sel = $("#f_status"); sel.value = v;
+    sel.dispatchEvent(new Event("change", { bubbles: true }));   // 图片搬目录那条提示靠它
+    paintStatusSeg(); paintSitePath();
+  }));
+  paintSitePath();
+}
+/** 状态卡里那行「官网 /products/<slug>」：已上架 = 链接；未上架 = 灰字说明这一页不存在。 */
+function paintSitePath() {
+  const v = $("#dSitePath"); if (!v) return;
+  v.innerHTML = "";
+  const slug = state.slug || $("#f_slug").value.trim();
+  if (!slug) { v.append(el("span", "hint0", "—")); return; }
+  if ($("#f_status").value === "published" && !state.isNew) {
+    const a = el("a", "lnk", `/products/${slug}`);
+    a.href = siteUrl(slug); a.target = "_blank"; a.rel = "noopener";
+    v.append(a);
+  } else {
+    const s = el("span", "hint0", `/products/${slug}`);
+    s.title = "未上架 —— 官网上还没有这一页";
+    v.append(s);
+  }
 }
 
 /**
@@ -785,6 +854,8 @@ function startNew() {
   clearProductPanes();
   state.slugTouched = false;            // 新建时 slug 跟随标题，直到人自己动它
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
+  $("#dSiteLink").hidden = true;        // 还不存在的东西也没有官网页
+  $("#recordCard").hidden = true;       // 也没有记录（按钮/卡随状态渲染，无对象就不出现）
   $("#f_slug").readOnly = false;
   $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
   $("#dTitle").textContent = "新建产品";
@@ -793,20 +864,11 @@ function startNew() {
   state.draft = { sensors: [], images: {}, status: "draft" };
   fillForm(state.draft);
   setFormMode(true);
-  // 🔴 新建态**没有预览可言** —— 东西还不存在。留着那个 tab 只会让人点进一个
-  //    要么空、要么装着上一个产品的面板。禁用它，比清空它更诚实。
-  setPreviewTabEnabled(false);
-  switchView("edit");
+  $("#editPane").hidden = false; $("#previewBtn").hidden = false;   // D 批：编辑即详情，没有 tab 可切
   renderList();
 }
 
-/** 「预览」tab 能不能点。新建态不能 —— 还不存在的东西没有预览。 */
-function setPreviewTabEnabled(on) {
-  const t = document.querySelector('.tab[data-view="view"]');
-  if (!t) return;
-  t.disabled = !on;
-  t.title = on ? "" : "新建的产品还没有内容可预览 —— 先保存一次";
-}
+// ⛔ setPreviewTabEnabled() 已撤（D 批）：预览 tab 没了，"新建态无预览"这个概念随之消失。
 
 // ═══════════════ 校验结果 ═══════════════
 /** 哪个字段的提示贴到哪个输入框下面。不在表里的留在顶部。 */
@@ -856,8 +918,7 @@ function clearFieldIssues() {
  * ⇒ 顶部最终只剩：错误、以及找不到归属控件的提示。
  */
 function renderIssues(v) {
-  // ⚠️ 记下来：提示"贴在哪里"取决于**当前在哪个 tab**，而 tab 是会切的 ⇒
-  //    切 tab 时要能用同一份结果重画一次（见 switchView）。
+  // ⚠️ lastValidation 仍要存：换产品时 clearProductPanes 清它，防上一个产品的提示串到下一个身上。
   if (v !== undefined) state.lastValidation = v;
   const box = $("#issues"); box.innerHTML = ""; box.className = "issues";
   clearFieldIssues();
@@ -876,10 +937,8 @@ function renderIssues(v) {
 
   warns.forEach((i) => {
     const anchor = anchorFor(i.field);
-    // 编辑态才有输入框可贴；详情（预览）态贴不了就回到顶部
-    // ⛔ 不用 offsetParent 判可见（这一单已反复证明它判不准）；
-    //    这里要问的本来也不是"现在可见吗"，而是**"当前是不是编辑态"** —— 用 state 判。
-    if (anchor && state.activeView === "edit") {
+    // D 批起编辑即详情，表单常在 ⇒ 有锚就贴到字段旁；找不到锚的仍回顶部（回不去的提示不能凭空消失）。
+    if (anchor) {
       const n = appendMd(el("p", "hint field-issue"), "⚠️ " + i.message);
       anchor.insertAdjacentElement("afterend", n);
     } else {
@@ -911,94 +970,8 @@ function mkIssue(kind, field, msg) {
 }
 
 // ═══════════════ 详情视图 ═══════════════
-/**
- * 「预览」态 —— **接近官网产品页的排版**，不是字段表（A12-4）。
- *
- * 🔴 为什么不 iframe 官网：
- *    ① 未上架的产品官网上**没有那一页**；
- *    ② 线上是**上一次部署**的版本，与手里这份数据不一致 —— 那会让人以为自己的改动没生效。
- * ⛔ `supplierRef` **绝不进预览区**：预览的定义就是"官网上看得到的样子"，而它不上站。
- *    它只出现在下方那块视觉上分开的内部信息区。
- * ⚠️ 不追求像素级还原官网（官网样式会变，追了也守不住）。
- *    目标是**"看得出是不是对的"**，不是"看起来一样"。
- */
-function renderView(p) {
-  const pane = $("#viewPane"); pane.innerHTML = "";
-  const wrap = el("div", "pv");
-
-  // ── 图：主图大，其余排成一行小图 ──
-  const imgs = [p.images?.main, ...(p.images?.gallery || [])].filter(Boolean);
-  if (imgs.length) {
-    const hero = el("div", "pv-hero");
-    setThumb(hero, rawUrl(imgs[0]), p.name || p.slug);
-    wrap.append(hero);
-    if (imgs.length > 1) {
-      const strip = el("div", "pv-strip");
-      imgs.slice(1).forEach((g) => { const t = el("div", "pv-thumb"); setThumb(t, rawUrl(g), g); strip.append(t); });
-      wrap.append(strip);
-    }
-  } else {
-    wrap.append(el("div", "pv-noimg", "还没有图片 —— 官网上这个产品会没有主图。"));
-  }
-
-  // ── 标题 / 机型·型号 ──
-  wrap.append(el("h1", "pv-title", p.name || p.slug || "（未命名）"));
-  const meta = el("div", "pv-meta");
-  if (p.category) meta.append(el("span", "pv-cat", p.category));
-  if (p.model) meta.append(el("span", "pv-model", p.model));
-  // ⚠️ 预览态没有输入框可贴，model 那条提示就贴在型号旁边（见 renderIssues 的回落）
-  wrap.append(meta);
-
-  // ── 传感器 chip ──
-  if (p.sensors?.length) {
-    const sec = el("section", "pv-sec");
-    sec.append(el("h3", "pv-h3", "传感器"));
-    const chips = el("div", "taglist");
-    p.sensors.forEach((x) => chips.append(el("span", "tag", x)));
-    sec.append(chips); wrap.append(sec);
-  }
-
-  // ── 卖点 ──
-  if (p.highlights?.length) {
-    const sec = el("section", "pv-sec");
-    sec.append(el("h3", "pv-h3", "卖点"));
-    const ul = el("ul", "pv-list");
-    p.highlights.forEach((h) => ul.append(el("li", null, h)));
-    sec.append(ul); wrap.append(sec);
-  }
-
-  // ── 参数表 ──
-  const specEntries = Object.entries(p.specs || {});
-  if (specEntries.length) {
-    const sec = el("section", "pv-sec");
-    sec.append(el("h3", "pv-h3", "参数"));
-    const t = el("table", "pv-specs");
-    specEntries.forEach(([k, v]) => {
-      const tr = el("tr"); tr.append(el("th", null, k), el("td", null, v)); t.append(tr);
-    });
-    sec.append(t); wrap.append(sec);
-  }
-
-  pane.append(wrap);
-
-  // ── 内部信息区：**与预览区在视觉上分开** ──
-  // ⚠️ 这些东西官网上看不到，所以它们不能待在"预览"里面 —— 否则"预览"这个词就是假的。
-  const internal = el("section", "pv-internal");
-  internal.append(el("h3", "pv-h3", "内部信息 · 官网上看不到"));
-  const t = el("table", "kvtable");
-  const row = (k, v, cls) => {
-    const tr = el("tr", cls); tr.append(el("th", null, k));
-    const td = el("td"); td.append(typeof v === "string" ? el("code", null, v) : v); tr.append(td); t.append(tr);
-  };
-  row("slug", p.slug || "—");
-  row("状态", el("span", `pill ${p.status === "published" ? "pill-ok" : "pill-gray"}`, statusLabel(p.status)));   // 旧 .badge 已撤（B 批），同族改 pill
-  row("moq", p.moq == null ? "面议（未设 moq）" : String(p.moq));
-  if (p.supplierRef) row("supplierRef", p.supplierRef, "internal-row");
-  // A12-③：文件路径从顶部挪到这里 —— Joe 不看仓，但排查时它有用
-  if (state.filePath) row("数据文件", state.filePath);
-  internal.append(t);
-  pane.append(internal);
-}
+// ⛔ renderView()（预览渲染，含 .pv-* 整套）已撤（crm-skin D 批 §4）：编辑即详情，「预览」由「看官网页 ↗」承担。
+//    原内部信息区里的 moq/文件路径不再展示（moq 是死字段 A10-C；文件路径进「记录」卡的 (?) 层级足够）。
 
 // ═══════════════ 表单 ═══════════════
 // ═══════════════ 图片 ═══════════════
@@ -1299,6 +1272,7 @@ function fillForm(p) {
   $("#f_model").value = p.model || "";
   $("#f_category").value = p.category || "";
   $("#f_status").value = p.status || "draft";
+  paintStatusSeg();   // 侧栏两段切换是它的 UI（D 批）—— 换产品/新建都要重画到当前值
   // ⚠️ moq 的输入框已撤（A10-C：它是死字段，官网渲染层 0 处引用）。
   //    **契约字段没动**，现存值也不会被碰 —— 见 readForm 里那段。
   $("#f_imgmain").value = p.images?.main || "";
@@ -1760,30 +1734,7 @@ function mkNotice(kind, msg) {
 }
 
 // ═══════════════ 视图切换 / 事件 ═══════════════
-function switchView(v) {
-  // ⚠️ 守一道：被禁用的 tab 不许切过去。只把按钮设成 disabled 是不够的 ——
-  //    别处（如恢复上次状态）仍可能直接调 switchView("view")。
-  const t = document.querySelector(`.tab[data-view="${v}"]`);
-  if (t && t.disabled) return;
-  state.activeView = v;
-  document.querySelectorAll(".tab").forEach((t) => {
-    const on = t.dataset.view === v;
-    t.classList.toggle("is-on", on);
-    // 它们是**互斥的开关按钮** ⇒ aria-pressed 才是准确的语义。
-    t.setAttribute("aria-pressed", String(on));
-  });
-  $("#viewPane").hidden = v !== "view";
-  $("#editPane").hidden = v !== "edit";
-  // 「保存」住在顶部那一行里（表单外，靠 form="editPane" 归属）⇒ 显隐要跟着 tab 走。
-  // ⚠️ 预览态摆一个保存按钮，点了会提交一张看不见的表单 —— 那正是"点了不知道发生了什么"。
-  $("#previewBtn").hidden = v !== "edit";
-  // 提示贴在哪儿取决于当前 tab ⇒ 切 tab 要用同一份结果重画一次。
-  // ⚠️ 传 state.lastValidation 而不是重新校验：重新校验会**掉进另一个真源**，
-  //    而人看到的应该始终是"上一次校验的结论"。
-  if (state.lastValidation !== undefined) renderIssues(state.lastValidation);
-}
-
-document.querySelectorAll(".tab").forEach((t) => { t.onclick = () => switchView(t.dataset.view); });
+// ⛔ switchView() 与 .tab 绑定已撤（D 批）：预览/编辑双态没了，编辑面板常显（select/startNew 直接开）。
 // 搜索框常驻顶栏 ⇒ 在别的视图里也看得见。
 // ⚠️ 不切视图的话，人在设置页打字会**什么都不发生** —— 而那看起来像搜索坏了。
 $("#q").oninput = () => {
@@ -2867,7 +2818,16 @@ function renderAudit() {
     [["", "全部", a.entries.length], ...ops.map((o) => [o, o, cnt((e) => (e.operator || "—") === o)])],
     state.auditOp, (v) => { state.auditOp = v; renderAudit(); });
 
+  // 「这条产品的全部改动 →」（D 批）：按 slug 过滤 + 副标处写明 + 可清除。
+  //    ⚠️ 用 includes 不用 ===：批量条目的 slugs 是多个。⛔ 解析不出 slugs 的条目（别处推的）匹配不到 —— 口径与记录卡一致，两边都按数据文件/后台格式算。
+  if (state.auditSlug) {
+    const x = el("button", "linkish", `筛选：${state.auditSlug} ×`); x.type = "button";
+    x.title = "清除筛选，回到全部记录";
+    x.onclick = () => { state.auditSlug = ""; renderAudit(); };
+    $("#auditSummary").append(x);
+  }
   const rows = a.entries.filter((e) =>
+    (!state.auditSlug || (e.slugs || []).includes(state.auditSlug)) &&
     (!state.auditSrc || (state.auditSrc === "admin" ? e.source === "admin" : e.source !== "admin")) &&
     (!state.auditOp || (e.operator || "—") === state.auditOp));
 

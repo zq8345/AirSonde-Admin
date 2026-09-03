@@ -315,6 +315,14 @@ app.get("/api/audit", async (c) => {
   const repo = c.env.GITHUB_REPO, branch = c.env.GITHUB_BRANCH, dir = c.env.PRODUCTS_DIR;
   if (!repo || !branch || !dir) return c.json({ error: "配置缺失" }, 500);
   const limit = Math.min(Number(c.req.query("limit") || 60), 100);
+  // ── ?slug=<slug>：单个产品的改动记录（crm-skin D 批 §4，编辑页侧栏「记录」卡用）──
+  // ⚠️ 口径按**数据文件**算（<dir>/<slug>.json 的 commits）：admin 的每次保存（含图片操作）都会
+  //    碰这个 JSON，所以后台写的都在；别处**只动图片不动 JSON** 的改动不在这份里 —— 界面上写明。
+  // ⛔ slug 先过形状闸再拼路径：查询参数直接进 GitHub API path，不能什么都收。
+  const slugQ = c.req.query("slug");
+  if (slugQ !== undefined && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slugQ)) {
+    return c.json({ error: "slug 形状不对" }, 400);
+  }
   try {
     const fetchPath = async (path: string) => {
       const r = await ghFetch(c.env, `/repos/${repo}/commits?sha=${branch}&path=${encodeURIComponent(path)}&per_page=${limit}`);
@@ -322,7 +330,9 @@ app.get("/api/audit", async (c) => {
       return ((await r.json()) as any[]).map((x) =>
         classify(x.sha, x.commit?.message || "", x.commit?.author?.date || "", x.html_url || ""));
     };
-    const [data, imgs] = await Promise.all([fetchPath(dir), fetchPath("src/assets/products")]);
+    const [data, imgs] = slugQ
+      ? [await fetchPath(`${dir}/${slugQ}.json`), []]     // 单产品：只查那个文件；图片目录是全目录级，查了也分不出是谁的
+      : await Promise.all([fetchPath(dir), fetchPath("src/assets/products")]);
     const entries = mergeCommits(data, imgs).slice(0, limit);
     const fromAdmin = entries.filter((e) => e.source === "admin").length;
     return c.json({

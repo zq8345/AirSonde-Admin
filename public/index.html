@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=81">
+<link rel="stylesheet" href="/style.css?v=84">
 </head>
 <body>
 
@@ -268,7 +268,7 @@
     <section id="detailView" hidden>
       <!-- A12 顶部压缩：返回 + tab + 标题**并成一行**（原来返回在左、tab 在右、标题另起一块）。
            ⛔ 文件路径 src/content/products/xxx.json 撤出顶部 —— Joe 不看仓，对他没用。
-              它挪到详情态底部的内部信息区（见 renderView）。 -->
+              它后来在内部信息区，D 批随预览态一起撤 —— 排查用文件路径见「记录」卡的 (?)。 -->
       <!-- ⭐ 「保存」「删除」在这一行的**右端**（Joe 2026-08-26 当面定）。
            这一行住在 .detail-bar 里，而顶栏与内容区是分开滚的（body 不滚）⇒
            **滚到最底它们仍在原地**，不需要 sticky、不需要算偏移。
@@ -276,14 +276,13 @@
               「保存」实心主按钮，「删除」保持 .danger 且**描边不实心** ——
               同一处两个实心红蓝按钮，误点只是时间问题。
            ⛔ 不因此把删除做成三步：它现在的二次确认已经够了。 -->
+      <!-- crm-skin D 批（§4）：⛔ 预览/编辑双态撤（编辑即详情），「预览」的作用由「看官网页 ↗」承担。
+           头部一行：返回列表 · 产品名 17/700 省略 · 看官网页 ↗（仅已上架）· 保存（唯一主按钮）· 删除（红字）。 -->
       <div class="detail-bar">
-        <button type="button" class="linkish" id="backBtn">← 返回</button>
-        <div class="tabs">
-          <button type="button" class="tab is-on" data-view="view">预览</button>
-          <button type="button" class="tab" data-view="edit">编辑</button>
-        </div>
+        <button type="button" class="btn-secondary btn-mini" id="backBtn">← 返回列表</button>
         <h2 id="dTitle">—</h2>
         <div class="detail-actions">
+          <a class="lnk" id="dSiteLink" target="_blank" rel="noopener" hidden>看官网页 ↗</a>
           <!-- ⚠️ form="editPane"：这两个按钮在 <form> **外面**，靠 form 属性归属于它。
                不写的话「保存」提交不了表单 —— 而症状是"点了没反应"。 -->
           <button type="submit" form="editPane" class="primary" id="previewBtn" hidden>保存</button>
@@ -292,7 +291,6 @@
       </div>
 
       <div id="issues"></div>
-      <div id="viewPane"></div>
 
       <form id="editPane" hidden autocomplete="off">
         <!-- ⚠️ 这里原来是一条 .editbar（未改动计数 / 保存 / 还原 / 删除）。
@@ -324,7 +322,7 @@
                 删图无确认、**每张图的 alt 输入框**（AirSonde 的 alt 从 name 派生，契约里没有
                 放 alt 的位置 —— 做了就是第二个 moq，而这一单正在删掉第一个）。 -->
         <section class="card">
-          <h3>产品图片 <span class="h3sub">第一张即主图 · 可拖动排序</span></h3>
+          <h3>产品图片 <span class="h3sub">第一张即封面 · 拖动换序 · 自动转 WebP · 单张 ≤2MB</span></h3>
           <!-- A12-5：添加入口是**网格里的最后一格**，尺寸与缩略图一致，就一个「+」。
                原来那个整宽大虚线框占了半屏，而它承担的信息量只有"点这里加图"。
                ⚠️ 投放区是**整个网格**（含这一格），不只这一格 —— 见 app.js 的 drop 绑定。
@@ -335,17 +333,16 @@
               <span class="iadd-plus">＋</span>
             </label>
           </div>
-          <p class="hint imglimits">可多选 · 自动转 WebP · 单张 ≤2MB · <b>第一张是封面</b>，拖动可换序</p>
+          <!-- ⛔ 底部那行 .imglimits 常驻说明已撤（D 批 §4）：全部信息进了卡副标（h3sub），⛔ 不说两遍。 -->
         </section>
 
         <section class="card">
           <h3>基本信息</h3>
         <div class="field">
-          <label for="f_name">产品标题 <b class="req">必填</b></label>
+          <!-- ⚠️ "别照抄供应商标题"那句收进 (?)（D 批 §4 / §6 规则）——它在校验器里是 warning、命中会吼，
+               (?) 是第二道提醒不是唯一一道，所以可以收。 -->
+          <label class="flab" for="f_name">产品标题 <b class="req">必填</b><span class="q2" title="不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。">?</span></label>
           <input id="f_name" name="name" placeholder="16-in-1 Desktop Air Quality Monitor">
-          <!-- ⭐ 保留的两条常驻说明之一：这一条在校验器里**只是 warning**，闸不会拦，
-               人看不到就真的会照抄供应商标题。其余说明全部撤下交给校验器命中才吼。 -->
-          <p class="hint">⚠️ 不要照抄供应商 listing 标题——那是给阿里站内搜索堆关键词的。写成正常英文产品名。</p>
         </div>
 
         <div class="row2">
@@ -361,28 +358,19 @@
           </div>
         </div>
 
+        <!-- slug 在界面上叫「网址」（Joe：「slug 是啥，我不太明白」，D 批 §4）：
+             灰前缀 airsonde.com/products/ + slug；新建自动生成可改，编辑态只读（改 slug = 改文件名，本阶段不支持）。
+             ⚠️ 自动值**必须看得见且可改**，不许藏起来：藏起来的话，人是在提交之后才第一次看到这个网址。 -->
         <div class="field">
-          <label for="f_slug">slug <span class="h3sub">网址，自动由标题生成</span></label>
-          <!-- ⚠️ 自动值**必须看得见且可改**，不许藏起来：slug 是 URL，而且本阶段**不支持改名**
-               （改名 = 改文件名）。藏起来的话，人是在提交之后才第一次看到这个网址。 -->
-          <input id="f_slug" name="slug" spellcheck="false">
+          <label class="flab" for="f_slug">网址 <span class="fmeta">slug · 上线后锁定</span><span class="q2" title="由产品标题自动生成，新建时可改；上线后锁定——改了等于换网址，搜索引擎和已发出去的链接都会失效。">?</span></label>
+          <div class="urlwrap"><span class="urlpre">airsonde.com/products/</span><input id="f_slug" name="slug" spellcheck="false"></div>
         </div>
 
         </section>
 
         <section class="card">
-          <h3>传感器 <span class="h3sub">至少选一个</span></h3>
+          <h3>传感器 <span class="h3sub">至少选一个 · 点选</span></h3>
           <div class="chips" id="f_sensors"></div>
-        </section>
-
-        <!-- 上架状态：**新建时整块不出现**（JS 控制），固定写 draft。
-             新建的东西必然还没核过图 —— 给一个只有一个正确答案的下拉框 = 制造一次无谓的决策。 -->
-        <section class="card" id="statusCard">
-          <h3>上架状态</h3>
-          <div class="field">
-            <label for="f_status">status <b class="req">必填</b></label>
-            <select id="f_status" name="status"></select>
-          </div>
         </section>
 
         <!-- ══ 更多（选填）══ 新建时收起，编辑时展开 -->
@@ -429,13 +417,33 @@
         </details>
 
         </div><!-- /edit-col-main -->
+
+        <!-- ══ 侧栏 340（D 批 §4）：上架状态（两段切换，改的是表单值，保存才写）+ 记录 ══ -->
+        <div class="edit-col-side">
+          <!-- 上架状态：**新建时整块不出现**（JS 控制，沿用原 statusCard 的 hidden），固定写 draft。
+               🔴 f_status 仍是那个 <select>（隐藏）——它是**值的唯一容器**：loadContract 填选项、
+               fillForm 设值、readForm 读值、change 监听（图片搬目录提示）全部机制不动；
+               两段切换只是它的 UI，点击 = 设 select 值 + dispatch change。⛔ 不造第二个状态真源。 -->
+          <section class="card" id="statusCard">
+            <h3>上架状态</h3>
+            <select id="f_status" name="status" hidden></select>
+            <div id="statusSeg"></div>
+            <div class="krow"><span class="k">官网</span><span class="v" id="dSitePath">—</span></div>
+            <p class="hint" id="mainImgNote" hidden></p>
+          </section>
+          <!-- 记录：数据来自 /api/audit?slug=<slug>（口径写在 (?) 里）。懒加载，不阻塞编辑。 -->
+          <section class="card" id="recordCard" hidden>
+            <h3>记录 <span class="q2" title="按这个产品的数据文件（JSON）的 commit 算：后台的每次保存（含图片操作）都会碰它，所以都在；别处只动图片不动 JSON 的改动不在这份里。">?</span></h3>
+            <div id="recordBody"><span class="hint0">读取中…</span></div>
+          </section>
+        </div><!-- /edit-col-side -->
         </div><!-- /edit-grid -->
 
         <!-- ⚠️ images.main 的路径仍然由**服务端**（planImages）算。这里留一个隐藏字段
              只为了把当前值带回去，不给人手填 —— 手填等于让人去维护一条服务端已经在维护的规则。
              ⚠️ 隐藏而不是删掉：readForm 仍然读它，删了会让 images.main 变成空。 -->
         <input type="hidden" id="f_imgmain" name="images.main">
-        <p class="hint" id="mainImgNote" hidden></p>
+        <!-- ⚠️ mainImgNote 已随状态卡搬去侧栏（D 批）。 -->
 
         <div class="actions">
           <span class="actions-note" id="actionsNote"></span>
@@ -447,7 +455,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=81"></script>
+<script src="/app.js?v=84"></script>
 </body>
 </html>
 
