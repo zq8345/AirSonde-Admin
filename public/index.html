@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=76">
+<link rel="stylesheet" href="/style.css?v=78">
 </head>
 <body>
 
@@ -38,7 +38,7 @@
         于是顶栏天然停在原地，**不需要给下面的内容算偏移** ——
         而算偏移正是旧写法的病根：`top:40px` 假设横幅永远是一行，
         可横幅一旦带上 warning 就会换行变高，那个 40 就错了，且没人会发现。
-     ⚠️ 左格宽度与侧栏严格相同（208px），字标才会正对侧栏而不是飘在中间。 -->
+     ⚠️ 左格 178 正对左栏 168（度量值取 CRM，crm-skin A 批），字标才会正对侧栏而不是飘在中间。 -->
 <header class="topbar">
   <div class="topbar-left">
     <!-- 字标独占，**不带 "Admin" 后缀**（Joe 定：放大、去掉 Admin）。
@@ -60,32 +60,36 @@
 </header>
 
 <div class="app">
-  <!-- ── 左侧导航（骨架照 admin.wanew.com 的分区）── -->
+  <!-- ── 左侧导航 ── -->
+  <!-- 左栏（crm-skin A 批，Joe 2026-09-03：「先设计左侧的导航栏；把设置移到最下面，把账号移到设置里面」）
+       结构逐字照 gen-admin.mjs 的 NAV：目录 / 站点 / 系统 三区 + 底部块「设置」。
+       图标 = 单色线条 SVG（viewBox 24 · stroke currentColor · 2 · 16px），path 直接抄 mockup。
+       ⛔ 已删：「搜索表现 SOON」（GSC 接上那天再回来）· 底部账号块（邮箱/仓/sha/登出 → 设置页）。 -->
   <aside class="sidenav">
-
+   <div class="nav-body">
     <div class="nav-sec">目录</div>
     <!-- ⚠️ aria-current 必须**在 HTML 里就有**：起步时 showNav() 还没跑过，
          只在切换时设的话，刚打开后台的那一刻读屏软件读不出"我在哪一页"。 -->
-    <button class="nav-item is-on" data-nav="products" aria-current="page">产品<span class="cnt" id="navCount"></span></button>
-    <button class="nav-item" data-nav="cats" title="机型 / 传感器两个轴：增删改 + 谁在用">分类</button>
+    <button class="nav-item is-on" data-nav="products" aria-current="page"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>产品<span class="cnt" id="navCount"></span></button>
+    <button class="nav-item" data-nav="cats" title="机型 / 传感器两个轴：增删改 + 谁在用"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>分类</button>
+    <button class="nav-item" data-nav="media"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></span>图片<span class="cnt" id="navMediaCount"></span></button>
 
-    <div class="nav-sec">内容</div>
-    <button class="nav-item" data-nav="media">图片<span class="cnt" id="navMediaCount"></span></button>
-    <button class="nav-item" data-nav="home" title="首页文案：hero、卖点卡、联系区块">首页</button>
-    <button class="nav-item" data-nav="contact" title="联系方式：邮箱/电话/微信/地址（链接由它们派生）">联系方式</button>
+    <div class="nav-div"></div>
+    <div class="nav-sec">站点</div>
+    <button class="nav-item" data-nav="home" title="首页文案：hero、卖点卡、联系区块"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>首页</button>
+    <button class="nav-item" data-nav="contact" title="联系方式：邮箱/电话/微信/地址（链接由它们派生）"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>联系方式</button>
+    <button class="nav-item" data-nav="seo" title="站级 SEO：各页 title / description"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>SEO</button>
 
-    <div class="nav-sec">增长</div>
-    <!-- ⛔ 仍是 SOON：GSC 没接，站也年轻。挂个点不动的链接比没有更糟。 -->
-    <div class="nav-item soon" title="Search Console 接入">搜索表现 <span class="soon-tag">SOON</span></div>
-    <button class="nav-item" data-nav="seo" title="站级 SEO：各页 title / description">SEO</button>
-
+    <div class="nav-div"></div>
     <div class="nav-sec">系统</div>
-    <button class="nav-item" data-nav="audit">审计日志</button>
-    <button class="nav-item" data-nav="settings" title="运行口径：写入能力 / 发布目标 / 谁能进 / 这一版是什么（只读）">设置</button>
+    <button class="nav-item" data-nav="audit"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>审计日志</button>
     <!-- ✅ 这一条是真链接：询盘归 CRM 管 -->
     <a class="nav-item" href="https://crm.airsonde.com" target="_blank" rel="noopener"
-       title="询盘/线索归 CRM 管理（新标签打开）">询盘 <span class="ext">↗</span></a>
-    <div class="nav-foot" id="who">读取进程身份…</div>
+       title="询盘/线索归 CRM 管理（新标签打开）"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>询盘<span class="ext">↗</span></a>
+   </div>
+   <div class="nav-bottom">
+    <button class="nav-item" data-nav="settings" title="账号 · 保存与上线 · 版本"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>设置</button>
+   </div>
   </aside>
 
   <main class="main">
@@ -250,7 +254,8 @@
          🔴 这一页存在的理由是"为什么保存不了/为什么他进不来"这两个问题 ——
             答案原本散在环境变量、Access 面板和源码注释里，出事时没人拼得出来。 -->
     <section id="settingsView" hidden>
-      <div class="page-head"><h1>设置 <span class="h3sub">运行口径 · 只读</span></h1></div>
+      <!-- crm-skin A 批（§9）：三张卡只答三问（我是谁 · 能不能存、存到哪 · 出事报哪个版本），全由 renderSettings() 画。 -->
+      <div class="page-head"><h1>设置</h1></div>
       <div id="settingsBody"></div>
     </section>
 
@@ -448,7 +453,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=76"></script>
+<script src="/app.js?v=78"></script>
 </body>
 </html>
 

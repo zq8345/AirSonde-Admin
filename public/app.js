@@ -86,33 +86,9 @@ async function api(path, init) {
 async function loadWho() {
   try {
     const { body: w } = await api("/api/_whoami");
-    $("#who").innerHTML = "";
-    const line1 = el("div");
-    line1.append(el("b", null, w.operator || "(无身份)"));
-    line1.append(document.createTextNode(`  ·  ${w.data.repo || "?"}`));
-    const line2 = el("div", "muted", `${w.git.shortSha || "无 sha"}${w.git.dirty ? "（脏）" : ""} · ${w.deploy.versionId ? w.deploy.versionId.slice(0, 8) : "本地"} · ${w.request.colo || "-"}`);
-    $("#who").append(line1, line2);
-
-    // 🔴 登出（Joe 点名）。位置就挨着"当前是谁"—— 换人这件事在同一个地方看和做。
-    //
-    // ⚠️ 它不只是"共用设备换个人"：**这个后台自己写下的对账程序需要它**。
-    //    设置页与 /api/_whoami 都写着：Access 名单与 ALLOWED_EMAILS 必须集合相等，
-    //    而 worker 看不见 Access 的策略列表 ⇒ **唯一的对账办法是让人真去登一次**。
-    //    没有登出，那条程序在同一台机器上根本执行不了 —— 后台要求的事它自己不让你做。
-    //
-    // ⚠️ `/cdn-cgi/access/logout` 是 Cloudflare 边缘的端点，不经过这个 worker。
-    //    ⇒ 本地开发（旁路模式、根本没有 Access）点它只会 404。
-    //      所以不是"显示但点了没反应"，而是**禁用并说明为什么** —— 那正是这一批在修的病。
-    const out = el("button", "logoutbtn"); out.type = "button";
-    out.textContent = "登出";
-    if (w.request.isLocalDev) {
-      out.disabled = true;
-      out.title = "本地开发是旁路模式，前面没有 Access 门，也就没有会话可以登出";
-    } else {
-      out.title = `以 ${w.operator} 登入中 · 登出后回到 Cloudflare Access 登录页（可用来核对 Access 名单与 ALLOWED_EMAILS 是否一致）`;
-      out.onclick = () => { location.href = "/cdn-cgi/access/logout"; };
-    }
-    $("#who").append(out);
+    // ⛔ 左栏底部的账号块（邮箱 · 仓 · sha · 版本 id · 节点 · 登出）已整块撤（crm-skin A 批，Joe：「把账号移到设置里面」）。
+    //    那个元素与它的样式已撤（⛔ 元素、绑定、样式三处一起）；数据一个字没少 —— state.who 由设置页整页渲染，
+    //    登出按钮连同它那段"为什么本地要禁用"的理由一起搬进 renderSettings() 的「账号」卡。
     // ⚠️ warnings 不是给日志看的，是给正在用后台的人看的。
     // 🔴 A12-1 撤掉常驻横幅时**差点把这些一起藏掉** —— 它们（GIT_SHA 未注入 / 部署时工作区是脏的）
     //    正是"这一版不可信"的信号，属于**真警告**，不是那条被撤掉的装饰性红字。
@@ -132,7 +108,7 @@ async function loadWho() {
     };
     applyWriteMode();
   } catch (e) {
-    $("#who").textContent = "身份读取失败：" + e.message;
+    // 身份读取失败：横幅（下面）与设置页（state.who 为空时整页说明）负责把它说出来；左栏不再有那格。
     // 🔴 问不到就**保持"未知"**，绝不默认成"能写"。
     //    默认能写的话，一次网络抖动就会让界面开始说它没有把握的话。
     // 问不到服务端 ⇒ 这条必须看得见（横幅默认可见，这里显式再兜一次，防止别处藏过它）
@@ -467,7 +443,7 @@ function renderList() {
     tb.append(tr);
   });
 
-  $("#navCount").textContent = String(state.list.length);
+  $("#navCount").textContent = `(${state.list.length})`;   // 左栏计数内联「(26)」（crm-skin §2）
   syncCkAll(); renderBatch();
 
   const empty = $("#listEmpty");
@@ -1874,7 +1850,7 @@ async function loadMedia() {
 
 function renderMedia() {
   const m = state.media; if (!m) return;
-  $("#navMediaCount").textContent = String(m.total);
+  $("#navMediaCount").textContent = `(${m.total})`;   // 左栏计数内联「(204)」（crm-skin §2）
 
   const sum = $("#mediaSummary"); sum.innerHTML = "";
   // 🔴 对账不成立 ⇒ 这次扫描本身有问题，结论不可用。放最前面，红着说。
@@ -2432,170 +2408,104 @@ $("#siteSave").onclick = async () => {
 //    ①「为什么保存不了」—— 答案是写入闸与 token 的组合，原本散在环境变量和源码注释里。
 //    ②「为什么他进不来」—— 答案要区分**两道门**中的哪一道，而症状完全不同。
 function renderSettings() {
+  // crm-skin A 批（SPEC §9，Joe：「设置页看起来有点懵」）：三张卡只答三问 ——
+  //   我是谁（账号）· 能不能存、存到哪、多久上线（保存与上线）· 出事报哪个版本（版本）。
+  // ⛔ 删掉（不是藏）：四格摘要条、契约卡（机型/传感器数分类页已有）、写入闸/token 两行（收进「可以保存」的 (?)）、
+  //    发布目标卡（并进「存到哪」）、平台版本 ID / 接入节点（收进版本行的 (?)）。
+  // ⚠️ 每一项仍取自同一份 state.who（/api/_whoami），**不另开数据源**。
   const w = state.who;
   const box = $("#settingsBody"); box.innerHTML = "";
   if (!w) { box.append(mkNotice("bad", "拿不到 /api/_whoami —— 这一页的每一项都来自它，因此什么都不显示，而不是显示一堆空格子。")); return; }
 
   const card = (title, sub) => {
-    const s = el("section", "card");
+    const s = el("section", "card card-narrow");
     const h = el("h3", null, title);
     if (sub) h.append(el("span", "h3sub", " " + sub));
     s.append(h);
     return s;
   };
-  // 一行：名字 + 值（+ 可选说明）。值用等宽，方便与配置文件逐字比对。
-  const row = (parent, k, valNode, hint) => {
-    const r = el("div", "srow");
-    r.append(el("span", "sk", k));
-    const v = el("span", "sv");
-    v.append(typeof valNode === "string" ? document.createTextNode(valNode) : valNode);
+  // 一行：键 · 值 · （右端动作）。照 mockup 的 .krow/.k/.v/.lnk。
+  const row = (parent, k, ...nodes) => {
+    const r = el("div", "krow");
+    r.append(el("span", "k", k));
+    const v = el("span", "v");
+    nodes.forEach((n) => { if (n != null) v.append(typeof n === "string" ? document.createTextNode(n) : n); });
     r.append(v);
     parent.append(r);
-    if (hint) parent.append(appendMd(el("div", "shint"), hint));
+    return r;
   };
-  // 🔴 徽章语义**三档**，不是两档（Joe 2026-08-26 重排时定的口径）。
-  //    原来只有 yes/no 两个函数，于是「本后台看不见」被塞进了 no() ⇒ 橙色。
-  //    可那**不是坏事，是一条中性事实**：worker 本来就看不见 Access 的策略列表，
-  //    这是架构决定的，不需要任何人去处理它。橙色会被读成"这里有问题"。
-  //    ⇒ 绿 = 已就绪 · 灰 = 中性事实 · 橙 = 需要注意。**同语义必须同色。**
-  const yes = (t) => el("span", "badge badge-published", t);   // 绿：已就绪
-  const fact = (t) => el("span", "badge badge-unknown", t);    // 灰：中性事实，不需要处理
-  const no = (t) => el("span", "badge badge-draft", t);        // 橙：需要注意
-  const grid = el("div", "settings-grid");
+  // (?)：「为什么」收进 title 悬浮，零 JS（SPEC §4/§6 的说明规则）
+  const q = (title) => { const s = el("span", "q2", "?"); s.title = title; return s; };
+  const link = (text, href, opts = {}) => {
+    const a = el("a", "lnk", text);
+    if (href) { a.href = href; a.target = "_blank"; a.rel = "noopener"; }
+    if (opts.right) a.classList.add("lnk-right");
+    return a;
+  };
+  const pill = (kind, text) => el("span", `pill pill-${kind}`, text);
 
-  // ══ A：顶部状态摘要 —— 一眼看完，再往下才是细节 ══
-  //
-  // 🔴 这一页存在的理由是回答三个真会发生的问题：
-  //    「为什么保存不了」「为什么他进不来」「生产上跑的是哪一版」。
-  //    原来这三问的答案分散在五张**同权重**的卡里，得逐字读完才拼得出来。
-  //    ⇒ 结论压成一行，细节留在下面。摘要**不是重复**，它是那三问的直接答案。
-  // ⚠️ 每一项都取自同一份 w（/api/_whoami），**不另开数据源** ——
-  //    摘要与下面的卡说的必须是同一件事，否则这一页会自相矛盾，而那比没有摘要更糟。
+  // ── ① 账号：我是谁 · 怎么退出 · 怎么加同事 ──
   {
-    const sum = el("div", "sumbar");
-    const item = (badge, label) => {
-      const d = el("div", "sumitem");
-      d.append(badge);
-      d.append(el("span", "sumlabel", label));
-      return d;
-    };
-    sum.append(item(w.data.writeEnabled ? yes("可以保存") : no("不能保存"), "写入能力"));
-    // 🔴 这里原来数 `w.access.allowlist` —— 那个字段**已经不存在了**（2026-08-27 删名单）。
-    //    留着的话它恒为 0 ⇒ 摘要上会常驻一条橙色的「名单为空 = 拒绝所有」，
-    //    而那是**一条永远亮着的假警报**：名单没空，是这个概念没了。
-    //    ⇒ 摘要改说"谁在管名单"，而不是"名单里有几个人"。
-    sum.append(item(fact("Cloudflare Access"), "谁能进（唯一名单）"));
-    sum.append(item(fact(w.git.shortSha || "无 sha"), w.request.isLocalDev ? "本地 dev" : "生产版本"));
-    if (w.git.dirty) sum.append(item(no("部署时工作区是脏的"), "可复现性"));
-    const ct = state.contract;
-    sum.append(item(fact(ct?.version || "—"), "契约"));
-    if (ct) sum.append(item(fact(`${ct.categories?.length ?? "—"} 机型 · ${ct.sensors?.length ?? "—"} 传感器`), "分类轴"));
-    box.append(sum);
-  }
-
-  // ── ① 写入能力：把「为什么保存不了」拆成它真正的两个因子 ──
-  {
-    const c = card("写入能力", "「为什么保存不了」看这里");
-    row(c, "结论", w.data.writeEnabled ? yes("可以保存") : no("不能保存"),
-      "**两个条件缺一不可**：闸开着、且 token 在。界面上的按钮与横幅都由这一个字段决定，不是各写各的文案。");
-    row(c, "写入闸 ALLOW_GITHUB_WRITE", w.data.writeGateOpen ? yes("已开") : no("未开"),
-      "闸装在**唯一的出站口**（src/github.ts），不在各个端点里。放在端点上的话，端点越加越多，第五个一定会漏。");
-    row(c, "GitHub token", w.data.ghTokenConfigured ? yes("已配置") : no("未配置"),
-      "⚠️ 只报**有无**，任何界面和接口都不回显它的值，连前缀也不。");
+    const c = card("账号");
+    // 登出（Joe 点名的能力，从左栏搬来）。
+    // ⚠️ `/cdn-cgi/access/logout` 是 Cloudflare 边缘的端点，不经过这个 worker ⇒ 本地开发（旁路模式、没有 Access）
+    //    点它只会 404 —— 所以本地**禁用并说明为什么**，而不是"显示但点了没反应"。
+    const out = el("a", "lnk lnk-right", "退出登录");
     if (w.request.isLocalDev) {
-      // 中性事实：本机就是只能写靶子仓，这是设计如此，不是待办
-      row(c, "本机额外一道闸", fact("本机只能写靶子仓"),
-        "🔴 本机**永远**写不到官网数据仓（zq8345/AirSonde-Web 硬编码在出站闸的黑名单里，不是开关）。" +
-        "所以本地看到「可以保存」不代表能改官网 —— 真按下去会被这道闸拦住并说明理由。");
+      out.setAttribute("aria-disabled", "true"); out.classList.add("is-disabled");
+      out.title = "本地开发是旁路模式，前面没有 Access 门，也就没有会话可以登出";
+    } else {
+      out.href = "/cdn-cgi/access/logout";
+      out.title = `以 ${w.operator} 登入中 · 登出后回到 Cloudflare Access 登录页`;
     }
-    grid.append(c);
-  }
-
-  // ── ② 谁能进来：**两道门**，而这里只看得见一道 ──
-  {
+    row(c, "当前账号", el("b", null, w.operator || "(无身份)"), out);
     const a = w.access || {};
-    const c = card("谁能进来", "唯一名单在 Cloudflare Access");
-    row(c, "当前操作人", el("b", null, w.operator || "(无身份)"),
-      "取自**验过签的 Access 令牌**，不是那个明文头 —— 头可以伪造，签名不能。" +
-      "它会被写进 commit message 和审计日志，所以来源取错 = 审计记录指认错人，而那种错事后查不出来。");
-    // 🔴 这里以前有一张「后台名单」。**整个删掉了**（2026-08-27）。
-    //    ⛔ 不是"隐藏"：留一张空名单的话，界面会渲染出"0 人"，
-    //       而那正是我们要消灭的第二份名单的样子 —— 人还会去找它、去问怎么加。
-    row(c, "唯一名单", fact(a.singleSource || "Cloudflare Access 策略"), a.accessPolicyNote);
-    row(c, "怎么加人", "去 Cloudflare Access 策略里加",
-      "**改完立刻生效，不需要动这个后台、也不需要重新部署。** " +
-      "以前这里还有一份 ALLOWED_EMAILS 要手工同步，2026-08-27 就因为它少一个邮箱，" +
-      "同事过了 Access 却被本后台回 403 —— 那份名单已经删掉了。");
-    row(c, "worker 怎么确认身份", fact("验 Access JWT 签名"),
-      `公钥取自 **${a.teamDomain || "（未配置）"}**，并校验 **aud** 等于本应用。` +
-      "🔴 aud 那一条不是形式：同一个 team 下 4 个 Access 应用**共用签名公钥**，" +
-      "不校验 aud 等于接受兄弟应用（如 CRM）的令牌 —— 而那些令牌的**签名是有效的**，" +
-      "所以那个洞不会以「验签失败」的形式出现，它没有症状。");
-    if (a.writeImplication) row(c, "⚠️ 加人 = 给写权限", no("能进 = 能写"), a.writeImplication);
-    grid.append(c);
+    row(c, "加同事", "在 Cloudflare Access 里加邮箱，立刻生效",
+      q(a.writeImplication || "能进后台 = 能改官网产品数据；没有第二份名单要同步"),
+      link("去加人 ↗", "https://one.dash.cloudflare.com/", { right: true }));
+    box.append(c);
   }
 
-  // ── ③ 发布目标：改动最终落到哪、多久上线 ──
+  // ── ② 保存与上线：现在能不能存 · 存到哪 · 多久上线 ──
   {
-    const c = card("发布目标", "改动落到哪里");
-    row(c, "数据仓", el("code", null, w.data.repo || "—"));
-    row(c, "分支", el("code", null, w.data.branch || "—"));
-    row(c, "产品目录", el("code", null, w.data.productsDir || "—"),
-      "⚠️ 本后台在官网仓的**写入范围只有这一个目录**。页面、模板、样式、配置都不归它管。");
-    const site = el("a", "linkish", "airsonde.com/products/");
-    site.href = "https://airsonde.com/products/"; site.target = "_blank"; site.rel = "noopener";
-    row(c, "官网", site,
-      "链路：后台保存 → 官网仓产生一个 commit → Cloudflare Pages 自动重建 ≈1 分钟 → 站上可见。" +
-      "**保存成功 ≠ 站上已经变了**，中间隔着一次构建。");
-    grid.append(c);
+    const c = card("保存与上线");
+    const d = w.data;
+    const missing = [];
+    if (!d.writeGateOpen) missing.push("写入闸未开");
+    if (!d.ghTokenConfigured) missing.push("GitHub token 未配置");
+    const now = d.writeEnabled ? pill("ok", "可以保存") : pill("bad", `不能保存 · 缺 ${missing.join("、") || "未知原因"}`);
+    row(c, "现在", now, q("两个条件缺一不可：写入闸（ALLOW_GITHUB_WRITE）开着 + GitHub token 在。任一缺失这里会变成红色并写明缺哪个。" +
+      (w.request.isLocalDev ? " ⚠️ 本机另有一道闸：永远写不到官网数据仓（硬编码黑名单），所以本地的「可以保存」不代表能改官网。" : "")));
+    row(c, "存到哪", "官网仓 ", el("code", null, d.repo || "—"), ` · 每次保存 = 一次 commit（${d.branch || "?"} 分支，目录 ${d.productsDir || "?"}）`);
+    row(c, "多久上线", "约 1 分钟", q("保存成功 ≠ 站上已经变了，中间隔着一次官网构建（Cloudflare Pages）。"),
+      link("看官网 ↗", "https://airsonde.com/", { right: true }));
+    box.append(c);
   }
 
-  // ── ④ 这一版是什么：出事时第一个要问的问题 ──
+  // ── ③ 版本：出问题时把这一行发给开发 ──
   {
-    const g = w.git, d = w.deploy;
-    const c = card("这一版是什么", "联调/排障的第一步");
-    const sha = el("span");
-    sha.append(el("code", null, g.shortSha || "无 sha"));
-    if (g.dirty) sha.append(el("span", "flag-bad", "部署时工作区是脏的"));
-    row(c, "代码 commit", sha,
-      g.sha ? "" : "⚠️ 没有 sha ⇒ 这次部署不是走 npm run deploy 发的，**无法确认它对应哪个 commit**。");
-    row(c, "谁发的", el("code", null, g.deploySource || (w.request.isLocalDev ? "本地 dev" : "未知")),
-      "CI 接上后仍出现 local ⇒ 有人绕过了自动部署，而那正是「生产上跑的到底是哪一版」开始说不清的时刻。");
-    row(c, "构建时间", el("code", null, g.buildTime || "—"));
-    row(c, "平台版本 ID", el("code", null, d.versionId || "（无此绑定）"),
-      "**Cloudflare 写的，代码碰不到** —— 三个来源里最伪造不了的一个。" +
-      "⚠️ 本地 dev 也有这个 id（每次重载换一个），所以它**不能**用来判断「这是不是生产」，那要看下面的接入节点。");
-    row(c, "接入节点", el("code", null, `${w.request.host} · ${w.request.colo || "-"}`));
-    grid.append(c);
+    const c = card("版本", "出问题时把这一行发给开发");
+    const g = w.git, dep = w.deploy;
+    const who = g.deploySource || (w.request.isLocalDev ? "本地 dev" : "未知");
+    // 构建时间显示成人读的本地时间（mockup：`2026-9-3 13:15`）；解析不了就原样放，⛔ 不猜
+    const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? String(iso || "—") : `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+    const line = `${g.shortSha || "无 sha"} · ${g.buildTime ? fmtTime(g.buildTime) : "—"} · ${who}`;
+    const v = el("span", "mono", line);
+    const btn = el("button", "linkish lnk-right"); btn.type = "button"; btn.textContent = "复制";
+    btn.onclick = async () => {
+      try { await navigator.clipboard.writeText(line); btn.textContent = "已复制"; setTimeout(() => { btn.textContent = "复制"; }, 1500); }
+      catch { btn.textContent = "复制失败，请手动选中"; }
+    };
+    // 平台版本 ID / 接入节点 / 脏工作区标记全部收进 (?)（SPEC §9）。
+    // 🔴 脏工作区的**警告**仍在顶部横幅里（loadWho 已做，那条不动）—— 这里只在 (?) 里提一句，⛔ 不再第二次、第三次重复它。
+    row(c, "后台版本", v,
+      q(`平台版本 ID ${dep.versionId || "（无此绑定）"} · 接入节点 ${w.request.host || "?"} · ${w.request.colo || "-"}` +
+        (g.dirty ? " · ⚠️ 部署时工作区是脏的（GIT_SHA 不足以还原这次部署的字节）" : "") +
+        (g.sha ? "" : " · ⚠️ 没有 sha ⇒ 这次部署没经过 CI/npm run deploy，无法确认它对应哪个 commit")),
+      btn);
+    box.append(c);
   }
-
-  // ── ⑤ 契约：数据的形状由它定，不由界面定 ──
-  {
-    const ct = state.contract;
-    const c = card("契约", "数据的形状由它定");
-    row(c, "版本", el("code", null, ct?.version || "—"),
-      "界面上所有下拉/多选框的选项**都来自它**，前端不抄第二份 —— 抄一份的话契约改了界面不会跟着变，而且看起来一切正常。");
-    // 🔴 这两行以前写着"（冻结）· 增删改要改两个仓的源码"。契约 v1.4 之后**那是假话**，
-    //    而且是**印在屏幕上的**假话 —— 人照着它去找总工，总工会说"你自己在后台改"。
-    //    （这一批里同类残留一共三处：这里、app.js 顶部的 state.cats 注释、github.ts 的 catlabels 注释。）
-    row(c, "机型", `${ct?.categories?.length ?? "—"} 个`,
-      "真源是官网仓的 **src/data/taxonomy.json**，在「分类」页可以增删改。");
-    row(c, "传感器", `${ct?.sensors?.length ?? "—"} 种`,
-      "与机型同一个文件、同一页管理。");
-    // ⚠️ 这里不用反引号：appendMd 只认 **粗体**，而给它加反引号语法是危险的 ——
-    //    同一个函数还要渲染**用户填的 specs 值**，那些值里出现一个反引号就会被吃掉半句。
-    row(c, "状态", (ct?.statuses || []).join(" / ") || "—",
-      "**draft 的产品绝不允许出现在构建产物里**；它的图也物理隔离在 products/_draft/（那个子目录不参与打包）。");
-    grid.append(c);
-  }
-
-  box.append(grid);
-
-  if (w.warnings?.length) box.append(mkNotice("warn", "⚠️ " + w.warnings.join("；")));
-  box.append(mkNotice("ok",
-    "**这一页全部只读，没有一个可写控件 —— 这是有意的。** 上面每一项都是部署命脉：" +
-    "后台若能改它们，就等于后台能给自己开权限，那道闸从此不是闸。" +
-    "改它们要动仓库配置 / secret 并重新部署 —— 那是一次看得见、留得下痕迹的动作。"));
+  // ⛔ 页底不再重复 w.warnings：横幅已经在说同一句话（原来这一页把同一条警告说了三遍）。
 }
 
 // ═══════════════ 分类（机型 / 传感器 两个轴）═══════════════
