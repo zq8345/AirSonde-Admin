@@ -1291,7 +1291,28 @@ app.get("/api/contract", async (c) => {
 //    而症状是"打开后台是一片 404"，看起来像资源没上传。
 //    ⚠️ 这一句在鉴权中间件**之后**：静态页同样在 Access + 名单门后面，这是开
 //       run_worker_first 的全部理由。
-app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
+//
+// ── 缓存头（2026-09-03，Joe 亲自踩到才补的）──
+// 🔴 病根：`app.js?v=74` 那套指纹只护得住 **JS/CSS**，`index.html` 自己没有版本号 ——
+//    型号排序的新表头写在 HTML 里，推上生产后 Joe 看到的还是缓存的旧页，要 Ctrl+F5。
+//    "改了但用户看不见"的症状和"没做"一模一样（index.html 头部那段注释早写过这句话，
+//    这次轮到 HTML 本身应验）。
+// ⇒ 判据分两类，⛔ 别按扩展名列清单（列表会漏，第五个进来的类型一定没人记得加）：
+//    · 回应是 HTML（或路径就是页面本身）⇒ no-cache：每次导航都向服务器核一次，
+//      配 etag 仍能 304，代价是一次协商往返，不是整页重下。⛔ 不用 no-store —— 那连 304 都不给。
+//    · 带 `?v=` 指纹的 ⇒ 长缓存 + immutable：内容变化必然换 URL（这仓的既有纪律，
+//      index.html 头部写着"改 style.css / app.js 必须同时改这个数字"）。
+//    · 其余（无指纹的散资源）⇒ 不动，维持平台默认 —— 本单只修 Joe 踩到的那一类。
+app.notFound(async (c) => {
+  const r = await c.env.ASSETS.fetch(c.req.raw);
+  const res = new Response(r.body, r);   // ASSETS 的响应头是不可改的，必须先复制一份
+  const url = new URL(c.req.url);
+  const isHtml = (res.headers.get("content-type") || "").includes("text/html")
+    || url.pathname === "/" || url.pathname.endsWith(".html");   // 304 可能不带 content-type，路径兜底
+  if (isHtml) res.headers.set("cache-control", "no-cache, must-revalidate");
+  else if (url.searchParams.has("v")) res.headers.set("cache-control", "public, max-age=31536000, immutable");
+  return res;
+});
 
 export default app;
 
