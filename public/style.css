@@ -621,7 +621,17 @@ th.filt { position: relative; overflow: visible; }
 .filebtn:hover { border-color: var(--border-accent); color: var(--text-accent); }
 .gallery { display: flex; flex-wrap: wrap; gap: var(--space-8); }
 /* ⛔ .gcard 全族已删（E 批反扫）：app.js/HTML 零引用 —— A10-R1 图片列表之前的老 gallery 遗骸。 */
-button.danger { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
+/* 🔴 `:not(.linkish)` 与上面 `.batchbar button:not(.linkish)` **同一个病、同一个解**（⛔ 不发明第二种）：
+   `button.danger`（0,1,1）盖过 `.linkish`（0,1,0）⇒ 分类页那个「删除」拿到了
+   **实心红块按钮的 padding 8/12**，而并排的「改名」是 `.linkish` 的 2/6。
+   ⇒ 同一格里两个按钮**高度差 14px**（实测 37.5 vs 23.5），行被撑到 50.5，
+     而只读态没有按钮只有 36.5 ⇒ **Joe 看到的"高度发生了变化"就是这个**。
+   ⚠️ 我原以为控制它的是 `.linkish.danger`（711 行），那条只设了 color ——
+      **是问浏览器"哪条规则在控制这个 padding"才找出真凶的**，⛔ 不是读 CSS 猜出来的。
+   ⚠️ `margin-left:auto` 一并让出：它是给实心块按钮靠右用的，
+      套在行内链接上会把「删除」推到格子最右边，与「改名」离得莫名其妙地远。
+   ⛔ 不改 `.linkish` 去迁就它：`#deleteBtn` 那个真·实心红块按钮**要保持原样**。 */
+button.danger:not(.linkish) { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
   padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; margin-left: auto; }
 
 .commit-bar { display: flex; flex-wrap: wrap; gap: var(--space-12); align-items: center; padding: var(--space-12); border-top: 1px solid var(--border); background: var(--bg-app); }
@@ -709,6 +719,22 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
   border: 1px solid var(--border-accent); border-radius: 5px; background: var(--bg-surface); color: var(--text-primary); }
 /* 危险动作要长得像危险动作 —— 与「改名」并排时不能是同一个灰。 */
 .linkish.danger { color: var(--text-critical); }
+
+/* ⭐ 分类页：**只读态与编辑态行高必须一致**（Joe 2026-09-04：「高度发生了变化」）。
+   实测只读态自己就有三种行高 —— 32.5 / 36 / 36.5，三个不同成因：
+     · 「在用」格是 `<button class="linkish n">` 还是纯 `<span class="hint0">0`（差 4px）
+     · 行内容不同带来的亚像素差（36 vs 36.5）
+     · 编辑态多出的两个操作按钮
+   ⛔ 不给这三种各加一条规则（那是"遇边界加 if"）——**给行一个地板**，三种成因一起失效。
+   ⚠️ 作用域钉在 `#catsView`：`.ptable` 是**产品列表也在用**的表，
+      全局加地板等于在没量过的地方改行高。产品列表另有缩略图，⛔ 不在本单范围内。
+   🔴 判据是"两态相同"，⛔ 不是"某个具体数字" —— 数字变了不算回归，两态不等才算。 */
+/* ⚠️ 这里第一版写的是 `height: 24px`，想当成"内容高度地板" —— **它是个 no-op**：
+      全局 `box-sizing: border-box` 下 24px 是**整个格子**的地板，而每一行本来就超过它。
+      是量出来仍然 32.5/36/36.5 才发现的。⛔ 别按"我以为 height 从哪一侧算"写数字。
+   ⇒ 37 是按编辑态最高的那个盒子**算出来的**，不是试出来的：
+      `.linkish` 行高 19.5 + 按钮 padding 2×2 + 格子 padding 2×6 + 下边框 1 = 36.5 ⇒ 取 37。 */
+#catsView .ptable tbody td { height: 37px; }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
 #bulkCat { font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 

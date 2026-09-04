@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=109">
+<link rel="stylesheet" href="/style.css?v=112">
 </head>
 <body>
 
@@ -169,7 +169,7 @@
              ⚠️ 新增本身不具破坏性、本可常驻 —— 但三个动作收进同一个开关是**一条规则、不留特例**。
              按钮内容（扳手线条图标 + 管理/管理中）由 syncManageBtns() 填。 -->
         <div class="card table">
-          <div class="cth"><span class="sec-title">机型</span><span class="sec-sub">每个产品一个</span>
+          <div class="cth"><span class="sec-title">机型</span>
             <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="categories"
                     title="进入管理态才能改名 / 删除 / 新增">管理</button>
           </div>
@@ -177,7 +177,7 @@
             <thead><tr>
               <th>机型</th>
               <th class="col-st ac">在用</th>
-              <th class="col-cat">官网筛选栏</th>
+              <th class="col-cat">状态</th>
               <th class="col-act"></th>
             </tr></thead>
             <tbody id="catsRows"></tbody>
@@ -190,7 +190,7 @@
         </div>
 
         <div class="card table">
-          <div class="cth"><span class="sec-title">传感器</span><span class="sec-sub">每个产品可多个</span>
+          <div class="cth"><span class="sec-title">传感器</span>
             <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="sensors"
                     title="进入管理态才能改名 / 删除 / 新增">管理</button>
           </div>
@@ -499,7 +499,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=109"></script>
+<script src="/app.js?v=112"></script>
 </body>
 </html>
 

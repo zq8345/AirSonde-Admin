@@ -27,7 +27,10 @@ const state = {
   lastPreview: null,
   repo: null, branch: null,
   // 列表筛选（crm-skin B 批 §3）：⛔ 原 tab 条（state.tab）与机型下拉（#catFilter）已撤 —— 元素、绑定、状态三处一起。
-  statusSeg: null,            // 「状态」列头两段切换：null = 全部 · "published" · "draft"（点同一段再点 = 取消）
+  // ⭐ Joe 2026-09-04：「后台默认显示在线产品」⇒ **初值就是 published**，⛔ 不是 null。
+  // ⚠️ 这是**默认值**，不是"记住上次"：切到未上架、切走再回来，照样回到在线（见 showNav）。
+  //    ⛔ 不许做成 localStorage 记忆 —— 那样"我上次看的"会冒充"默认"，而两者的行为不同。
+  statusSeg: "published",     // 「状态」列头两段切换：null = 全部 · "published" · "draft"（点同一段再点 = 取消）
   catSel: "",                 // 「机型」列头漏斗：""=全部机型 · 某个 category value
   auditSrc: "",               // 审计页「来源」漏斗：""=全部 · admin · other
   auditOp: "",                // 审计页「操作人」漏斗：""=全部 · 某个 operator
@@ -3425,7 +3428,11 @@ function renderCats() {
     // 🔴 有产品读不出来时**不许说"全部落在"** —— 这句只覆盖读得出来的那些（2026-08-26 真出过：和 19、产品 23 仍写着对账成立）
     sub.textContent = `机型 ${c.categories.length} · 传感器 ${c.sensors.length} · 只对上了 ${good.length}/${total} 个产品，另 ${c.unreadable} 个读不出来`;
   } else {
-    sub.textContent = `机型 ${c.categories.length} · 传感器 ${c.sensors.length} · ${good.length} 个产品全部落在 ${c.categories.length} 个机型里`;
+    // ⭐ Joe 2026-09-04：一切正常时**这一格什么都不写**。
+    // 🔴 只删这一个分支 —— 上面两个分支（散值 / 读不出来）是**红字警告**，
+    //    他要删的是那句"全部落在"的好消息，⛔ 不是把这一格的警告能力一起删掉。
+    //    删警告没有任何症状：屏幕会变干净，而问题还在。
+    sub.textContent = "";
   }
 
   renderAxis("categories", $("#catsRows"), c.categories, good);
@@ -3481,8 +3488,12 @@ function renderAxis(axis, tb, items, good) {
       const tdOn = el("td", "col-cat");
       if (it.onSite) tdOn.append(el("span", "pill pill-ok", "显示"));
       else {
-        tdOn.append(el("span", "pill pill-gray", "不显示"));
-        tdOn.append(el("div", "hint", "没有已上架产品"));
+        // ⚠️ 原来这里跟着一句「没有已上架产品」，Joe 2026-09-04 要求删掉。
+        //    理由说得通：「不显示」这一格本来就只有这一个成因，那句话是把同一件事说第二遍。
+        //    ⇒ 但**成因不能丢**，挪进 title（hover 可查），⛔ 不是让它彻底消失。
+        const p = el("span", "pill pill-gray", "不显示");
+        p.title = "官网筛选栏只列有已上架产品的机型 —— 这一个还没有";
+        tdOn.append(p);
       }
       tr.append(tdOn);
     }
@@ -3709,6 +3720,14 @@ function showNav(which) {
   // ⚠️ 从左栏进图片页 ⇒ 回到**文件夹网格**（⛔ 不要停在上次点进去的那个文件夹里：
   //    人是从别的页面回来的，他要的是"看全部"，而不是接着上次那一个）。
   //    ⛔ 不放进 loadMedia()：上传成功后也会调它，那时把人踢出当前文件夹是错的。
+  // ⭐ 进产品页一律回到「在线」（Joe 2026-09-04）。与下面图片页回文件夹网格**同一条规矩**：
+  //    人从别的页面回来时要的是默认视图，⛔ 不是接着上次那一档。
+  // ⚠️ 放在这里而不是 renderList()：renderList 在筛选切换时也会跑，
+  //    放进去等于**点「未上架」也会被弹回在线** —— 那不是默认值，那是锁死。
+  // ⚠️ 「从机型的在用数点过来」那条路（renderAxis 里）在 showNav 之后**显式**把它设回 null，
+  //    所以那条路不受影响：它要的是那个机型的全部产品，含未上架。
+  if (which === "products") state.statusSeg = "published";
+
   if (which === "media") {
     state.mediaFolder = null; state.mediaQ = "";
     if (state.media) renderMedia(); else loadMedia();
