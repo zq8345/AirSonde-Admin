@@ -5,7 +5,7 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, mapLimit, GH_CONCURRENCY, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 // ⚠️ catlabels.ts 已删除（A13）：它在**运行时解析官网 lib/products.ts** 去取分类显示名。
 //    契约 v1.4 之后，显示名的真源是 taxonomy.json，而 products.ts 里的 CATEGORY_LABELS
 //    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
@@ -274,13 +274,23 @@ app.get("/api/products", async (c) => {
 async function listExpanded(env: Env): Promise<any[]> {
   const axes = await loadAxes(env);
   const list = await listProducts(env);
-  return Promise.all(list.files.map(async (f) => {
+  // 🔴 ⛔ 不是 `Promise.all(list.files.map(...))`：那是 N 路齐发，实测会有一部分请求
+  //    **根本不发出去**（见 github.ts 的 GH_CONCURRENCY 注释里的三条判据）。
+  return mapLimit(list.files, GH_CONCURRENCY, async (f) => {
     try {
       const r = await readProductFile(env, f.slug);
-      if (!r.exists || !r.text) return { slug: f.slug, error: "读不到" };
+      if (!r.exists || !r.text) {
+        // 🔴 这条路径以前**只把错误塞进行字段，从不上报** ⇒ 系统在这一处是瞎的，
+        //    而它已经瞎了不知道多久（那批 internal error 就是这么被吞掉的）。
+        console.error(JSON.stringify({ evt: "expand_read_missing", slug: f.slug }));
+        return { slug: f.slug, error: "读不到" };
+      }
       let p: any;
       try { p = JSON.parse(r.text); }
-      catch (e) { return { slug: f.slug, error: "不是合法 JSON", detail: String(e).slice(0, 120) }; }
+      catch (e) {
+        console.error(JSON.stringify({ evt: "expand_bad_json", slug: f.slug, msg: String(e).slice(0, 200) }));
+        return { slug: f.slug, error: "不是合法 JSON", detail: String(e).slice(0, 120) };
+      }
       const v = validateProduct(p, axes);
       return {
         slug: f.slug, name: p.name ?? null, model: p.model ?? null,
@@ -291,8 +301,15 @@ async function listExpanded(env: Env): Promise<any[]> {
         warnCount: actionableWarnCount(v.warnings),
         size: f.size,
       };
-    } catch (e) { return { slug: f.slug, error: String(e).slice(0, 120) }; }
-  }));
+    } catch (e) {
+      // 🔴 **这就是那批 `internal error; reference=…` 的落点** —— 它被吞成一个行字段，
+      //    从来没进过日志，所以没人知道这个后台在这一处已经瞎了多久。
+      //    ⚠️ 行为不变（照旧保留在结果里带 error 字段，删除闸才不会误判"没人用"），
+      //       变的只是**它现在会说话**。
+      console.error(JSON.stringify({ evt: "expand_read_failed", slug: f.slug, msg: String(e).slice(0, 200) }));
+      return { slug: f.slug, error: String(e).slice(0, 120) };
+    }
+  });
 }
 
 app.get("/api/products-expanded", async (c) => {
@@ -370,13 +387,23 @@ app.get("/api/media", async (c) => {
 
     // ② 全部产品 JSON（引用来自**解析后的字段**，不是文本匹配）
     const list = await listProducts(c.env);
-    const products = await Promise.all(list.files.map(async (f) => {
+    // 🔴 与 listExpanded **同一个病根**，一起改：N 路齐发会有一部分请求根本不发出去。
+    //    ⚠️ 这一处的后果更重：读不出来的产品，它声明的引用就看不见 ⇒ 孤儿数会虚高
+    //       （实测三次 44 / 45 / 68 之间乱跳），而人看到"未被引用"的第一反应是清理。
+    const products = await mapLimit(list.files, GH_CONCURRENCY, async (f) => {
       try {
         const r = await readProductFile(c.env, f.slug);
-        if (!r.exists || !r.text) return { slug: f.slug, images: null, unreadable: true };
+        if (!r.exists || !r.text) {
+          console.error(JSON.stringify({ evt: "media_read_missing", slug: f.slug }));
+          return { slug: f.slug, images: null, unreadable: true };
+        }
         return { slug: f.slug, images: (JSON.parse(r.text) as any).images ?? null };
-      } catch { return { slug: f.slug, images: null, unreadable: true }; }
-    }));
+      } catch (e) {
+        // ⚠️ 同样：以前这里连 `e` 都没接住，静默变成 unreadable。行为不变，但它现在会说话。
+        console.error(JSON.stringify({ evt: "media_read_failed", slug: f.slug, msg: String(e).slice(0, 200) }));
+        return { slug: f.slug, images: null, unreadable: true };
+      }
+    });
 
     // 🔴 有产品读不出来 ⇒ 它声明的引用我们看不见 ⇒ 那些图会被误判成孤儿。
     //    这种情况下**不给孤儿结论**，只给清单 —— 半份输入算不出可信的孤儿。

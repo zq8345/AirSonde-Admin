@@ -138,6 +138,49 @@ export async function ghFetch(env: Env, path: string, init: RequestInit = {}): P
 /** 只报有无，绝不报值。dev 与生产看的是不同的变量。 */
 export const hasWriteToken = (env: Env): boolean => !!tokenFor(env);
 
+/**
+ * 同时打开的出站连接上限。⚠️ 这个数**不是**子请求总数上限。
+ *
+ * 🔴 2026-09-04 实测（dev，34 个产品）：`Promise.all(files.map(readProductFile))` 这种
+ *    34 路齐发，每次有 6~13 个产品失败，只留下一句 `Error: internal error; reference=…`。
+ *    三条判据把病根钉死：
+ *      ① 失败的**每次换一批**（4 次跑：8/8/13/8，并集 19、交集 1）⇒ 不是数据问题；
+ *      ② 同样这 34 个**逐个串行**读，34/34 全绿 ⇒ 也不是数据问题，是并发扇出这一路；
+ *      ③ 拿 GitHub 的 rate-limit 余量在**出站侧**计量：那一次实际只发出 ≈31 个请求
+ *         （成功 28 + listProducts 1 + loadAxes 2），⇒ **失败的那几个请求根本没发出去**。
+ *    ⛔ 一开始我猜是"子请求上限"，被 ③ 的数字否掉了：那次总共只想发 ≈37 个，远低于 50。
+ *    ⇒ 撞的是**同时连接数**，所以修法是限制并发宽度，⛔ 不是减少请求总数。
+ */
+export const GH_CONCURRENCY = 6;
+
+/**
+ * 有并发上限的 `map`。⛔ 用它代替 `Promise.all(items.map(...))` 做**出站请求**的扇出。
+ *
+ * ⚠️ 返回值按**输入顺序**，不按完成顺序 —— 调用方把它当列表用（列表行、引用清点），
+ *    顺序一变就是另一个 bug，而那种 bug 看起来像"数据乱了"，很难查到这里。
+ * ⚠️ 单个元素抛错**照旧向外抛**（与 Promise.all 同语义）⇒ ⛔ 不在这里吞异常：
+ *    要不要容错是调用方的事，这里替它决定就把"读失败"和"读到空"混成一件事了。
+ */
+export async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const width = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: width }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      // ⚠️ `items[i]!`：`noUncheckedIndexedAccess` 下索引取值是 `T | undefined`，
+      //    而上一行的越界判断已经保证了 i 在范围内 —— 这里断言的是**那个判断**，不是运气。
+      out[i] = await fn(items[i]!, i);
+    }
+  }));
+  return out;
+}
+
 export interface ListResult {
   repo: string;
   ref: string;
