@@ -744,15 +744,19 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 }
 .fcard:hover { border-color: var(--border-accent); }
 .fcard:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
-/* 2×2 四格预览：前 3 张真图 + 第 4 格「+N」 */
-.fth { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); aspect-ratio: 4 / 3; }
-.fth > i { background: var(--panel); display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--hint); font-style: normal; overflow: hidden; }
-.fth > i > img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.fth .fmore { font-weight: 600; }
+/* 封面 = 产品主图（Joe 2026-09-04）。⛔ 原来的 2×2 四格拼贴 + 「+N」角标已撤：
+   43 张卡 × 4 张缩略图 = 一屏 170 多张小图，噪音盖过信息。 */
+.fth { background: var(--panel); aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; }
+.fcover { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 第三档回落：主图取不到、文件夹也没图 ⇒ 灰底占位，⛔ 不留碎图图标 */
+.fth.is-blank { background: var(--panel); }
+.fth > i { font-size: 12px; color: var(--hint); font-style: normal; }
 /* 还没有图的产品：⭐ 本单顺带解决的那件事 —— 以前埋在 230 张图里根本发现不了 */
 .fcard.is-empty { border-color: var(--border-caution); border-style: dashed; }
-.fcard.is-empty .fth { grid-template-columns: 1fr; background: none; }
+/* ⚠️ 原来这里还有一句 `grid-template-columns: 1fr` —— 那是四格拼贴时代的残留，
+   `.fth` 现在是 flex，它是条死属性 ⇒ 一并删。⛔ 改布局要连它的旧属性一起清。 */
+.fcard.is-empty .fth { background: none; }
 .fcard.is-empty .fname { color: var(--text-caution); }
 .fplus { font-size: 22px; color: var(--text-caution); }
 .fcard.is-sys { border-color: var(--border-strong); background: var(--panel); }

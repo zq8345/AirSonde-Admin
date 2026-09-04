@@ -2266,26 +2266,30 @@ function folderCard(k, files, product, inDraft) {
   card.onclick = open;
   card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
 
+  // ══ 封面（Joe 2026-09-04：「这个文件夹的封面看起来很丑，要不直接用产品主图作为封面」）══
+  //
+  // 🔴 封面 = **该产品的 `images.main`**，⛔ 不是"文件夹里的第一张"：
+  //    主图是产品数据里**明确指定**的那一张，真源在产品 JSON（列表接口把它带在 `image` 上）。
+  //    "文件夹里的第一张"只是文件排序的副产物，⛔ 那不是任何人指定过的东西。
+  // ⚠️ 草稿产品的主图在 `products/_draft/` ⇒ **别只在型号目录里找**，
+  //    只在型号目录里找的话，那 16 个草稿产品会全变成空白卡。
+  //    （`p.image` 本身就带着完整相对路径，两种情况都覆盖到了。）
+  // ⛔ 原来的四格拼贴 + `+N` 角标已撤：43 张卡 × 4 张缩略图 = **一屏 170 多张小图**，
+  //    噪音盖过信息；而张数副标题里已经写着，⛔ 不说两遍。
   const th = el("div", "fth");
-  if (!files.length) {
-    // 还没有图 ⇒ 一个大的「＋」占满四格（mockup 帧 1 那张琥珀卡）
-    const plus = el("i", "fplus", "＋");
-    th.append(plus);
+  // 三档回落，⛔ 每一档都要出得来东西，别让某一档变成空白卡
+  const cover = (product && product.image) || (files[0] && files[0].rel) || null;
+  if (cover) {
+    const img = el("img", "fcover");
+    img.loading = "lazy"; img.alt = "";
+    img.src = rawUrl(cover);
+    // 第三档：图 404 时回落到灰底占位，⛔ 不留一个碎图图标
+    img.onerror = () => { img.remove(); th.classList.add("is-blank"); };
+    th.append(img);
+  } else if (!files.length) {
+    th.append(el("i", "fplus", "＋"));      // 真的一张图都没有
   } else {
-    files.slice(0, 4).forEach((f, i) => {
-      const cell = el("i");
-      if (i === 3 && files.length > 4) {
-        cell.classList.add("fmore");
-        cell.textContent = `+${files.length - 3}`;
-      } else {
-        const img = el("img");
-        img.loading = "lazy"; img.alt = "";
-        img.src = rawUrl(f.rel);
-        cell.append(img);
-      }
-      th.append(cell);
-    });
-    for (let i = files.length; i < 4; i++) th.append(el("i"));
+    th.classList.add("is-blank");
   }
   card.append(th);
 
