@@ -38,9 +38,14 @@ const state = {
    */
   modelSort: 0,
   nav: "products",            // 左导航当前视图：products | media
-  media: null, mediaTab: "all",
-  // 图片页两态：null = 文件夹网格（默认）；字符串 = 只看那一个文件夹。
-  // ⛔ mediaTab 那三段筛选**先留着不删**（SPEC §4：先在真 UI 上比两条路径给出的集合，再决定）。
+  media: null,
+  // 图片页的视图：null = 文件夹网格（默认）｜ 文件夹名 = 只看那一个 ｜ ORPHAN_VIEW = 全部未被引用。
+  // ⛔ 旧的 `mediaTab` 三段筛选（在线 / 草稿 / 原图存档）已随文件夹化整个删掉，
+  //    连同那个字段本身 —— ⛔ 不留"以后可能用得上"的死声明。
+  //    · 草稿 / 原图存档：两个系统目录文件夹已完全取代（实测集合逐个相同）
+  //    · 在线 164：⚠️ **这个入口确实没了**。它是旧结构的产物（旧视图得有办法把草稿/原图滤掉），
+  //      文件夹结构本身已经做到那件事；页头「N 张 · 在用 K」也仍给着那个数。
+  //      ⛔ 但这条要说出来，不能静默丢 —— 已报总工转告 Joe。
   mediaFolder: null, mediaQ: "",
   audit: null,
   cats: null,       // /api/taxonomy：两个轴 + 每条的 refs/refCount/canDelete（引用计数由服务端数）
@@ -2105,9 +2110,17 @@ function renderMedia() {
       m.missing.map((x) => `${x.slug} → ${x.rel}`).join("；")));
   }
 
-  if (state.mediaFolder === null || state.mediaFolder === undefined) renderFolderGrid(m);
+  if (state.mediaFolder === ORPHAN_VIEW) renderOrphanList(m);
+  else if (state.mediaFolder === null || state.mediaFolder === undefined) renderFolderGrid(m);
   else renderFolderContents(m, state.mediaFolder);
 }
+
+/**
+ * 「全部未被引用」这个视图的哨兵值。
+ * ⚠️ 用 `@` 开头是有理由的：服务端的文件夹名闸是 `^[a-z0-9]+(-[a-z0-9]+)*$`，
+ *    `@` 永远不可能是一个真实文件夹名 ⇒ ⛔ 不可能与某个文件夹撞名。
+ */
+const ORPHAN_VIEW = "@orphans";
 
 /** 文件夹 = rel 去掉 `products/` 后的目录部分；根目录记作 ""。 */
 const folderOfRel = (rel) => {
@@ -2183,6 +2196,16 @@ function renderFolderGrid(m) {
   $("#mediaSub").textContent =
     `${productFolders.size + Object.keys(SYS_FOLDERS).length} 个文件夹 · ${m.total} 张 · 在用 ${m.referenced}`;
   const head = $("#mediaHead"); head.innerHTML = "";
+  // 🔴 「未被引用」入口：**仅 N > 0 时出现**（0 的时候⛔ 不占位置）。
+  //    它是唯一会引导破坏性操作（清理）的信号 —— 文件夹网格上只能看出**哪个文件夹**有孤儿，
+  //    ⛔ 没有"一次列全"的入口的话，5 张孤儿散在 5 个文件夹里就得点进 5 次才看得全。
+  //    ⚠️ 一个只在出问题时才有用的入口，恰恰不能等出问题了再补。
+  if (m.orphans > 0) {
+    const ob = el("button", "mtag", `未被引用 ${m.orphans}`); ob.type = "button";
+    ob.title = `把散落在各个文件夹里的 ${m.orphans} 张一次列全`;
+    ob.onclick = () => { state.mediaFolder = ORPHAN_VIEW; renderMedia(); };
+    head.append(ob);
+  }
   const search = el("input", "msearch");
   search.type = "search"; search.placeholder = "搜型号 / 文件名"; search.value = state.mediaQ || "";
   search.oninput = () => { state.mediaQ = search.value; renderMedia(); search.focus(); };
@@ -2288,6 +2311,34 @@ function folderCard(k, files, product, inDraft) {
     ? `${product.model} — ${product.name}\n${files.length} 张`
     : `${k}\n${files.length} 张`;
   return card;
+}
+
+/**
+ * 「全部未被引用」：把散落在各个文件夹里的孤儿一次列全。
+ * ⚠️ 判据仍只有服务端盖的 `f.orphan`，⛔ 这里不写第二遍 `!referencedBy.length`。
+ */
+function renderOrphanList(m) {
+  const files = m.files.filter((f) => f.orphan);
+  $("#mediaSub").textContent = "";
+  $("#mediaHead").innerHTML = "";
+  const box = $("#mediaGroups"); box.innerHTML = "";
+
+  const crumb = el("div", "fcrumb");
+  const back = el("button", "linkish", "← 全部文件夹"); back.type = "button";
+  back.onclick = () => { state.mediaFolder = null; renderMedia(); };
+  crumb.append(back, el("span", "hint0", "/"), el("b", null, "未被引用"));
+  crumb.append(el("span", "hint0", `${files.length} 张 · 散落在 ${new Set(files.map((f) => folderOfRel(f.rel))).size} 个文件夹里`));
+  box.append(crumb);
+
+  // ⚠️ 这一句不是装饰：人到这一页来多半是想清理，而"未被引用"**不等于**"可以删"。
+  box.append(mkNotice("warn", "**未被引用 ≠ 可以删。** 这里只是列出「没有任何产品 JSON 指向它」的图 —— "
+    + "确认之后再删，⛔ 删除仍然会二次确认。"));
+
+  const grid = el("div", "mgal");
+  files.forEach((f) => grid.append(mediaCard(f)));
+  box.append(grid);
+  $("#mediaEmpty").hidden = files.length > 0;
+  if (!files.length) $("#mediaEmpty").textContent = "没有未被引用的图片 —— 干净。";
 }
 
 /** 点进一个文件夹：只看这一个。 */

@@ -1178,9 +1178,15 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 
 /* ══ 媒体库（crm-skin E 批 §7）══ */
 /* 红标：未被引用/草稿，>0 才渲染；点=筛，再点取消 */
-/* ⛔ 已整组删（2026-09-04 文件夹化）：.mtag（红标筛选按钮）· .mgroup-h/.mgroup-t/.cnt-g
-   （分组小标题）—— 它们服务的那段渲染已经不存在了。
+/* ⛔ 已整组删（2026-09-04 文件夹化）：.mgroup-h / .mgroup-t / .cnt-g（分组小标题）——
+   它们服务的那段渲染已经不存在了。
    ⚠️ 元素没了而规则留着，就是那条"空轨道"——本仓已经为它栽过一次（版面白窄一块）。 */
+/* 🔴 `.mtag` **留下**：它现在服务的是「未被引用 N」那个入口（仅 N>0 时出现）。
+   ⚠️ 我先把它当死类删了、随后补孤儿入口时又要用 —— 说明"零引用"只是**此刻**的事实，
+      删之前要多问一句"接下来这一步会不会用到它"。⛔ 别把清死代码做成条件反射。 */
+.mtag { background: var(--bg-critical-soft); color: var(--text-critical); border: 0; border-radius: 10px;
+  padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mtag:hover { outline: 2px solid var(--border-critical); outline-offset: 1px; }
 .mgal { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1100px) { .mgal { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .micard { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; font-size: 12px; }
