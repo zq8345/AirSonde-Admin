@@ -1286,6 +1286,13 @@ app.put("/api/site-content", async (c) => {
 
     // ⚠️ 乐观锁：expectedSha 是"这次编辑所基于的那一版"。不带的话，两个人先后保存，
     //    后一个会**静默覆盖**前一个 —— 而两边都看到"保存成功"。
+    // 🔴 上面这句注释描述的**正是没被防住的那件事**：`staleConflict` 首行是
+    //    `if (!expected …) return null` ⇒ **不带 sha 就直接放行**，它只挡"带了但过期"。
+    //    ⇒ 补上产品端点早就有的 `missingLock`（⛔ 不发明新机制，就是同一个）。
+    // ⚠️ 触发路径不是假想：前端 `app.js` 用 `?.` 取 sha，取不到时是 `undefined`，
+    //    而 `JSON.stringify` 会把 undefined 的键**整个省掉** ⇒ 服务端收到的就是"没带"。
+    // 🔴 ⛔ 这道闸**不许依赖前端修好**：前端是第二道，服务端才是第一道。
+    if (f.exists && !body.expectedSha) return c.json(missingLock("这个文件"), 428);
     const scConflict = staleConflict(body.expectedSha, f.sha, "这个文件");
     if (scConflict) return c.json(scConflict, 409);
 
@@ -1391,6 +1398,11 @@ app.put("/api/taxonomy", async (c) => {
 
   try {
     const { tax, sha, path } = await loadTaxonomy(c.env);
+    // 🔴 与 site-content 同一个洞：`staleConflict` 不带 sha 就放行 ⇒ 补 `missingLock`。
+    //    ⚠️ 触发路径实测就在前端：`app.js` 里 `expectedSha: state.cats?.sha` ——
+    //       `state.cats` 还没加载完时是 `undefined`，`JSON.stringify` 把这个键整个省掉。
+    //    ⛔ 两处一起补，⛔ 不只修被指到的那一处。
+    if (!body.expectedSha) return c.json(missingLock("分类轴"), 428);
     const taxConflict = staleConflict(body.expectedSha, sha, "分类轴");
     if (taxConflict) return c.json(taxConflict, 409);
 

@@ -3248,13 +3248,28 @@ async function taxonomyOp(payload, btn) {
   //    实测过不清的样子 —— 上一次被拒的红字留在屏幕上，这一次的结果叠在旁边，
   //    两条消息各说各的一次操作，而人只会读离得近的那条。
   out.innerHTML = "";
+  // 🔴 没有基线 sha 就**不发这次请求**（审计②）：
+  //    原来这里是 `expectedSha: state.cats?.sha`，取不到时 `JSON.stringify` 把这个键
+  //    整个省掉 ⇒ 服务端收到"没带锁" ⇒ 静默覆盖别人的改动，而两边都显示保存成功。
+  //    ⚠️ 只把 `?.` 去掉会变成抛 TypeError —— 那是**换了一种坏法**，不是修好。
+  //    ⇒ 在这里显式拦住并说清怎么办。⛔ 这是第二道闸；服务端的 missingLock 是第一道。
+  if (!state.cats?.sha) {
+    out.append(mkNotice("bad", "**还没读到分类的基线版本，这次不提交。** "
+      + "没有基线就写，会把别人在这期间的改动静默覆盖掉。请刷新一下这一页再试。"));
+    return false;
+  }
   out.append(mkNotice("warn", "提交中…（一次轴改动 = 官网仓的一个 commit）"));
   if (btn) { btn.disabled = true; btn.textContent = "提交中…"; }
   try {
     const { body } = await api("/api/taxonomy", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...payload, expectedSha: state.cats?.sha }),
+      // 🔴 原来是 `state.cats?.sha` —— `state.cats` 还没加载完时是 `undefined`，
+      //    而 `JSON.stringify` 会把 undefined 的键**整个省掉** ⇒ 服务端收到"没带 sha"，
+      //    在补 missingLock 之前那意味着**静默覆盖别人的改动，两边都显示保存成功**。
+      // ⇒ 取不到就**不发这次请求**，⛔ 不发一个"没带锁"的写请求。
+      //    ⚠️ 这是**第二道**闸；服务端那道（missingLock）才是第一道，⛔ 它不依赖这里修好。
+      body: JSON.stringify({ ...payload, expectedSha: state.cats.sha }),
     });
     out.innerHTML = "";
     if (!body || !body.wrote) {
