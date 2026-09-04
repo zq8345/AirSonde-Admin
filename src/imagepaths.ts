@@ -7,10 +7,12 @@
 //    实际上等于没有被验证过。抽成纯函数，往返两个方向都能用假输入量。
 //
 // 约定（契约 C1 v1.1 §② + 仓内实测的现状）：
-//   - `images.main` / `gallery` 的值是**相对 `src/assets/` 的路径**，例如 `products/foo.webp`
-//   - published ⇒ 图在 `products/`
-//   - draft     ⇒ 图在 `products/_draft/`（该子目录不被 Astro glob 匹配 ⇒ **draft 图物理上进不了产物**）
-//   - 文件名 = slug 派生（实测：现存 23 个产品全部如此，12 published + 11 draft）
+//   - `images.main` / `gallery` 的值是**相对 `src/assets/` 的路径**，例如 `products/ak35/foo.webp`
+//   - published ⇒ 图在 `products/<型号小写>/`（2026-09-04 起；迁移前在 `products/` 根）
+//   - draft     ⇒ 图在 `products/_draft/`
+//     ⚠️ **它进不了产物的理由变了**：官网 glob 2026-09-04 起是递归的，
+//        挡住 `_draft/` 的现在是那条**负向排除**（`!_draft/**`），⛔ 不再是"子目录天然在构建外"。
+//   - 文件名 = slug 派生（实测：现存 39 个产品全部如此，25 published + 14 draft）
 
 export const ASSETS_ROOT = "src/assets/";
 export const PUB_DIR = "products";

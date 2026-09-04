@@ -2125,7 +2125,7 @@ function renderMedia() {
     if (["published", "draft", "originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
     return true;
   });
-  // 文件夹 = rel 去掉 products/ 后的目录部分；根 = 产品图（官网构建从这里取）
+  // 文件夹 = rel 去掉 products/ 后的目录部分
   const folderOf = (rel) => {
     const rest = rel.replace(/^products\//, "");
     const i = rest.indexOf("/");
@@ -2137,7 +2137,23 @@ function renderMedia() {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(f);
   });
-  const groupLabel = (k) => k === "" ? "产品图（官网构建从这里取）" : k === "_draft" ? "草稿区（不进构建）" : k === "originals" ? "原图存档（不进构建）" : `${k}/（不进构建）`;
+  // 🔴 2026-09-04：这几个标签**说的是旧规则**，而规则在图片分文件夹批 1 里被改掉了。
+  //    改之前：子目录 = 不进构建（官网 glob 是单层 `products/*.webp`）。
+  //    改之后：**进构建 = 根目录 + 型号文件夹；不进构建 = `_draft/` + `originals/`**
+  //           （官网 products.ts 的 glob 已改成递归 + 两条负向排除，已上生产）。
+  //    ⇒ 批 3 把图全搬进型号目录之后，页面变成「25 个分组全写着不进构建，
+  //      而写着"官网构建从这里取"的那一组是空的」——
+  //      🔴 **页面在告诉 Joe "你所有的产品图都不上官网了"，而事实正相反。**
+  //
+  // ⚠️ 教训写在这里，因为下一个改 glob 的人会先看到这段：
+  //    批 1 改的是**一个词的含义**（"子目录"），不是一段代码。迁移清单里当时只清点了
+  //    "谁**写**路径"，没清点 "谁**解释**路径" —— 这个标签就是后者，于是漏了。
+  //    ⛔ 以后改一条规则的含义时，两份清单都要走。
+  const groupLabel = (k) =>
+    k === "" ? "产品图 · 根目录"
+      : k === "_draft" ? "草稿区（不进构建）"
+        : k === "originals" ? "原图存档（不进构建）"
+          : `${k}/`;                       // ⛔ 型号文件夹**进构建**，不加任何形容词
   // 根排最前，其余按名称；保留目录排最后
   const order = [...groups.keys()].sort((a, b) => {
     const w = (k) => k === "" ? 0 : k === "_draft" ? 8 : k === "originals" ? 9 : 1;
@@ -2157,21 +2173,33 @@ function renderMedia() {
       if (f.orphan) card.classList.add("is-orphan");
       const t = el("div", "thumb mthumb"); setThumb(t, rawUrl(f.rel), f.rel);
       card.append(t);
+      // ══ Joe 2026-09-04：「图片下面不要显示那么多文字，就显示一个图片名就可以了」══
+      // 原来每张图底下三行：文件名 / 用于 xxx / 8KB。⇒ **只留文件名一行**，
+      // 其余进 hover（title），⛔ 不为它做浮层。
+      //
+      // ⚠️ 「用于 xxx」删得掉，是因为它现在**真的冗余**，不是因为 Joe 嫌字多 —— 实测：
+      //    · published 164 张：文件名 100% 已含该产品 slug，且分组标题就是型号
+      //    · _draft   28 张：文件名同样 100% 已含 slug
+      //    · originals 38 张：**零引用**，本来显示的就不是「用于」
+      //    ⇒ 三个区都不丢信息。（总工原本建议 _draft 保留，实测表明那里也是冗余。）
+      //
+      // 🔴 但**孤儿那条红字不能收进 hover**：它是唯一会引导破坏性操作（清理）的信号，
+      //    藏进 hover 等于让人在看不见它的情况下做决定。⇒ 孤儿仍然显示一行。
       card.append(el("div", "iname", f.rel.split("/").pop()));
-      const use = el("div", "iuse");
+      const kb = `${(f.size / 1024).toFixed(0)}KB`;
       if (f.referencedBy.length) {
-        use.textContent = "用于 " + f.referencedBy.join("、");
+        card.title = `${f.rel}\n用于 ${f.referencedBy.join("、")}\n${kb}\n（点击打开引用它的产品）`;
         card.style.cursor = "pointer";
-        card.title = "点击打开引用它的产品";
+        // ⚠️ 点击跳到那个产品这条**能力**保留 —— 删的是那行字，不是这条路。
         card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
       } else if (f.orphan) {
-        use.textContent = "未被引用";
-        use.classList.add("is-warn");
+        card.title = `${f.rel}\n${kb}`;
+        const use = el("div", "iuse is-warn", "未被引用");
+        card.append(use);
       } else {
         // 原图存档零引用但**不是**孤儿 —— 它是图片管线的源材料，⛔ 不复用「未被引用」那个词
-        use.textContent = "存档 · 不参与打包";
+        card.title = `${f.rel}\n存档 · 不参与打包\n${kb}`;
       }
-      card.append(use, el("div", "imeta2", `${(f.size / 1024).toFixed(0)}KB`));
       grid.append(card);
     });
     box.append(grid);
