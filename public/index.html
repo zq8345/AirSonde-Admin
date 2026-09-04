@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=90">
+<link rel="stylesheet" href="/style.css?v=94">
 </head>
 <body>
 
@@ -385,7 +385,7 @@
         </section>
 
         <!-- ══ 更多（选填）══ 新建时收起，编辑时展开 -->
-        <details class="more" id="moreFields">
+        <details class="card more" id="moreFields">
           <summary>更多（选填）<span class="h3sub">Meta description · 卖点 · 参数表 · 内部字段</span></summary>
 
           <!-- A16 Meta description（总工派单 2026-09-03，Joe 确认「安排」）。
@@ -405,7 +405,13 @@
                ⚠️ 原来的逐条输入框 + 「N 个字符，契约说的是短句」黄字已撤，只留一行灰字「共 N 条」。 -->
           <div class="field">
             <label for="f_highlights">卖点 <span class="h3sub">highlights · 一行一条，可整段粘贴</span></label>
-            <textarea id="f_highlights" name="highlights" rows="8" spellcheck="true" data-anchor="highlights"></textarea>
+            <!-- G 批 §6：8 行内滚 → 自动长高。Joe 的用法是**整段粘贴**，
+                 ⚠️ 内滚框会把"我到底粘进去了几条"藏在视口外面 —— 那正是他要看的那件事。
+                 rows=4 = 地板；再高由**布局**顶开（`.grow-wrap` 的替身 ::after，见 style.css），
+                 ⛔ 不由 JS 量 —— 量就要挑时刻和挑宽度，而那三个坑全踩过了（syncGrow 的注释里有实测数）。 -->
+            <div class="grow-wrap">
+              <textarea id="f_highlights" name="highlights" rows="4" spellcheck="true" data-anchor="highlights" data-autogrow></textarea>
+            </div>
             <div class="shint" id="f_highlights_cnt"></div>
           </div>
 
@@ -466,7 +472,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=90"></script>
+<script src="/app.js?v=94"></script>
 </body>
 </html>
 

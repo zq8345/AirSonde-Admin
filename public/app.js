@@ -139,7 +139,12 @@ function applyWriteMode() {
   // ⚠️ 有部署警告时**照样显示** —— 那不是被撤掉的那条装饰红字，那是真警告。
   if (w.enabled) {
     banner.hidden = !(state.deployWarnings || []).length;
-    $("#actionsNote").textContent = "点「保存」后会先让你确认一遍，确认了才真的写。";
+    // ⛔ G 批 §4：页底那句「点保存后会先让你确认一遍…」已撤。
+    //    它**永远为真**，而它描述的那件事（确认面板）在点下去的那一刻就自己出现了 ——
+    //    ⚠️ 一条常驻在按钮旁边的解释和没有解释是一回事，它只会把真正会变的东西挤下去。
+    //    🔴 确认面板本身一个字没动；写不了时那句（下面 else 分支）也一个字没动 —— 那句才是真信息。
+    //    ⚠️ 必须显式清空：从"写不了"切到"能写"时，不清的话上一句会留在屏幕上。
+    $("#actionsNote").textContent = "";
   } else {
     banner.hidden = false;
     banner.classList.remove("banner-live");
@@ -927,11 +932,11 @@ function renderIssues(v) {
   const info = new Set(state.contract?.infoCodes || []);
   const warns = (v.warnings || []).filter((i) => !info.has(i.code));
 
-  if (v.ok && !warns.length) {
-    // ⚠️ 只在**没有任何要处理的东西**时说"通过" —— 有 info 类提示时也算通过，
-    //    它们不是待办。但那句"通过"不该顶掉别的内容，所以放最小形态。
-    box.append(mkIssue("ok", "", "契约校验通过。"));
-  }
+  // ⛔ G 批 §5：`v.ok && !warns.length` 时那条绿条已整组撤。
+  //    ⚠️ 这个面板**只在有问题时说话**：没问题 = 不占位，而不是占一行说"没问题"。
+  //    绝大多数时候它都是绿的 ⇒ 那条绿条等于给编辑区顶了一条恒亮的装饰，
+  //    而它一旦变红反而更难被注意到（那个位置本来就一直有东西）。
+  //    🔴 判定逻辑一个字没动：errors / warnings 该报的照报，字段级锚点照贴。
 
   v.errors.forEach((i) => box.append(mkIssue("error", i.field, i.message)));
 
@@ -1285,6 +1290,9 @@ function fillForm(p) {
   // 卖点：数组 → 一行一条（A17）。⚠️ 用 "\n" 不用 "\r\n"：textarea 的 value 内部一律是 LF。
   $("#f_highlights").value = (p.highlights || []).join("\n");
   paintHighlightsCount();
+  // G 批 §6：值是**程序**填的 ⇒ 不会触发 input 事件，替身文本必须在这里同步一次，
+  // 否则框的高度还停在上一个产品的卖点上。
+  syncGrow($("#f_highlights"));
   const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
   // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
   state.imgList = imgListFromDraft(p);
@@ -1793,6 +1801,42 @@ function paintHighlightsCount() {
   const n = (parseHighlights($("#f_highlights").value) || []).length;
   cnt.textContent = `共 ${n} 条`;   // 只有这一行灰字，⛔ 不再有"短句"警告
 }
+/**
+ * G 批 §6：`[data-autogrow]` 的 textarea 随内容长高，**不内滚**。
+ *
+ * ⚠️ 地板由 HTML 的 `rows` 出（rows=4），⛔ 这里不写第二个数字 ——
+ *    写死一个 min-height 的话，改 rows 时它不跟，而没人会想到回来改这里。
+ * 🔴 `scrollHeight` 在元素**不可见**时是 0（`<details>` 收起 = display:none）。
+ *    直接照抄会把框压成 0 高，而症状是"卖点框不见了" ⇒ 读到 0 就把 height 清掉，
+ *    交回 `rows` 那个地板，等它可见时再量。
+ * ⚠️ 必须先 `height:auto` 再读 scrollHeight：不清的话上一次撑开的高度会把它锁住，只涨不缩。
+ */
+/**
+ * `[data-autogrow]` 的 textarea 随内容长高、**不内滚**（G 批 §6）。
+ *
+ * 🔴 这里**一个像素都不量** —— 高度由布局自己算出来（`.grow-wrap` 的 CSS 见 style.css）：
+ *    包裹层是一个单格 grid，textarea 与 `::after` 叠在同一格里，`::after` 装着同一段文字
+ *    （`content: attr(data-replicated-value)`）。格子高 = 两者的较高者 ⇒ 框永远刚好装下文字。
+ *
+ * ⚠️ 为什么不用"量 scrollHeight 再赋 height"那条路（我先写的就是那条，已撤）：
+ *    那条路要求**在正确的时刻、正确的宽度下**去量，于是它有三个必然的坑 ——
+ *      ① `<details>` 收起时 scrollHeight = 0（量到 0 会把框压没）；
+ *      ② `box-sizing: border-box` 下 `height` 含边框而 `scrollHeight` 不含，永远差一个边框；
+ *      ③ **宽度一变折行数就变**，必须靠 ResizeObserver/resize 事件回来重量，
+ *         漏了就把多出来的行**切掉且不可达**（`overflow-y: hidden`，连滚动条都没有）。
+ *    ③ 实测过：1278 → 700 少了 22px 内容，没有任何症状。
+ *    ⇒ 换成布局自己算之后，这三条**全部不存在**：没有时刻、没有测量、没有观察者。
+ *
+ * ⚠️ 这个函数是**同步文本**，不是测量 ⇒ 早调晚调都对，框看不看得见也都对。
+ */
+function syncGrow(ta) {
+  const wrap = ta && ta.closest(".grow-wrap");
+  if (wrap) wrap.dataset.replicatedValue = ta.value;
+}
+document.querySelectorAll("textarea[data-autogrow]").forEach((ta) => {
+  syncGrow(ta);
+  ta.addEventListener("input", () => syncGrow(ta));
+});
 $("#f_highlights").addEventListener("input", paintHighlightsCount);
 $("#backBtn").onclick = () => {
   $("#detailView").hidden = true; $("#listView").hidden = false;

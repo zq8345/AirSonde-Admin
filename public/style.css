@@ -305,6 +305,31 @@ input, select, textarea {
   background: var(--bg); color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: 8px;
 }
 textarea { line-height: 1.6; }
+
+/* ══ G 批 §6：自动长高的 textarea —— 高度由**布局**算，JS 一个像素都不量 ══
+   单格 grid：textarea 与 `::after` 叠在同一格，`::after` 装着同一段文字（JS 只同步 data 属性）。
+   格子高 = 两者较高者 ⇒ 框永远刚好装下文字，宽度变了浏览器自己重排，**不需要任何事件**。
+   ⛔ 不留内滚条（高度天然够）；⛔ 不留拖拽把手（拖出来的高度下一次输入就被布局盖掉，是个骗人的把手）。
+   🔴 下面这条**同时**作用于 textarea 与 `::after`：两者的盒模型必须逐项一致，
+      差一个 padding / 边框 / 行高，替身算出来的高度就与真实文字对不上。
+      ⚠️ 它们是**一条规则里的一份声明**，不是抄两遍 —— ⛔ 别把其中一个选择器拆出去单独改。
+      ⚠️ 值取自上面的 `input, select, textarea` 基类：改那条时**这条必须跟着改**（有闸在验，见 README）。 */
+.grow-wrap { display: grid; }
+.grow-wrap > textarea,
+.grow-wrap::after {
+  grid-area: 1 / 1 / 2 / 2;       /* 叠在同一格 */
+  box-sizing: border-box; width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  font: inherit; font-size: 14px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+}
+.grow-wrap::after {
+  /* 末尾那个空格是必须的：不加的话，最后一行是空行时替身不占高，框会比文字矮一行 */
+  content: attr(data-replicated-value) " ";
+  visibility: hidden;             /* ⚠️ 占位但不可见、不可选中；⛔ 不用 display:none（那样就不占高了） */
+}
+.grow-wrap > textarea { overflow-y: hidden; resize: none; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--border-focus); outline-offset: -1px; }
 input.bad, select.bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 .hint { margin: var(--space-4) 0 0; font-size: 12px; color: var(--text-secondary); }
@@ -312,9 +337,18 @@ input.bad, select.bad { border-color: var(--border-critical); background: var(--
 .field-internal { border-left: 3px solid var(--border-critical); padding-left: var(--space-12); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-6); }
-.chip { display: inline-flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-8); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 13px; font-family: var(--mono); background: var(--bg-app); }
-.chip input { width: auto; margin: 0; }
+/* ══ G 批 §1：SPEC §4 要的是「可点 chip」，不是「带方框的复选框」 ══
+   D 批我只改了 `:has(input:checked)` 的选中态配色，就以为这条做完了 ——
+   ⚠️ 判据当时只覆盖了"选中态颜色对不对"，⛔ 没覆盖"它是不是一个 chip"。
+   ⇒ 现在补完：原生 checkbox 方框藏掉、等宽字体撤掉。
+   🔴 input **只是看不见**，仍在 DOM、仍在 tab 序里 —— readForm / fillForm 读写的就是它，
+      ⛔ 不用 display:none / visibility:hidden（那会把它从 tab 序里摘掉，键盘就选不了了）。
+   ⚠️ 它 absolute 出流 ⇒ 不再占 flex 位 ⇒ .chip 的 gap 一并撤，左内边距补到 space-12。 */
+.chip { position: relative; display: inline-flex; align-items: center; padding: var(--space-4) var(--space-12); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; font-size: 13px; background: var(--bg-app); }
+.chip input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
 .chip:has(input:checked) { background: var(--brand-tint); border-color: var(--brand); color: var(--brand); font-weight: 600; }
+/* 方框没了 ⇒ 键盘焦点原来挂在方框上的那圈也没了，焦点环必须改挂到 chip 身上 */
+.chip:has(input:focus-visible) { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 
 .kv { display: flex; flex-direction: column; gap: var(--space-6); }   /* ⚠️ .repeat / .repeat-row 已随卖点逐条输入框一起撤（A17） */
 .kv-row { display: flex; gap: var(--space-6); }
@@ -741,9 +775,14 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 /* 🔴 画质被压到 ≤55% 必须显眼 —— 那是"为了压进 2MB 牺牲了画质"。
    ⛔ 与正常画质长得一样 = 等于没显示。 */
 .iq.is-low { color: var(--text-caution); font-weight: 600; }
+/* ══ G 批 §2：文件名必须认得出是哪一张 ══
+   原来是 `white-space: nowrap` + 省略号 ⇒ 9 张图全被截成 `7in-desktop…`，
+   ⚠️ 一个"每张都长一样"的标签**不度量任何东西** —— 它占着位置却分不出图。
+   ⇒ 完整文件名换行显示（mono 留着：文件名是标识符不是散文）；格子高度随之自然长。
+   ⚠️ `break-all` 而不是 `break-word`：连字符文件名整段无空格，break-word 断不开照样溢出。 */
 .itag {
   display: block; margin-top: var(--space-4); font-family: var(--mono); font-size: 12px; color: var(--text-secondary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  line-height: 1.35; word-break: break-all;
 }
 /* A12-5：添加入口 = 网格里的最后一格，尺寸与缩略图一致，就一个「＋」。
    ⚠️ 原来是缩略图下面一个整宽大虚线框，占了半屏 —— 而它承担的信息量只有"点这里加图"。
@@ -769,14 +808,18 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 
 /* ══ A10：「更多（选填）」折叠区 ══
    新建时收起、编辑时由 JS 打开。用原生 <details>：零 JS 也能开合，键盘天然可达。 */
-.more {
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 0 var(--space-16); margin: 0 0 var(--space-16);
-}
+/* ══ G 批 §3：「更多（选填）」换成与其它卡同款白卡 ══
+   ⛔ 容器样式不再由这里自己写一套（原来是 bg/border/radius/padding 各写一份，
+      与 `.card` 差了内边距和外边距 ⇒ 它在一列白卡里看着是矮一截的异类）。
+   ⇒ HTML 上直接加 `class="card more"`：容器全部走 `.card` 这一个真源，
+      这里只剩**开合**那部分（summary 的样子 + 三角 + 分隔线）。
+   ⚠️ 机制一个字没动：仍是原生 `<details>`，app.js 的 `#editPane details.more` 选择器照旧命中，
+      新建收起 / 编辑展开的行为不变。 */
 .more > summary {
-  cursor: pointer; padding: var(--space-12) 0; font-weight: 600; font-size: 14px;
+  cursor: pointer; margin: 0; font-weight: 600; font-size: 15px;
   list-style: none; display: flex; align-items: baseline; gap: var(--space-8);
 }
+.more > summary .h3sub { font-weight: 400; font-size: 12px; color: var(--text-secondary); }
 .more > summary::-webkit-details-marker { display: none; }
 /* 自己画三角：原生 marker 在各浏览器里长得不一样，而这是主路上的一个控件 */
 .more > summary::before {
@@ -784,8 +827,11 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 }
 .more[open] > summary::before { transform: rotate(90deg); }
 .more > summary:hover { color: var(--text-accent); }
-.more[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: var(--space-16); }
-.more > *:last-child { margin-bottom: var(--space-16); }
+/* 展开时 summary 底下一条分隔线，位置与 `.card > h3` 的 `margin: 0 0 14px` 对齐 */
+.more[open] > summary { border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 14px; }
+/* ⛔ 原来的 `.more > *:last-child { margin-bottom: var(--space-16) }` 已撤：
+   那是在替没有下内边距的旧容器补底；现在容器是 `.card`，下内边距它自己有。 */
+.more > *:last-child { margin-bottom: 0; }
 /* 折叠区里的图片那一份挨着主图，不要再套一层卡片边框 */
 #moreImages { border: 0; padding: 0; background: none; margin-top: var(--space-6); }
 
