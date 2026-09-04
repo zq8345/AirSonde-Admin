@@ -2129,7 +2129,6 @@ $("#ckAll").onchange = (e) => {
   rows.forEach((r) => e.target.checked ? state.selected.add(r.slug) : state.selected.delete(r.slug));
   renderList();
 };
-$("#batchClear").onclick = () => { state.selected.clear(); renderList(); };
 document.querySelectorAll("[data-bulk]").forEach((b) => {
   b.onclick = () => bulk([...state.selected], b.dataset.bulk);
 });

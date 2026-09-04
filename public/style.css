@@ -533,11 +533,14 @@ th.filt { position: relative; overflow: visible; }
   background: var(--brand-tint); border: 1px solid var(--brand); border-radius: 7px; font-size: 13px; }   /* 换皮：品牌绿 tint（B 批） */
 /* 🔴 `:not(.linkish)` 不是特例，是把这条规则的**意图**写准（AU2 ⑥）。
    原来是 `.batchbar button`（特异性 0,1,1）⇒ 它把批量条里的 `.linkish`（0,1,0）也吃了，
-   于是「取消选择」与旁边的「批量上架」**逐属性完全相同**（实测 74x31 / 12.5px / 黑字白底 /
+   于是当时那个「取消选择」与旁边的「批量上架」**逐属性完全相同**（实测 74x31 / 12.5px / 黑字白底 /
    1px 边框 / 6px 圆角 —— 一个字节都不差），而行内的「编辑」是 38x24 / 13px / 蓝字 / 无边框。
    ⇒ **一个撤销动作被渲染成与批量操作同等权重**，而且是同一个类名渲染出两种控件。
    这条规则想说的从来是"批量条里那几个**操作按钮**长这样"，不是"里面所有 button"。
-   ⇒ 写准之后 `.linkish` 全站只剩一种长相，撤销动作也回到它该有的分量。 */
+   ⇒ 写准之后 `.linkish` 全站只剩一种长相，撤销动作也回到它该有的分量。
+   ⚠️ 举例的那个「取消选择」按钮已于 2026-09-04 按 Joe 要求删除 ⇒ 批量条里此刻**没有** `.linkish`。
+      ⛔ 规则不删：它守的是"批量条里再出现行内按钮时不被渲染成操作按钮"，理由与那个按钮在不在无关。
+      ⛔ 但例子要标成过去式，⛔ 不留一句现在时的话去描述一个已经不存在的控件。 */
 .batchbar button:not(.linkish) { padding: var(--space-4) var(--space-12); font: inherit; font-size: 13px; cursor: pointer;
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); }
 .batchbar button:hover { border-color: var(--border-accent); color: var(--text-accent); }
