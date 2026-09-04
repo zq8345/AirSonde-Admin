@@ -461,7 +461,15 @@ button:disabled, [disabled] {
 .main { flex: 1 1 auto; padding: var(--main-pad-y) var(--main-pad-x) var(--space-40); min-width: 0; height: 100%; overflow-y: auto; background: var(--panel); border-radius: 12px; }
 .main > section { max-width: 1600px; }
 /* 页头：标题 17/700 + 12 灰副标 + 右侧动作（附录 C.1 页标题 17；一屏至多一个品牌绿实心主按钮） */
-.page-head { display: flex; align-items: center; gap: var(--space-12); margin-bottom: 14px; }
+/* ⚠️ `flex-wrap: wrap` 是给批量条那条后果说明留的换行位（见下）。
+   ⛔ 不是"以防万一"：不许换行的话，那句话会把 + 新建产品 挤出视口，而那**没有任何症状**。 */
+.page-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-12); margin-bottom: 14px; }
+/* ⭐ 批量条进工具栏（Joe 2026-09-04）：在这里它**不是一条横幅**，是这一行里的一组控件
+   ⇒ 去掉底色/边框/内边距，⛔ 不让它在同一行里长得像另一个区块。 */
+.page-head .batchbar { background: none; border: 0; padding: 0; position: static; margin: 0; gap: var(--space-8); }
+/* 🔴 后果说明**独占一行**：它必须在他按下之前看得见（⛔ 不许静默删），
+   但也⛔ 不许跟按钮抢横向空间 —— 990 分屏那一行本来就快装不下了。 */
+.page-head .batch-note { flex-basis: 100%; margin: 0; }
 .page-head h1 { margin: 0; font-size: 17px; font-weight: 700; }
 /* v3 §3.6：这一格从"灰字副标"变成**装两段切换的位置** ⇒ 不再压字号/颜色，
    否则里面的段位控件会被继承成一个看不清的小灰块。 */
@@ -581,8 +589,18 @@ th.filt { position: relative; overflow: visible; }
    ⇒ 不写死 px（型号还在迁移，9 个 `AS-` 还没换，写死的数会过时），
      改成 **nowrap + 宽度由内容决定**：`width: 1%` 在表格里的含义是"尽量窄"，
      而 nowrap 把"尽量窄"的下限抬到 max-content ⇒ **正好是最长型号的宽度**。 */
-.ptable .col-model { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
-.ptable .col-cat { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+/* ⚠️ 列类同时挂在 `<th>` 和 `<td>` 上 ⇒ 写在这里的 `font-family` **表头也会吃到**。
+      实测（Joe 2026-09-04「表头，同一行都有不一样的字体」）：七个表头里
+      `型号` 与 `机型` 两格是 `ui-monospace`，其余五格是 `-apple-system`；
+      另外六项（字号/字重/字距/行高/颜色/大小写）本来就全一致 —— **只有字体一项不齐**。
+   ⇒ 等宽**只给值、不给表头**：值是代号（AK16DAH-CO / wall-mounted），对齐着看才有意义；
+      表头是标签，它该和同一行的其他标签长一样。
+   🔴 只把 `font-family` 挪进 tbody，⛔ `width:1%` / `nowrap` 留在列类上 ——
+      那两条是**列宽**，搬走会改表格布局，而那不是这一条要修的东西。
+   ⛔ 不给「型号」单独写一条覆盖：表头是一个类，一套样式管全部（遇边界加 if 就是病）。 */
+.ptable .col-model { width: 1%; white-space: nowrap; font-size: 12px; }
+.ptable .col-cat { width: 1%; white-space: nowrap; font-size: 12px; color: var(--text-secondary); }
+.ptable tbody .col-model, .ptable tbody .col-cat { font-family: var(--mono); }
 .ptable .col-act { width: 110px; text-align: right; white-space: nowrap; }
 .ptable input[type=checkbox] { width: auto; margin: 0; }
 .row-bad { background: var(--bg-critical-soft); }
@@ -736,7 +754,11 @@ button.danger:not(.linkish) { background: var(--bg-critical-soft); border: 1px s
       `.linkish` 行高 19.5 + 按钮 padding 2×2 + 格子 padding 2×6 + 下边框 1 = 36.5 ⇒ 取 37。 */
 #catsView .ptable tbody td { height: 37px; }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
-#bulkCat { font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+/* 🔴 `width: auto` 是在挡全局那条 `input, select, textarea { width: 100% }`。
+   ⚠️ 它一直在生效 —— 老的整条横幅里这个下拉本来就被拉成满行宽，只是那时它独占一行，**看不出来**。
+   搬进工具栏后同一个属性把它撑成 763px，把整行挤成 7 行。
+   ⇒ 病一直在，是位置换了才有症状。⛔ 不是这次搬家引入的。 */
+#bulkCat { width: auto; font: inherit; font-size: 13px; padding: var(--space-6) var(--space-8); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 
 /* ═══ A9 编辑页：卡片分组 + sticky 保存条 + 宽屏双栏 ═══
    照 admin.wanew.com 的做法（实测其结构：card + <h3> 分组、edit-bar position:sticky）。

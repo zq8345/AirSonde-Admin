@@ -641,7 +641,11 @@ function fitSensorRows(root) {
 
 function renderBatch() {
   const n = state.selected.size;
-  $("#batchBar").hidden = n === 0 || !state.write?.enabled;
+  // ⚠️ 后果说明与批量条**同一个条件、同一处代码**（Joe 2026-09-04 搬进工具栏后它成了兄弟节点）。
+  //    ⛔ 不在别处再写一遍那个条件 —— 两处各判一次，迟早出现"按钮在、说明不在"。
+  const showBulk = !(n === 0 || !state.write?.enabled);
+  $("#batchBar").hidden = !showBulk;
+  const note = $("#batchNote"); if (note) note.hidden = !showBulk;
   $("#batchCount").textContent = `已选 ${n} 个`;
 
   // 批量改机型的选项来自**契约**（/api/contract），不是从现有数据里长出来的：

@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=112">
+<link rel="stylesheet" href="/style.css?v=115">
 </head>
 <body>
 
@@ -104,7 +104,36 @@
            筛选住列头：「状态」= 两段切换 在线|未上架（默认无选中 = 全部）；「机型」= 漏斗菜单。「产品」列头不放任何控件。 -->
       <div class="page-head">
         <h1>产品</h1><span class="page-sub" id="listSub"></span>
+        <!-- ⭐ Joe 2026-09-04：「把这些操作集成到工具栏，也就是 + 新建产品 按钮那一行」。
+             ⇒ 整块搬进 .page-head（原来在表格之后 + 吸底）。五样能力一个不少：
+                已选计数 · 批量上架 · 批量下架 · 批量改机型 · 取消选择。
+
+             ⚠️ 搬家丢掉的那条设计要说清楚，⛔ 不静默丢：
+                原位置（表格之后 + sticky bottom）是为了**勾选时上面的行不动** ——
+                更早它在表格之前占文档流，勾一行、正在看的那行当场下移 145px。
+                现在它回到表格上方 ⇒ **出现时下面的表格会下移**（实测见交付：约一行的高度）。
+                这是 Joe 明确要的位置，⛔ 不替他推翻；但代价记在这里，别下次当成 bug 再改回去。
+
+             🔴 那句后果说明（一次批量 = 一个 commit …）**必须在他点之前看得见**，
+                所以它没有被删，而是 flex-basis:100% 落到按钮下面自成一行 ——
+                ⛔ 不跟按钮抢横向空间（990 分屏那一行本来就快装不下了）。 -->
+        <div class="batchbar" id="batchBar" hidden>
+          <span id="batchCount"></span>
+          <button type="button" data-bulk="published">批量上架</button>
+          <button type="button" data-bulk="draft">批量下架</button>
+          <!-- 机型是产品的**归属**，不是轴本身。两件事都在写入范围内，但是两个文件：
+               归属在产品 JSON，轴本身在 src/data/taxonomy.json（分类页）。 -->
+          <select id="bulkCat"><option value="">批量改机型…</option></select>
+          <button type="button" class="linkish" id="batchClear">取消选择</button>
+        </div>
+        <!-- 🔴 这句后果说明**必须在他点之前看得见**（⛔ 不许静默删、⛔ 不许只留在注释里）。
+             ⚠️ 它是 .page-head 的**直接子元素**，不在 .batchbar 里 —— 实测过放里面的后果：
+                它带着 flex-basis:100% 会把 .batchbar 撑到"整句话那么宽"(763px)，
+                于是 + 新建产品 被挤到第二行、工具栏从 36px 涨到 176px。
+             ⇒ 放外面它独占一整行，⛔ 不与任何按钮抢横向空间。
+             显隐与 #batchBar 同一个条件，由 renderBatch() 一处说了算。 -->
         <button type="button" class="primary" id="newBtn">+ 新建产品</button>
+        <span class="batch-note" id="batchNote" hidden>一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
       </div>
 
       <div class="table-wrap card table">
@@ -123,26 +152,6 @@
           </tr></thead>
           <tbody id="rows"></tbody>
         </table>
-      </div>
-      <!-- 选中后才出现：不选就不该看到一排点不动的批量按钮。
-           🔴 **位置在表格之后 + 吸底**（AU2 ④）。原来它在表格**之前**且占文档流 ⇒
-              勾选一行，正在看的那一行**当场下移 145px**（实测 1440 档：y 278 → 423）。
-              人一勾选，要操作的那行就跑了。
-           ⛔ 不用固定 margin-top 硬顶：批量条会换行变高（窄屏实测能到 535px），
-              那个数当场就错，而且没人会发现 —— `.topbar` 那条 `top:40px` 就是这么坏的。
-           ⇒ 挪到表格之后：它出现时增加的高度落在**表格下面**，上面的行一动不动。
-              再加 `sticky; bottom: 0`，列表很长时它也不会滚出视野。
-           ⚠️ 顺带把键盘 tab 序也理顺了：先在表格里勾选，再 tab 到操作 ——
-              原来是先经过一排还没启用的按钮。 -->
-      <div class="batchbar" id="batchBar" hidden>
-        <span id="batchCount"></span>
-        <button type="button" data-bulk="published">批量上架</button>
-        <button type="button" data-bulk="draft">批量下架</button>
-        <!-- 机型是产品的**归属**，不是轴本身。两件事都在写入范围内，但是两个文件：
-             归属在产品 JSON，轴本身在 src/data/taxonomy.json（分类页）。 -->
-        <select id="bulkCat"><option value="">批量改机型…</option></select>
-        <button type="button" class="linkish" id="batchClear">取消选择</button>
-        <span class="batch-note">一次批量 = 一个 commit；任一产品不过契约闸则整批不写。</span>
       </div>
       <div class="empty" id="listEmpty" hidden></div>
     </section>
@@ -499,7 +508,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=112"></script>
+<script src="/app.js?v=115"></script>
 </body>
 </html>
 
