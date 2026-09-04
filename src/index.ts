@@ -386,12 +386,40 @@ app.get("/api/site-build", async (c) => {
     });
   }
 
-  const minutes = headDate ? Math.max(0, Math.round((Date.now() - Date.parse(headDate)) / 60000)) : null;
+  const raw = headDate ? Math.round((Date.now() - Date.parse(headDate)) / 60000) : null;
+  // 🔴 `minutes` **必须能表达"算不出来"**，而它有两条各不相同的路都通向"算不出来"：
+  //    ① headDate 为空 ⇒ raw = null
+  //    ② headDate 解析不了 ⇒ Date.parse 得 NaN ⇒ raw = NaN
+  //       ⚠️ `Math.max(0, NaN)` **不是 0，还是 NaN** —— 夹不住它。
+  //    ⚠️ 而 JSON 会把 NaN 序列化成 `null` ⇒ **两条路在响应体上长得一模一样**，
+  //       这正是它难被发现的原因。⇒ 判定必须用 `Number.isFinite`，⛔ 不能只判 `!== null`。
+  const known = raw !== null && Number.isFinite(raw);
+  const minutes = known ? Math.max(0, raw as number) : null;
   const same = liveSha === headSha;
-  // ⚠️ 不同但还没超时 ⇒ 仍报 ok：那多半就是正在构建。⛔ 别把"正常的一分钟"报成故障，
-  //    一个天天误报的告警会在真出事那天被无视。
-  const state = same ? "ok" : (minutes !== null && minutes >= STALE_MINUTES ? "stale" : "ok");
-  return c.json({ state, liveSha, headSha, builtAt, headDate, minutes, staleAfter: STALE_MINUTES });
+
+  // ⚠️ 不同但**确知**还没超时 ⇒ 仍报 ok：那多半就是正在构建。⛔ 别把"正常的一分钟"
+  //    报成故障 —— 一个天天误报的告警会在真出事那天被无视。
+  // 🔴 但"sha 不同 + 算不出过了多久" ⇒ **unknown，⛔ 绝不是 ok**：
+  //    我们已经拿到了「两个 sha 不一样」这个**阳性证据**，却因为算不出时长就把结论
+  //    落回 ok —— 那是**在唯一不许假绿的那一处假绿**，而症状还是那一个：
+  //    告警从来不亮，跟一切正常长得一模一样。
+  //    ⇒ ok 只留给两种：sha 相同；或 sha 不同**且确知**未超阈值。
+  let state: "ok" | "stale" | "unknown";
+  let detail: string | undefined;
+  if (same) state = "ok";
+  else if (!known) {
+    state = "unknown";
+    // ⚠️ 短 sha 会撞前缀 —— 探针实测就撞出过 `ad16bbf ≠ ad16bbf` 这种**自相矛盾的话**。
+    //    ⇒ 前 7 位相同时改用完整 sha。⛔ 不让告警自己说出一句看起来是假的话 ——
+    //      一条自相矛盾的告警会被当成 bug，而不是被当成告警。
+    const shortSame = liveSha.slice(0, 7) === headSha.slice(0, 7);
+    const shownLive = shortSame ? liveSha : liveSha.slice(0, 7);
+    const shownHead = shortSame ? headSha : headSha.slice(0, 7);
+    detail = `官网上跑的不是最新那一版（线上 ${shownLive} ≠ 最新 ${shownHead}），`
+      + `但**算不出已经多久** —— 拿不到可用的提交时间（headDate=${JSON.stringify(headDate)}）。`;
+  } else state = minutes! >= STALE_MINUTES ? "stale" : "ok";
+
+  return c.json({ state, liveSha, headSha, builtAt, headDate, minutes, staleAfter: STALE_MINUTES, ...(detail ? { detail } : {}) });
 });
 
 // ─────────── 审计日志：谁在什么时候改了哪个产品 ───────────
