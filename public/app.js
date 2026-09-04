@@ -39,6 +39,9 @@ const state = {
   modelSort: 0,
   nav: "products",            // 左导航当前视图：products | media
   media: null, mediaTab: "all",
+  // 图片页两态：null = 文件夹网格（默认）；字符串 = 只看那一个文件夹。
+  // ⛔ mediaTab 那三段筛选**先留着不删**（SPEC §4：先在真 UI 上比两条路径给出的集合，再决定）。
+  mediaFolder: null, mediaQ: "",
   audit: null,
   cats: null,       // /api/taxonomy：两个轴 + 每条的 refs/refCount/canDelete（引用计数由服务端数）
   /**
@@ -2074,15 +2077,25 @@ async function loadMedia() {
   }
 }
 
+/**
+ * 图片页。**两个视图**（Joe 2026-09-04 两次指出：「图片只有分类，没有看到文件夹」「文件夹呢？」）：
+ *   `state.mediaFolder === null` ⇒ **文件夹网格**（默认）
+ *   `state.mediaFolder === "ak13a"` ⇒ 只看那一个文件夹里的图
+ *
+ * 🔴 上一版做的是「41 个小标题 + 230 张图一次全渲染」。那**不是文件夹**，是分组 ——
+ *    他要找一个产品的图仍然得滚过一屏又一屏，和没有文件夹时是同一个问题。
+ *    ⚠️ 我们当时满足了字面（"按文件夹组织"），没满足他要解决的那件事（"别让我一路滚"）。
+ *    ⇒ **文件夹的定义：看到文件夹 → 点一个 → 只看那一个。** 判据落在
+ *      「他找一个产品的图要滚多远」，⛔ 不落在「有没有按文件夹分组」。
+ *
+ * ⚠️ 「孤儿」判据仍然只有服务端盖的 `f.orphan`（media.ts 的 isOrphan）——
+ *    ⛔ 这里不写第二遍 `!referencedBy.length`（那个双真源出过事：38 张原图被标成可删）。
+ */
 function renderMedia() {
-  // crm-skin E 批（§7）：tab 条撤 → 页头右侧 = 红标（>0 才出现）+ 两段切换 + 新建文件夹 + 上传图片；
-  // 列表按文件夹分组。⚠️ 「孤儿」判据仍只有服务端盖的 f.orphan（media.ts isOrphan）——
-  // ⛔ 这里不写第二遍 `!referencedBy.length`（那个双真源已出过一次事：38 张原图被标成可删）。
   const m = state.media; if (!m) return;
   $("#navMediaCount").textContent = `(${m.total})`;
 
-  // 副标由真值算；对账红 / missing 红是**真警告**，留在 #mediaSummary
-  $("#mediaSub").textContent = `共 ${m.total} 张 · 在用 ${m.referenced} · 原图存档 ${m.archived}`;
+  // 对账红 / missing 红是**真警告**，⛔ 两个视图都要显示，不随视图切换消失
   const sum = $("#mediaSummary"); sum.innerHTML = "";
   if (!m.reconciled) sum.append(mkNotice("bad", "🔴 **对账不成立**（被引用 + 孤儿 ≠ 总数）—— 本次扫描结果不可用。"));
   if (!m.orphansTrustworthy) sum.append(mkNotice("bad", m.note));
@@ -2092,24 +2105,89 @@ function renderMedia() {
       m.missing.map((x) => `${x.slug} → ${x.rel}`).join("；")));
   }
 
-  // ── 页头右侧 ──
-  const head = $("#mediaHead"); head.innerHTML = "";
-  const draftN = m.files.filter((f) => f.area === "draft").length;
-  const redTag = (key, label, n) => {
-    if (!n) return;                          // =0 不出现（§7：不做常驻段）
-    const b = el("button", "mtag" + (state.mediaTab === key ? " on" : "")); b.type = "button";
-    b.append(document.createTextNode(`${label} ${n}`));
-    b.title = state.mediaTab === key ? "再点取消筛选" : `只看${label}的那 ${n} 张`;
-    b.onclick = () => { state.mediaTab = state.mediaTab === key ? "" : key; renderMedia(); };
-    head.append(b);
+  if (state.mediaFolder === null || state.mediaFolder === undefined) renderFolderGrid(m);
+  else renderFolderContents(m, state.mediaFolder);
+}
+
+/** 文件夹 = rel 去掉 `products/` 后的目录部分；根目录记作 ""。 */
+const folderOfRel = (rel) => {
+  const rest = rel.replace(/^products\//, "");
+  const i = rest.indexOf("/");
+  return i < 0 ? "" : rest.slice(0, i);
+};
+
+/** 系统目录：⛔ 这两条「不上站」**仍然为真**（官网 glob 的两条负向排除挡着它们），别删。 */
+const SYS_FOLDERS = {
+  _draft: { name: "草稿区", tag: "不上站", sub: "未上架产品的图" },
+  originals: { name: "原图存档", tag: "不上站", sub: "jpg / png 源材料" },
+};
+
+/**
+ * 默认视图：文件夹网格。
+ *
+ * 🔴 数据源是 **产品列表 × 文件夹列表的并集**，⛔ 不是"仓里已存在的目录"：
+ *    只列已存在的目录，**还没有图的产品就永远不会出现** —— 而那恰恰是 Joe
+ *    现在完全看不见、也最该看见的东西（"哪些产品还缺图"）。
+ */
+function renderFolderGrid(m) {
+  const byFolder = new Map();
+  m.files.forEach((f) => {
+    const k = folderOfRel(f.rel);
+    if (!byFolder.has(k)) byFolder.set(k, []);
+    byFolder.get(k).push(f);
+  });
+
+  // 产品 → 它的型号文件夹（与服务端/imagepaths 同一口径：小写 + 非字母数字压成连字符）
+  const modelFolder = (mod) => String(mod || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
+  const prodByFolder = new Map();
+  (state.list || []).forEach((p) => {
+    const k = modelFolder(p.model);
+    if (k && !prodByFolder.has(k)) prodByFolder.set(k, p);
+  });
+
+  // 🔴 「型号文件夹是空的」≠「这个产品没有图」。
+  //    未上架产品的图住在 `_draft/`（批 2 定的规则：发布时才落进型号目录）。
+  //    ⚠️ 实测 2026-09-04：41 个产品 = 25 个型号文件夹里有图 + **16 个图在草稿区**
+  //       + **0 个真的一张都没有**。
+  //    ⇒ 给这 16 个写「还没有图」**是假话** —— 与刚修掉的「不进构建」是同一类错：
+  //      **页面把"我没在这里看见"说成了"它不存在"。**
+  //    ⇒ 这里按 slug 找出它在别处的图，卡片说「N 张 · 在草稿区」，⛔ 不说"还没有图"。
+  const draftOf = new Map();
+  m.files.forEach((f) => {
+    if (f.area !== "draft") return;
+    f.referencedBy.forEach((slug) => {
+      if (!draftOf.has(slug)) draftOf.set(slug, []);
+      draftOf.get(slug).push(f);
+    });
+  });
+
+  // ⭐ 并集：产品的型号文件夹 ∪ 仓里真实存在的产品目录（后者能兜住"型号改过、旧目录还在"）
+  const productFolders = new Set([...prodByFolder.keys()]);
+  [...byFolder.keys()].forEach((k) => { if (k && !SYS_FOLDERS[k]) productFolders.add(k); });
+
+  const q = (state.mediaQ || "").trim().toLowerCase();
+  const hit = (k, files) => !q || k.includes(q) || (files || []).some((f) => f.rel.toLowerCase().includes(q));
+
+  // 「在草稿区」的图算它有图 ⇒ noImgs 只数**真的一张都没有**的（实测当前为 0）
+  const filesFor = (k) => {
+    const own = byFolder.get(k) || [];
+    if (own.length) return { files: own, inDraft: false };
+    const p = prodByFolder.get(k);
+    const d = (p && draftOf.get(p.slug)) || [];
+    return { files: d, inDraft: d.length > 0 };
   };
-  redTag("orphan", "未被引用", m.orphans);
-  redTag("draft", "草稿", draftN);
-  head.append(segControl(
-    [["published", "在线", m.files.filter((f) => f.area === "published").length], ["originals", "原图存档", m.archived]],
-    ["published", "originals"].includes(state.mediaTab) ? state.mediaTab : null,
-    (v) => { state.mediaTab = v || ""; renderMedia(); }));
-  const nf = el("button", "btn-secondary", "新建文件夹"); nf.type = "button";
+  const noImgs = [...productFolders].filter((k) => !filesFor(k).files.length).length;
+
+  // ── 页头 ──
+  $("#mediaSub").textContent =
+    `${productFolders.size + Object.keys(SYS_FOLDERS).length} 个文件夹 · ${m.total} 张 · 在用 ${m.referenced}`;
+  const head = $("#mediaHead"); head.innerHTML = "";
+  const search = el("input", "msearch");
+  search.type = "search"; search.placeholder = "搜型号 / 文件名"; search.value = state.mediaQ || "";
+  search.oninput = () => { state.mediaQ = search.value; renderMedia(); search.focus(); };
+  head.append(search);
+  const nf = el("button", "btn-secondary", "＋ 新建文件夹"); nf.type = "button";
   nf.onclick = () => mediaPanel("folder");
   const up = el("button", "primary", "上传图片"); up.type = "button";
   up.onclick = () => mediaPanel("upload");
@@ -2119,103 +2197,200 @@ function renderMedia() {
   }
   head.append(nf, up);
 
-  // ── 筛选 + 按文件夹分组 ──
-  const rows = m.files.filter((f) => {
-    if (state.mediaTab === "orphan") return f.orphan;
-    if (["published", "draft", "originals"].includes(state.mediaTab)) return f.area === state.mediaTab;
-    return true;
+  const box = $("#mediaGroups"); box.innerHTML = "";
+
+  // ── 产品文件夹 ──
+  const names = [...productFolders].sort();
+  const grid = el("div", "fgrid");
+  let shown = 0;
+  names.forEach((k) => {
+    const { files, inDraft } = filesFor(k);
+    if (!hit(k, files)) return;
+    shown++;
+    grid.append(folderCard(k, files, prodByFolder.get(k), inDraft));
   });
-  // 文件夹 = rel 去掉 products/ 后的目录部分
-  const folderOf = (rel) => {
-    const rest = rel.replace(/^products\//, "");
-    const i = rest.indexOf("/");
-    return i < 0 ? "" : rest.slice(0, i);
-  };
-  const groups = new Map();
-  rows.forEach((f) => {
-    const k = folderOf(f.rel);
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(f);
+  box.append(grid);
+  if (!shown) box.append(el("p", "hint0", q ? `没有匹配「${q}」的文件夹。` : "还没有任何产品文件夹。"));
+
+  // ⭐ "还有 N 个没有图" —— 这一条是本单顺带解决的那件事：以前埋在 230 张图里发现不了
+  if (!q && noImgs) {
+    const p = el("p", "fnote");
+    p.append(document.createTextNode("其中 "));
+    p.append(el("b", "is-amber", String(noImgs)));
+    p.append(document.createTextNode(" 个产品还没有图。"));
+    box.append(p);
+  }
+
+  // ── 系统目录 ──
+  box.append(el("div", "fsect", "系统目录"));
+  const sg = el("div", "fgrid");
+  Object.keys(SYS_FOLDERS).forEach((k) => {
+    const files = byFolder.get(k) || [];
+    if (!hit(k, files)) return;
+    sg.append(folderCard(k, files, null));
   });
-  // 🔴 2026-09-04：这几个标签**说的是旧规则**，而规则在图片分文件夹批 1 里被改掉了。
-  //    改之前：子目录 = 不进构建（官网 glob 是单层 `products/*.webp`）。
-  //    改之后：**进构建 = 根目录 + 型号文件夹；不进构建 = `_draft/` + `originals/`**
-  //           （官网 products.ts 的 glob 已改成递归 + 两条负向排除，已上生产）。
-  //    ⇒ 批 3 把图全搬进型号目录之后，页面变成「25 个分组全写着不进构建，
-  //      而写着"官网构建从这里取"的那一组是空的」——
-  //      🔴 **页面在告诉 Joe "你所有的产品图都不上官网了"，而事实正相反。**
-  //
-  // ⚠️ 教训写在这里，因为下一个改 glob 的人会先看到这段：
-  //    批 1 改的是**一个词的含义**（"子目录"），不是一段代码。迁移清单里当时只清点了
-  //    "谁**写**路径"，没清点 "谁**解释**路径" —— 这个标签就是后者，于是漏了。
-  //    ⛔ 以后改一条规则的含义时，两份清单都要走。
-  const groupLabel = (k) =>
-    k === "" ? "产品图 · 根目录"
-      : k === "_draft" ? "草稿区（不进构建）"
-        : k === "originals" ? "原图存档（不进构建）"
-          : `${k}/`;                       // ⛔ 型号文件夹**进构建**，不加任何形容词
-  // 根排最前，其余按名称；保留目录排最后
-  const order = [...groups.keys()].sort((a, b) => {
-    const w = (k) => k === "" ? 0 : k === "_draft" ? 8 : k === "originals" ? 9 : 1;
-    return w(a) - w(b) || a.localeCompare(b);
-  });
+  box.append(sg);
+
+  $("#mediaEmpty").hidden = true;
+}
+
+/** 一张文件夹卡：2×2 四格预览 + 名字 + 「N 张 · 全部在用 / M 张未被引用」。 */
+function folderCard(k, files, product, inDraft) {
+  const sys = SYS_FOLDERS[k];
+  const card = el("div", "fcard" + (sys ? " is-sys" : "") + (!files.length ? " is-empty" : ""));
+  card.tabIndex = 0;
+  const open = () => { state.mediaFolder = k; renderMedia(); window.scrollTo?.(0, 0); };
+  card.onclick = open;
+  card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+
+  const th = el("div", "fth");
+  if (!files.length) {
+    // 还没有图 ⇒ 一个大的「＋」占满四格（mockup 帧 1 那张琥珀卡）
+    const plus = el("i", "fplus", "＋");
+    th.append(plus);
+  } else {
+    files.slice(0, 4).forEach((f, i) => {
+      const cell = el("i");
+      if (i === 3 && files.length > 4) {
+        cell.classList.add("fmore");
+        cell.textContent = `+${files.length - 3}`;
+      } else {
+        const img = el("img");
+        img.loading = "lazy"; img.alt = "";
+        img.src = rawUrl(f.rel);
+        cell.append(img);
+      }
+      th.append(cell);
+    });
+    for (let i = files.length; i < 4; i++) th.append(el("i"));
+  }
+  card.append(th);
+
+  const meta = el("div", "fmeta2");
+  const name = el("div", "fname");
+  name.append(document.createTextNode(sys ? sys.name : k));
+  if (sys) name.append(el("span", "ftag", sys.tag));
+  meta.append(name);
+
+  const orph = files.filter((f) => f.orphan).length;
+  let sub;
+  if (!files.length) sub = "还没有图";
+  else if (sys) sub = `${files.length} 张 · ${sys.sub}`;
+  // 🔴 未上架产品的图住在草稿区 —— 说出**它们在哪**，⛔ 不说"还没有图"（那是假话）
+  else if (inDraft) sub = `${files.length} 张 · 在草稿区`;
+  else if (orph) sub = `${files.length} 张 · ${orph} 张未被引用`;
+  else sub = `${files.length} 张 · 全部在用`;
+  const s = el("div", "fsub" + (orph ? " is-warn" : ""), sub);
+  meta.append(s);
+  card.append(meta);
+
+  card.title = product
+    ? `${product.model} — ${product.name}\n${files.length} 张`
+    : `${k}\n${files.length} 张`;
+  return card;
+}
+
+/** 点进一个文件夹：只看这一个。 */
+function renderFolderContents(m, k) {
+  const sys = SYS_FOLDERS[k];
+  let files = m.files.filter((f) => folderOfRel(f.rel) === k);
+  // 🔴 型号目录是空的，不代表这个产品没有图 —— 未上架产品的图在 `_draft/`。
+  //    ⇒ 点进来要看得见它们，⛔ 不能给一个"这个文件夹还没有图片"的空页面（那是假话）。
+  let fromDraft = false;
+  if (!sys && !files.length) {
+    const p = (state.list || []).find((x) => String(x.model || "").toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") === k);
+    if (p) {
+      const d = m.files.filter((f) => f.area === "draft" && f.referencedBy.includes(p.slug));
+      if (d.length) { files = d; fromDraft = true; }
+    }
+  }
+  const orph = files.filter((f) => f.orphan).length;
+
+  $("#mediaSub").textContent = "";
+  const head = $("#mediaHead"); head.innerHTML = "";
 
   const box = $("#mediaGroups"); box.innerHTML = "";
-  order.forEach((k) => {
-    const fs = groups.get(k);
-    const h = el("div", "mgroup-h");
-    h.append(el("span", "mgroup-t", groupLabel(k)));
-    h.append(el("span", "cnt-g", `(${fs.length})`));
-    box.append(h);
-    const grid = el("div", "mgal");
-    fs.forEach((f) => {
-      const card = el("div", "micard");
-      if (f.orphan) card.classList.add("is-orphan");
-      const t = el("div", "thumb mthumb"); setThumb(t, rawUrl(f.rel), f.rel);
-      card.append(t);
-      // ══ Joe 2026-09-04：「图片下面不要显示那么多文字，就显示一个图片名就可以了」══
-      // 原来每张图底下三行：文件名 / 用于 xxx / 8KB。⇒ **只留文件名一行**，
-      // 其余进 hover（title），⛔ 不为它做浮层。
-      //
-      // ⚠️ 「用于 xxx」删得掉，是因为它现在**真的冗余**，不是因为 Joe 嫌字多 —— 实测：
-      //    · published 164 张：文件名 100% 已含该产品 slug，且分组标题就是型号
-      //    · _draft   28 张：文件名同样 100% 已含 slug
-      //    · originals 38 张：**零引用**，本来显示的就不是「用于」
-      //    ⇒ 三个区都不丢信息。（总工原本建议 _draft 保留，实测表明那里也是冗余。）
-      //
-      // 🔴 但**孤儿那条红字不能收进 hover**：它是唯一会引导破坏性操作（清理）的信号，
-      //    藏进 hover 等于让人在看不见它的情况下做决定。⇒ 孤儿仍然显示一行。
-      card.append(el("div", "iname", f.rel.split("/").pop()));
-      const kb = `${(f.size / 1024).toFixed(0)}KB`;
-      if (f.referencedBy.length) {
-        card.title = `${f.rel}\n用于 ${f.referencedBy.join("、")}\n${kb}\n（点击打开引用它的产品）`;
-        card.style.cursor = "pointer";
-        // ⚠️ 点击跳到那个产品这条**能力**保留 —— 删的是那行字，不是这条路。
-        card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
-      } else if (f.orphan) {
-        card.title = `${f.rel}\n${kb}`;
-        const use = el("div", "iuse is-warn", "未被引用");
-        card.append(use);
-      } else {
-        // 原图存档零引用但**不是**孤儿 —— 它是图片管线的源材料，⛔ 不复用「未被引用」那个词
-        card.title = `${f.rel}\n存档 · 不参与打包\n${kb}`;
-      }
-      grid.append(card);
-    });
-    box.append(grid);
-  });
 
-  const empty = $("#mediaEmpty");
-  empty.hidden = rows.length > 0;
-  if (!rows.length) empty.textContent = state.mediaTab === "orphan" ? "没有未被引用的图片 —— 干净。" : "没有匹配的图片。";
+  // ── 面包屑：⛔ 必须能回去，否则"点进来"就是单程票 ──
+  const crumb = el("div", "fcrumb");
+  const back = el("button", "linkish", "← 全部文件夹"); back.type = "button";
+  back.onclick = () => { state.mediaFolder = null; renderMedia(); };
+  crumb.append(back, el("span", "hint0", "/"), el("b", "mono", sys ? sys.name : k));
+  crumb.append(el("span", "hint0", !files.length ? "还没有图"
+    : fromDraft ? `${files.length} 张 · 在草稿区（未上架，发布时会搬进这个文件夹）`
+      : orph ? `${files.length} 张 · ${orph} 张未被引用`
+        : `${files.length} 张 · 全部在用`));
+  box.append(crumb);
+
+  // ── 标题行：型号 + 产品标题 + 「编辑这个产品 →」 ──
+  const hd = el("div", "fhead");
+  hd.append(el("h2", "fh2 mono", sys ? sys.name : k));
+  const prod = sys ? null : (state.list || []).find((p) => String(p.model || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") === k);
+  if (prod) {
+    const sub = el("span", "fhsub");
+    sub.append(document.createTextNode(prod.name + "　·　"));
+    const go = el("button", "linkish", "编辑这个产品 →"); go.type = "button";
+    go.onclick = () => { showNav("products"); select(prod.slug); };
+    sub.append(go);
+    hd.append(sub);
+  } else if (sys) {
+    hd.append(el("span", "fhsub", sys.sub));
+  }
+  const spacer = el("span", "fsp"); hd.append(spacer);
+  // ⚠️ 上传复用现有面板，文件夹**预选为当前**（⛔ 保留目录不能传，见服务端闸）
+  if (!sys) {
+    const up = el("button", "primary", "上传到这个文件夹"); up.type = "button";
+    up.onclick = () => mediaPanel("upload", k);
+    if (!state.write?.enabled) { up.disabled = true; up.title = "当前不能保存（写入闸或 token 未就绪）"; }
+    hd.append(up);
+  }
+  box.append(hd);
+
+  // ── 图片网格：卡片只有文件名一行（已上线，保持）──
+  const grid = el("div", "mgal");
+  files.forEach((f) => grid.append(mediaCard(f)));
+  box.append(grid);
+
+  $("#mediaEmpty").hidden = files.length > 0;
+  if (!files.length) $("#mediaEmpty").textContent = "这个文件夹还没有图片。";
 }
+
+/**
+ * 一张图片卡。只有文件名一行（Joe：「图片下面不要显示那么多文字」）。
+ * 🔴 但**孤儿那行红字不收进 hover** —— 它是唯一会引导破坏性操作（清理）的信号，
+ *    藏进 hover 等于让人在看不见它的情况下做决定。
+ */
+function mediaCard(f) {
+  const card = el("div", "micard");
+  if (f.orphan) card.classList.add("is-orphan");
+  const t = el("div", "thumb mthumb"); setThumb(t, rawUrl(f.rel), f.rel);
+  card.append(t);
+  card.append(el("div", "iname", f.rel.split("/").pop()));
+  const kb = `${(f.size / 1024).toFixed(0)}KB`;
+  if (f.referencedBy.length) {
+    card.title = `${f.rel}\n用于 ${f.referencedBy.join("、")}\n${kb}\n（点击打开引用它的产品）`;
+    card.style.cursor = "pointer";
+    // ⚠️ 点击跳到那个产品这条**能力**保留 —— 删的是那行字，不是这条路。
+    card.onclick = () => { showNav("products"); select(f.referencedBy[0]); };
+  } else if (f.orphan) {
+    card.title = `${f.rel}\n${kb}`;
+    card.append(el("div", "iuse is-warn", "未被引用"));
+  } else {
+    // 原图存档零引用但**不是**孤儿 —— 它是图片管线的源材料，⛔ 不复用「未被引用」那个词
+    card.title = `${f.rel}\n存档 · 不参与打包\n${kb}`;
+  }
+  return card;
+}
+
 
 /**
  * 新建文件夹 / 上传图片的内联面板（E 批）。同一时间只开一个；再点同一个按钮 = 关。
  * 🔴 上传**必须选文件夹**（服务端硬闸同款理由）：官网 glob 是根目录 eager `*.webp`，
  *    传根 = 未引用的素材也全部进构建产物。保留目录（_draft/originals）不在可选里。
  */
-function mediaPanel(kind) {
+function mediaPanel(kind, preselectFolder) {
   const p = $("#mediaPanel");
   if (p.dataset.kind === kind && !p.hidden) { p.hidden = true; p.dataset.kind = ""; return; }
   p.dataset.kind = kind; p.hidden = false; p.innerHTML = "";
@@ -2253,6 +2428,10 @@ function mediaPanel(kind) {
   const sel = el("select");
   sel.append(new Option("选择文件夹…", ""));
   folders.forEach((k) => sel.append(new Option(k + "/", k)));
+  // 「上传到这个文件夹」进来时预选当前文件夹。
+  // ⚠️ 预选而不是锁死：⛔ 服务端那道闸仍然是唯一真源（保留目录不许传、必须选文件夹），
+  //    这里只是省他一次选择，⛔ 不替代校验。
+  if (preselectFolder && folders.includes(preselectFolder)) sel.value = preselectFolder;
   const pick = el("label", "btn-secondary btn-mini");
   const fi = el("input"); fi.type = "file"; fi.accept = "image/*"; fi.multiple = true; fi.hidden = true;
   pick.append(fi, document.createTextNode("选图片…"));
@@ -3292,7 +3471,13 @@ function showNav(which) {
     //      挂一个履行不了的 ARIA 角色比不挂更糟。aria-current 没有这层义务。
     if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
-  if (which === "media" && !state.media) loadMedia();
+  // ⚠️ 从左栏进图片页 ⇒ 回到**文件夹网格**（⛔ 不要停在上次点进去的那个文件夹里：
+  //    人是从别的页面回来的，他要的是"看全部"，而不是接着上次那一个）。
+  //    ⛔ 不放进 loadMedia()：上传成功后也会调它，那时把人踢出当前文件夹是错的。
+  if (which === "media") {
+    state.mediaFolder = null; state.mediaQ = "";
+    if (state.media) renderMedia(); else loadMedia();
+  }
   if (which === "audit" && !state.audit) loadAudit();
   // ⚠️ 分类页的计数每次都要重算（列表可能刚被批量改过），但接口只在第一次拉。
   if (which === "cats") { if (state.cats) renderCats(); else loadCats(); }

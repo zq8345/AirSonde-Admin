@@ -731,6 +731,50 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    ⭐ 单列的连带好处：新建态与编辑态的宽度从"要记得同步"变成**结构上不可能不同**。
    ⚠️ 920 是**有意的上限**，右边留白不是没做完：输入框拉到 1000 宽，读一行要横跑过去。 */
 .edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 920px; }
+/* ══ 图片页：真正的文件夹（Joe 2026-09-04 两次指出「文件夹呢？」）══
+   🔴 上一版是「41 个小标题 + 230 张图一次全渲染」——那是分组不是文件夹，
+      他要找一张图仍然得滚过一屏又一屏。⇒ 默认看到的是文件夹，点进去才看图。
+   ⚠️ mockup 里用了 10px / 11px，**在字号闭集 {12,13,14,15,17,22} 之外** ⇒ 一律用 12px。
+      ⛔ 不为一张 mockup 破闭集：闭集一旦开口，下一处就没有理由拒绝。 */
+.fgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-16); }
+@media (max-width: 1100px) { .fgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.fcard {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; cursor: pointer; min-width: 0;
+}
+.fcard:hover { border-color: var(--border-accent); }
+.fcard:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+/* 2×2 四格预览：前 3 张真图 + 第 4 格「+N」 */
+.fth { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); aspect-ratio: 4 / 3; }
+.fth > i { background: var(--panel); display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--hint); font-style: normal; overflow: hidden; }
+.fth > i > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fth .fmore { font-weight: 600; }
+/* 还没有图的产品：⭐ 本单顺带解决的那件事 —— 以前埋在 230 张图里根本发现不了 */
+.fcard.is-empty { border-color: var(--border-caution); border-style: dashed; }
+.fcard.is-empty .fth { grid-template-columns: 1fr; background: none; }
+.fcard.is-empty .fname { color: var(--text-caution); }
+.fplus { font-size: 22px; color: var(--text-caution); }
+.fcard.is-sys { border-color: var(--border-strong); background: var(--panel); }
+.fmeta2 { padding: 9px 11px 11px; min-width: 0; }
+.fname { font-size: 13px; font-weight: 600; font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fsub { font-size: 12px; color: var(--hint); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fsub.is-warn { color: var(--text-caution); }
+.ftag { display: inline-block; font-size: 12px; padding: 0 6px; border-radius: 4px;
+  background: var(--bg-caution-soft); color: var(--text-caution); margin-left: 5px; font-weight: 400; }
+.fsect { font-size: 12px; color: var(--hint); font-weight: 600; margin: 26px 0 10px; }
+.fnote { font-size: 13px; color: var(--hint); margin: 14px 0 0; }
+.fnote .is-amber { color: var(--text-caution); }
+.msearch { width: 200px; }
+/* 文件夹内：面包屑 + 标题行 */
+.fcrumb { display: flex; align-items: center; gap: var(--space-8); font-size: 14px; margin-bottom: var(--space-16); }
+.fhead { display: flex; align-items: center; gap: 14px; margin-bottom: var(--space-16); }
+.fh2 { margin: 0; font-size: 17px; }
+.fhsub { font-size: 14px; color: var(--text-secondary); }
+.fsp { margin-left: auto; }
+
 /* ══ v3 新增（Joe 2026-09-04）══ */
 /* 顶部操作条里的上架状态两段切换。新建态锁死在「未上架」⇒ 整段变淡且不可点。 */
 .bar-seg { flex: 0 0 auto; }
@@ -1134,12 +1178,9 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 
 /* ══ 媒体库（crm-skin E 批 §7）══ */
 /* 红标：未被引用/草稿，>0 才渲染；点=筛，再点取消 */
-.mtag { background: var(--tint-red); color: var(--red); border: 0; border-radius: 10px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.mtag.on { outline: 2px solid var(--red); outline-offset: 1px; }
-.mgroup-h { display: flex; align-items: baseline; gap: 6px; margin: 18px 0 8px; }
-.mgroup-h:first-child { margin-top: 0; }
-.mgroup-t { font-size: 15px; font-weight: 600; }
-.cnt-g { font-size: 12px; color: var(--hint); }
+/* ⛔ 已整组删（2026-09-04 文件夹化）：.mtag（红标筛选按钮）· .mgroup-h/.mgroup-t/.cnt-g
+   （分组小标题）—— 它们服务的那段渲染已经不存在了。
+   ⚠️ 元素没了而规则留着，就是那条"空轨道"——本仓已经为它栽过一次（版面白窄一块）。 */
 .mgal { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 1100px) { .mgal { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .micard { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; font-size: 12px; }
