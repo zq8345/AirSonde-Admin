@@ -1259,6 +1259,49 @@ async function addImageFiles(files) {
 // ⛔ `repeatRow()`（卖点逐条输入框 + 每行字数三态）已整个撤掉（A17，Joe 2026-09-03）：
 //    卖点现在是一个大输入框（见 parseHighlights / paintHighlightsCount），
 //    ⛔ 不留一个零调用的函数 —— 下一个人会以为它还有用。
+/**
+ * 参数表的**固定 7 行**（Joe 2026-09-04：「把这几个信息放在参数表里面固定，
+ * 后台显示中文，官网显示英文；同时保留加一行功能」）。
+ *
+ * 🔴 这张表是**唯一真源**：键名只写在这里一处，HTML 里不抄第二份。
+ * 🔴 存的是**英文键**（官网 `Object.entries(specs)` 直接渲染，且同时进 JSON-LD
+ *    的 PropertyValue）；中文只是 Admin 的显示标签，⛔ 一个中文字都不进 JSON。
+ * ⚠️ 大小写跟官网现存键走**句首大写**（`Form factor` / `Net weight`）——
+ *    ⛔ 不引入第二种风格，同一张表里混两种会很明显。
+ * ✅ 7 个键名 Joe 2026-09-04 已确认（「按照你的建议来」），⛔ 不许再改一个字符。
+ */
+const SPEC_FIXED = [
+  ["Dimensions", "产品尺寸"],
+  ["Net weight", "产品净重"],
+  ["Carton size", "纸箱尺寸"],
+  ["Carton qty", "每箱数量"],
+  ["Carton gross weight", "纸箱毛重"],
+  ["Lead time", "交货时间"],
+  ["Certification", "认证"],
+];
+const SPEC_FIXED_KEYS = new Set(SPEC_FIXED.map(([k]) => k));
+
+/**
+ * 画固定 7 行。恒定显示、恒定顺序、恒定在自定义行之前；值可空。
+ * ⚠️ 值那一格带 `data-anchor="specs.<英文键>"` —— 与自定义行同一套锚点机制，
+ *    校验器报 `specs.Dimensions` 时提示才贴得到这一行旁边。
+ */
+function renderFixedSpecs(specs) {
+  const box = $("#f_specs_fixed"); box.innerHTML = "";
+  SPEC_FIXED.forEach(([key, label]) => {
+    const r = el("div", "kv-row");
+    // ⚠️ 标签是 <label> 纯文本不是 input：键名是契约的一部分，不该由这里改。
+    const lab = el("label", "k kv-lab", label);
+    const iv = el("input", "v"); iv.value = (specs && specs[key]) || "";
+    iv.placeholder = "留空 = 不写进官网";
+    iv.dataset.anchor = `specs.${key}`;
+    iv.dataset.fixedKey = key;
+    lab.htmlFor = iv.id = `f_spec_${key.replace(/[^A-Za-z0-9]+/g, "_")}`;
+    r.append(lab, iv);
+    box.append(r);
+  });
+}
+
 function kvRow(container, k, v) {
   const r = el("div", "kv-row");
   const ik = el("input", "k"); ik.value = k || ""; ik.placeholder = "键";
@@ -1293,7 +1336,15 @@ function fillForm(p) {
   // G 批 §6：值是**程序**填的 ⇒ 不会触发 input 事件，替身文本必须在这里同步一次，
   // 否则框的高度还停在上一个产品的卖点上。
   syncGrow($("#f_highlights"));
-  const s = $("#f_specs"); s.innerHTML = ""; Object.entries(p.specs || {}).forEach(([k, v]) => kvRow(s, k, v));
+  // 参数表：固定 7 行 + 自定义行。
+  // 🔴 一个键**只出现在一个地方**：固定键落固定行，其余原序进自定义区。
+  //    ⛔ 不许两边各画一份 —— 那样保存时同一个键有两个来源，谁赢取决于遍历顺序。
+  // ⚠️ 自定义行保持**仓里的原顺序**（键序 = 官网显示序），⛔ 不排序、不去重、不改写。
+  renderFixedSpecs(p.specs);
+  const s = $("#f_specs"); s.innerHTML = "";
+  Object.entries(p.specs || {})
+    .filter(([k]) => !SPEC_FIXED_KEYS.has(k))
+    .forEach(([k, v]) => kvRow(s, k, v));
   // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
   state.imgList = imgListFromDraft(p);
   renderImages();
@@ -1313,10 +1364,25 @@ function readForm() {
   const galleryFromDraft = state.draft?.images?.gallery || null;
   const specs = (() => {
     const o = {};
+    // ── 固定 7 行**在前**：键序就是官网显示序，也是 JSON-LD 的 PropertyValue 序 ──
+    // 🔴 **值为空 ⇒ 这个键不写进 JSON**（⛔ 不许 `"Dimensions": ""`）：
+    //    官网 `Object.entries(specs)` 会照渲染出一个空行，JSON-LD 会多一条空 PropertyValue。
+    //    ⚠️ 这条规则与下面自定义行的**相反**，是故意的 ——
+    //       固定行恒定显示，"空"是它的常态（26 个产品里大半个 specs 都是空的），
+    //       而自定义行是人**手动加出来**的，加了却不填值是个错误，该让校验器吼。
+    $("#f_specs_fixed").querySelectorAll(".kv-row .v").forEach((iv) => {
+      const v = iv.value.trim();
+      if (v) o[iv.dataset.fixedKey] = v;
+    });
+    // ── 自定义行在后，保持用户排列 ──
     $("#f_specs").querySelectorAll(".kv-row").forEach((r) => {
       const k = r.querySelector(".k").value.trim();
       const v = r.querySelector(".v").value.trim();
-      if (k) o[k] = v;   // ⚠️ 值为空也保留：让校验器去报错，别在界面上悄悄丢掉一行
+      if (!k) return;
+      // ⚠️ 键与某个**已填了值**的固定行撞了：JSON 对象容不下两个同名键，
+      //    以固定行为准（它是那个键的正规位置）。固定行为空时这里照常写入。
+      if (k in o) return;
+      o[k] = v;   // ⚠️ 值为空也保留：让校验器去报错，别在界面上悄悄丢掉一行
     });
     return Object.keys(o).length ? o : null;
   })();

@@ -353,6 +353,14 @@ input.bad, select.bad { border-color: var(--border-critical); background: var(--
 .kv { display: flex; flex-direction: column; gap: var(--space-6); }   /* ⚠️ .repeat / .repeat-row 已随卖点逐条输入框一起撤（A17） */
 .kv-row { display: flex; gap: var(--space-6); }
 .kv-row .k { flex: 0 0 32%; }
+/* 固定 7 行（Joe 2026-09-04）：与自定义行**同一张表**，所以行距、列宽、字号全部沿用 .kv-row。
+   ⚠️ 固定行没有「×」按钮 ⇒ 右边留出与那颗按钮等宽的空位，否则两段的值输入框右边缘会错开。
+      宽度取自 `.del-row` 的 30px + 行内 gap，⛔ 不是随手凑的数。 */
+.kv-fixed { margin-bottom: var(--space-6); }
+.kv-fixed .kv-row { padding-right: calc(30px + var(--space-6)); }
+/* 标签是纯文本不是 input：键名是契约的一部分，不该由这里改。
+   ⚠️ 用 flex 居中对齐，让它与右边输入框的文字基线对上（输入框有 8px 上下内边距）。 */
+.kv-lab { display: flex; align-items: center; font-size: 14px; color: var(--text-primary); }
 .del-row { flex: 0 0 auto; width: 30px; padding: 0; background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; font-size: 15px; line-height: 1; }
 .del-row:hover { color: var(--text-critical); border-color: var(--border-critical); }
 .add { margin-top: var(--space-6); padding: var(--space-4) var(--space-12); font: inherit; font-size: 13px; background: var(--bg-app); border: 1px dashed var(--border); border-radius: 6px; color: var(--text-secondary); cursor: pointer; }

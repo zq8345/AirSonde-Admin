@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=94">
+<link rel="stylesheet" href="/style.css?v=95">
 </head>
 <body>
 
@@ -416,9 +416,16 @@
           </div>
 
           <div class="field">
-            <label>参数表 <span class="h3sub">specs</span></label>
+            <label>参数表 <span class="h3sub">specs · 前 7 行固定，官网按这个顺序显示</span></label>
+            <!-- 固定 7 行（Joe 2026-09-04）：**存英文键、显示中文标签**。
+                 🔴 中文只是 Admin 的标签，⛔ 绝不写进 JSON —— 官网直接渲染这些键，
+                    而且 specs 同时进 JSON-LD 的 PropertyValue（airsonde-web/src/lib/jsonld.ts:80），
+                    ⇒ 英文键名是给 Google 看的结构化数据，不只是页面上的一行字。
+                 ⚠️ 标签是纯文本不是 input：键名是契约的一部分，不该由这里改。
+                 ⚠️ 行由 JS 建（SPEC_FIXED 是唯一真源），⛔ 别在这里再抄一份键名。 -->
+            <div class="kv kv-fixed" id="f_specs_fixed"></div>
             <div class="kv" id="f_specs"></div>
-            <button type="button" class="add" data-add="specs">+ 加一行</button>
+            <button type="button" class="add" data-add="specs">+ 添加参数</button>
           </div>
 
           <!-- A10-E：从红框独立卡降成这里的一行。
@@ -472,7 +479,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=94"></script>
+<script src="/app.js?v=95"></script>
 </body>
 </html>
 
