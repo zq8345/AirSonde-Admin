@@ -1630,6 +1630,37 @@ function renderPreview(r) {
       "**那句话在这种情形下是假的**。这通常说明接口结构变过了，请把这条提示告诉开发窗，别当成偶发。"));
   }
 
+  // ══ 悬空图片引用（审计③）══
+  // ⚠️ 官网对缺图是**静默跳过**：构建不报错、页面不坏、图就是没了 ⇒ 没人会发现。
+  //    ⇒ 这件事必须由界面主动说，⛔ 不能等人自己去比对文件。
+  // 🔴 `legacy`（本来就坏、这次没让它更坏）只报不拦 —— 那是 Joe 的内容资产，等他定。
+  //    `introduced` 这里也报一句，但真正的拦截在服务端；界面只是提前说，⛔ 不替它下结论。
+  const dg = r.dangling;
+  if (dg && dg.skipped) {
+    wrap.append(mkNotice("warn",
+      "⚠️ **这次没能检查图片引用是否都指得到文件** —— " + dg.skipped +
+      "。保存不受影响，但**这一项这次没有结论**，⛔ 别把它当成「检查通过」。"));
+  } else if (dg && (dg.introduced?.length || dg.legacy?.length)) {
+    const bad = [...(dg.introduced || []), ...(dg.legacy || [])];
+    const kind = dg.introduced?.length ? "bad" : "warn";
+    // ⚠️ 走 appendMd，⛔ 不要 el(…, text)：`.notice` 里的 `**粗体**` 是靠 appendMd 变成 <b> 的，
+    //    直接塞 textContent 会把星号**原样印在屏幕上**（实测就印出来了一次）。
+    // ⚠️ 指名道姓用**型号**，⛔ 不用 slug —— Joe 认的是 AK13A，不是 portable-breathalyser。
+    const who = state.draft?.model || state.loaded?.product?.model || state.slug;
+    const n = el("div", `notice notice-${kind}`);
+    appendMd(n.appendChild(el("div")), dg.introduced?.length
+      ? `🔴 这次保存会让 **${dg.introduced.length}** 条图片引用指向不存在的文件，服务端会拒绝写入：`
+      : `⚠️ **${who}** 有 ${bad.length} 条图片引用指不到文件（**本来就这样，不是这次改的**）：`);
+    const ul = el("ul", "dangling-list");
+    bad.forEach((p) => ul.append(el("li", null, p)));
+    n.append(ul);
+    appendMd(n.appendChild(el("div")), dg.introduced?.length
+      ? "请重新上传这些图，或把它们从图片列表里去掉。"
+      : "官网会静默跳过它们 —— 页面上那个位置就是空的。**这次保存不会被拦**（它没让情况变坏），"
+        + "但这条得由你来定：补图，还是把这条引用删掉。");
+    wrap.append(n);
+  }
+
   // ⚠️ 这里原来是「将要改动 <完整仓内路径> +38 −0 1234B」。
   //    Joe 2026-08-27：「也不要出现下面的代码」。⇒ 路径全文、diff 计数、字节数全部撤掉。
   //    ⛔ **确认这一步本身保留** —— 他指的是"代码"，不是"确认"（按最小范围理解那句话）。

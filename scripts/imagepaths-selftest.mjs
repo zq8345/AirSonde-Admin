@@ -9,7 +9,7 @@
 //    而且 git 历史会被"搬来搬去"淹没，真正的改动看不出来。
 import { pathToFileURL } from "url";
 const M = await import(SRC + "imagepaths.ts");
-const { planImages, planDelete, dirForStatus, repoPath, folderForModel } = M;
+const { planImages, planDelete, dirForStatus, repoPath, folderForModel, checkDanglingRefs } = M;
 
 let pass = 0, fail = 0; const out = [];
 const ck = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}`); } else { fail++; out.push(`🔴 ${n}\n     ${d}`); } };
@@ -250,6 +250,72 @@ let afterToDraft;
   ck("⑩ images.main 变成被提升的那张", p.images.main === "products/ak99/foo-3.webp", p.images.main);
   ck("⑩ 原主图落进 gallery[0]", (p.images.gallery || [])[0] === "products/ak99/foo.webp",
     JSON.stringify(p.images.gallery));
+}
+
+{
+  // ⑫ 悬空图片引用（审计③）。
+  //
+  // 🔴 这道闸判的是「**这次保存有没有让它变坏**」，⛔ 不是"引用是否都存在"。
+  //    差别不是措辞：官网仓里此刻就有一条历史遗留的悬空引用（AK13A 的 -3.webp）。
+  //    按"都存在"去判，那个产品会**当场变成保存不了** —— 一道防悬空的闸
+  //    会把自己变成一个锁死产品的 bug，而且是在 Joe 想改它的时候才发作。
+  // 🔴 所以下面**两向都测**：该拦的拦得住，不该拦的一条都不许拦。
+  //    ⛔ 只测"被拒"的话，一个恒拒的实现也全绿。
+  const E = new Set(["products/ak99/foo.webp", "products/ak99/foo-2.webp"]);
+
+  // ── 正对照：引用都指得到 ⇒ 两边都空 ──
+  {
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: ["products/ak99/foo-2.webp"] },
+      { main: "products/ak99/foo.webp", gallery: ["products/ak99/foo-2.webp"] }, E, [], []);
+    ck("⑫ 正对照：引用都在 ⇒ 零 introduced 零 legacy", r.introduced.length === 0 && r.legacy.length === 0, JSON.stringify(r));
+  }
+  // ── 新引入一条不存在的路径 ⇒ introduced ──
+  {
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: ["products/ak99/nope.webp"] },
+      { main: "products/ak99/foo.webp", gallery: [] }, E, [], []);
+    ck("⑫ 新引入的坏路径进 introduced", r.introduced.includes("products/ak99/nope.webp"), JSON.stringify(r));
+    ck("⑫ 且不进 legacy（它不是历史遗留）", r.legacy.length === 0, JSON.stringify(r));
+  }
+  // ── 🔴🔴 历史遗留：上一版就引用着、仓里本来就没有 ⇒ legacy，⛔ 不许拦 ──
+  {
+    const bad = "products/ak99/gone.webp";
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: [bad] },
+      { main: "products/ak99/foo.webp", gallery: [bad] }, E, [], []);
+    ck("⑫ 🔴 历史遗留的坏路径进 legacy", r.legacy.includes(bad), JSON.stringify(r));
+    ck("⑫ 🔴 关键：它**不进** introduced ⇒ 那个产品仍然存得下去", r.introduced.length === 0, JSON.stringify(r));
+  }
+  // ── 本次删掉一个文件、却还引用它 ⇒ introduced（这次让它变坏了）──
+  {
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: ["products/ak99/foo-2.webp"] },
+      { main: "products/ak99/foo.webp", gallery: ["products/ak99/foo-2.webp"] }, E, [], ["products/ak99/foo-2.webp"]);
+    ck("⑫ 🔴 删了文件却还引用它 ⇒ introduced（deleting 参与判定）",
+      r.introduced.includes("products/ak99/foo-2.webp"), JSON.stringify(r));
+  }
+  // ── 本次要新建的文件此刻还不在仓里 ⇒ ⛔ 绝不能误报 ──
+  {
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: ["products/ak99/foo-3.webp"] },
+      { main: "products/ak99/foo.webp", gallery: [] }, E, ["products/ak99/foo-3.webp"], []);
+    ck("⑫ 🔴 本次上传的新图不算悬空（creating 参与判定）", r.introduced.length === 0 && r.legacy.length === 0, JSON.stringify(r));
+  }
+  // ── 同一次里既删又建同一条路径（换图）⇒ 建赢，不算悬空 ──
+  {
+    const p = "products/ak99/foo.webp";
+    const r = checkDanglingRefs({ main: p, gallery: [] }, { main: p, gallery: [] }, E, [p], [p]);
+    ck("⑫ 🔴 同一路径先删后建（原地换图）⇒ 不算悬空", r.introduced.length === 0 && r.legacy.length === 0, JSON.stringify(r));
+  }
+  // ── 反向自证：判据不是"prev 里有过就永远放行" ──
+  {
+    const bad = "products/ak99/foo-2.webp";   // 它**在**仓里
+    const r = checkDanglingRefs({ main: "products/ak99/foo.webp", gallery: [bad] },
+      { main: "products/ak99/foo.webp", gallery: [bad] }, E, [], [bad]);
+    ck("⑫ 🔴 反向自证：prev 里有过、但这次把它删了 ⇒ 仍算 introduced",
+      r.introduced.includes(bad) && r.legacy.length === 0, JSON.stringify(r));
+  }
+  // ── null 主图 / 空 gallery 不炸，也不虚报 ──
+  {
+    const r = checkDanglingRefs({ gallery: [null, "products/ak99/foo.webp"] }, null, E, [], []);
+    ck("⑫ gallery 里的空洞被跳过，不当成坏路径", r.introduced.length === 0 && r.legacy.length === 0, JSON.stringify(r));
+  }
 }
 
 console.log(out.join("\n"));

@@ -14,7 +14,7 @@ import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFie
 import { crossReference, PRODUCT_IMG_PREFIX } from "./media";
 import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
-import { planImages, planDelete, repoPath, type Upload } from "./imagepaths";
+import { planImages, planDelete, repoPath, checkDanglingRefs, type Upload } from "./imagepaths";
 import {
   validateProduct, mergeProduct, checkSlugMatchesPath, serializeProduct, actionableWarnCount, INFO_CODES,
   STATUSES, META_DESCRIPTION_MAX, modelKey, type Axes,
@@ -856,6 +856,9 @@ app.post("/api/products/:slug/preview", async (c) => {
     const slugIssue = checkSlugMatchesPath((merged as any).slug ?? "", `${slug}.json`);
     if (slugIssue) validation.errors.push(slugIssue);
 
+    // 审计③：预览就要把悬空引用说出来。**保存必经预览** ⇒ 说在这里等于说在界面上。
+    const dangling = await danglingCheck(c.env, slug, plan as any, (existing as any)?.images ?? null);
+
     const newText = serializeProduct(merged);
     const oldText = f.text ?? "";
     const diff = summarizeDiff(oldText, newText);
@@ -887,6 +890,10 @@ app.post("/api/products/:slug/preview", async (c) => {
       diff: diff.lines,
       // 图片会被怎么处理，预览里就要说清楚 —— 这是这次改动的一部分，不是"顺带发生的事"
       imageOps: plan.ops.map((o) => ({ op: o.op, path: o.path, fromPath: o.fromPath, why: o.why })),
+      // 🔴 两类分开报，⛔ 不许合成一个数：
+      //    introduced = **这次保存新引入/仍保留的坏路径** ⇒ 保存会被拒；
+      //    legacy     = **本来就坏、这次没让它更坏** ⇒ 照放，但必须让人看见（Joe 的内容资产，等他定）。
+      dangling,
       wouldWrite: { bytes: new TextEncoder().encode(newText).length, text: newText },
     });
   } catch (e) {
@@ -965,6 +972,40 @@ function missingLock(what: string) {
       + `\n\n✅ **数据没丢**：${what}在仓里还是原来的样子，这次一个字都没写进去；`
       + `你刚才在屏幕上填的内容也还在（刷新前可以先复制走）。`,
   };
+}
+
+/**
+ * 悬空引用检查的**取材**部分（审计③）。判定本身是纯函数 `checkDanglingRefs`，
+ * 这里只负责去仓里拿"现有资产清单"，⛔ 不在这里重写判定。
+ *
+ * ⚠️ 树被截断时"找不到"与"不存在"**同形** ⇒ ⛔ 不在半份清单上下结论（media 那边同一条规矩）。
+ * ⚠️ 查不了就**说查不了**（返回 skipped）：⛔ 不静默放行，⛔ 也不因此拒绝一次本来合法的保存。
+ */
+async function danglingCheck(
+  env: Env, slug: string,
+  plan: { images: { main?: string; gallery?: (string | null)[] }; ops: { op: string; path: string }[] },
+  prevImages: { main?: string; gallery?: string[] } | null,
+): Promise<{ introduced: string[]; legacy: string[] } | { skipped: string }> {
+  try {
+    const rr = await ghFetch(env, `/repos/${env.GITHUB_REPO}/git/trees/${env.GITHUB_BRANCH}?recursive=1`);
+    if (!rr.ok) throw new Error(`读 tree 失败 ${rr.status}`);
+    const tj = (await rr.json()) as any;
+    if (tj.truncated) return { skipped: "仓内文件数超出一次 tree 查询上限（truncated），本次跳过悬空引用检查" };
+    const A = "src/assets/";
+    const existingAssets = new Set<string>(
+      (tj.tree || []).filter((t: any) => t.type === "blob" && String(t.path).startsWith(A))
+        .map((t: any) => String(t.path).slice(A.length)),
+    );
+    // ⚠️ ops.path 是**仓内路径**（带 src/assets/ 前缀），而 images 里的引用是相对路径
+    //    ⇒ 必须换算，⛔ 不能直接比（直接比会全部对不上，而那看起来像"全是悬空"）。
+    const rel = (p: string) => (p.startsWith(A) ? p.slice(A.length) : p);
+    const creating = plan.ops.filter((o) => o.op === "upsert" || o.op === "copy").map((o) => rel(o.path));
+    const deleting = plan.ops.filter((o) => o.op === "delete").map((o) => rel(o.path));
+    return checkDanglingRefs(plan.images, prevImages, existingAssets, creating, deleting);
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "dangling_check_failed", slug, msg: String(e).slice(0, 200) }));
+    return { skipped: `悬空引用检查没能跑起来：${String(e).slice(0, 140)}` };
+  }
 }
 
 function staleConflict(expected: string | null | undefined, actual: string | null | undefined, what: string) {
@@ -1053,6 +1094,25 @@ app.put("/api/products/:slug", async (c) => {
       env0.removeGallery || [],
     );
     (merged as any).images = plan.images;
+
+    // ══ 悬空引用的**写入闸**（审计③）══
+    // 🔴 判定的是「**这次保存有没有让它变坏**」，⛔ 不是"引用是否都存在" ——
+    //    后者会把 AK13A（它此刻就带着一条坏路径）**当场锁死**，
+    //    从"防悬空"变成"锁死一个产品"。历史遗留照放，但下面会**说出来**。
+    const dangling = await danglingCheck(c.env, slug, plan as any, (existing as any)?.images ?? null);
+    if ("introduced" in dangling && dangling.introduced.length) {
+      console.error(JSON.stringify({ evt: "write_rejected_dangling", slug, paths: dangling.introduced }));
+      return c.json({
+        wrote: false,
+        error: "图片引用指向不存在的文件",
+        // ⚠️ 写成**一段**：`.notice` 没有 pre-wrap，`\n` 会被折叠成空格 ——
+        //    指望换行排版在这里是落空的（app.js 里同一条坑已经吃过一次）。
+        detail: `这次保存会让 ${dangling.introduced.length} 条图片引用指向不存在的文件`
+          + `（${dangling.introduced.join("、")}）。`
+          + "官网对缺图是**静默跳过**的 —— 构建不报错、页面也不坏，只是那几张图从此不见了，没人会发现。"
+          + "⇒ 已拒绝写入，**没有产生任何 commit**。请重新上传这些图，或把它们从图片列表里去掉。",
+      }, 422);
+    }
 
     const axes = await loadAxes(c.env);
     const validation = validateProduct(merged, axes);

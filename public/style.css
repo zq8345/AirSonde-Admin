@@ -631,6 +631,10 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .notice-ok { background: var(--bg-success-soft); color: var(--text-success); }
 .notice-warn { background: var(--bg-caution-soft); color: var(--text-caution); }
 .notice-bad { background: var(--bg-critical-soft); color: var(--text-critical); }
+/* 悬空图片引用清单（审计③）：路径必须**逐条独立成行**才看得清是哪一张，
+   ⛔ 不能挤成一句 —— `.notice` 没有 pre-wrap，靠 \n 排不出行。 */
+.dangling-list { margin: var(--space-4) 0 var(--space-4) 0; padding-left: 18px; }
+.dangling-list li { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; word-break: break-all; }
 
 /* ═══ 设置页：只读口径卡片 ═══
    两栏（宽屏）：每张卡是一个独立的问题（能不能写 / 谁能进 / 落到哪 / 哪一版 / 契约），

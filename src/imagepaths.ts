@@ -80,6 +80,54 @@ export function dirForExisting(status: string, currentPath: string, toDir: strin
 /** JSON 里的相对路径 → 仓内真实路径。 */
 export const repoPath = (jsonPath: string): string => ASSETS_ROOT + jsonPath;
 
+/**
+ * 悬空引用的**写入闸**（审计③）。纯函数 ⇒ 它自己能被测，⛔ 不把判定埋进端点。
+ *
+ * 🔴 起因：`45af967` 一次提交里删掉了 `ak13a/portable-breathalyser-3.webp`，
+ *    却把它留在 gallery 里 ⇒ 当前 origin/main 上有 1 处悬空引用（实测，47 个产品里 1 处）。
+ *    官网模板**有意跳过缺图** ⇒ 构建不红、页面不坏，**图库静默少一张，界面零提示**。
+ *
+ * 🔴 判定的关键不是"引用是否都存在"，是「**这次保存有没有让它变坏**」：
+ *    一个只看"是否都存在"的闸，会当场**锁死 AK13A** —— 它现在就带着一条坏路径，
+ *    Joe 下次编辑它会被我们自己的闸挡住。那就从"防悬空"变成了"锁死一个产品"。
+ *    ⇒ 只拦**这次新引入的**坏路径；**历史遗留**的照放，但**必须说出来**。
+ *
+ * @param nextImages 本次要写进 JSON 的最终 images（planImages 的产物）
+ * @param prevImages 保存前 JSON 里的 images（新建时 null）
+ * @param existing   仓里**现有**的资产路径集合（相对 src/assets/，如 `products/ak35/x.webp`）
+ * @param creating   本次提交会**新建**的资产路径（upsert / copy 的目标）
+ * @param deleting   本次提交会**删除**的资产路径
+ */
+export function checkDanglingRefs(
+  nextImages: { main?: string; gallery?: (string | null)[] } | null,
+  prevImages: { main?: string; gallery?: string[] } | null,
+  existing: ReadonlySet<string>,
+  creating: readonly string[],
+  deleting: readonly string[],
+): { introduced: string[]; legacy: string[] } {
+  const after = new Set(existing);
+  creating.forEach((p) => after.add(p));
+  deleting.forEach((p) => after.delete(p));
+  // ⚠️ 先删后加会算错顺序 ⇒ 这里**先加后删**是错的方向；planImages 里同一路径
+  //    既 upsert 又 delete 不会发生（那是"替换自己"），但真发生时应当**以创建为准**。
+  creating.forEach((p) => after.add(p));
+
+  const prevRefs = new Set(
+    [prevImages?.main, ...(prevImages?.gallery ?? [])].filter((x): x is string => !!x),
+  );
+  const nextRefs = [nextImages?.main, ...(nextImages?.gallery ?? [])].filter((x): x is string => !!x);
+
+  const introduced: string[] = [];
+  const legacy: string[] = [];
+  for (const r of nextRefs) {
+    if (after.has(r)) continue;                 // 提交后它在 ⇒ 没问题
+    // 🔴 分档：保存前就引用着它、且它当时也不在 ⇒ **历史遗留**，⛔ 不拦（但要报）
+    if (prevRefs.has(r) && !existing.has(r)) legacy.push(r);
+    else introduced.push(r);                    // 这次新引入的（或这次把它删了却还引用着）
+  }
+  return { introduced, legacy };
+}
+
 /** 取文件名（含扩展名）。 */
 const basename = (p: string): string => p.split("/").pop() || p;
 
