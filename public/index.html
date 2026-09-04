@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=95">
+<link rel="stylesheet" href="/style.css?v=97">
 </head>
 <body>
 
@@ -292,12 +292,22 @@
       <div class="detail-bar">
         <button type="button" class="btn-secondary btn-mini" id="backBtn">← 返回列表</button>
         <h2 id="dTitle">—</h2>
+        <!-- v3（Joe 2026-09-04）：上架状态两段切换从侧栏搬到这里；⛔「看官网页 ↗」已删。
+             🔴 f_status 那个隐藏 <select> **跟着一起搬过来**，它仍是值的唯一容器：
+                loadContract 填选项 / fillForm 设值 / readForm 读值 / change 监听全部机制不动，
+                两段切换只是它的 UI。⛔ 不造第二个状态真源。 -->
+        <select id="f_status" name="status" form="editPane" hidden></select>
+        <div id="statusSeg" class="bar-seg"></div>
         <div class="detail-actions">
-          <a class="lnk" id="dSiteLink" target="_blank" rel="noopener" hidden>看官网页 ↗</a>
+          <!-- ⭐ 禁用的保存按钮必须说得出为什么禁用（v3 §3.4）——「保存前还缺」那张卡删了之后，
+               这行红字就是它唯一的替代。⛔ 不写"请填写必填项"，要写出**具体缺的项**。 -->
+          <span class="whymiss" id="whyMiss" hidden></span>
           <!-- ⚠️ form="editPane"：这两个按钮在 <form> **外面**，靠 form 属性归属于它。
-               不写的话「保存」提交不了表单 —— 而症状是"点了没反应"。 -->
-          <button type="submit" form="editPane" class="primary" id="previewBtn" hidden>保存</button>
+               不写的话「保存」提交不了表单 —— 而症状是"点了没反应"。
+               ⚠️ 「删除…」在「保存」**左边**（Joe 定）：一个常用一个不可逆，
+                  视觉权重必须拉开 —— 删除保持描边红字，⛔ 不做成红实心。 -->
           <button type="button" id="deleteBtn" class="danger" hidden>删除…</button>
+          <button type="submit" form="editPane" class="primary" id="previewBtn" hidden>保存</button>
         </div>
       </div>
 
@@ -321,8 +331,18 @@
              ⇒ 选填项全部收进 <details>：新建时收起（默认），编辑时由 JS 打开。
                 **编辑态不做任何简化**：人是冲着某个具体字段来的，全展开才对。
              ⚠️ 用原生 <details> 而不是自己写展开逻辑：零 JS 也能开合，键盘天然可达。 -->
+        <!-- ══ v3：侧栏取消 ⇒ **单列**（Joe 2026-09-04）══
+             「记录」「保存前还缺」都删了 ⇒ `.edit-col-side` 里没有内容剩下
+             （上架状态已搬进 .detail-bar）⇒ 整个删掉，.edit-grid 变单列。
+             ⭐ 这条顺带解决了新建/编辑两种宽度的老毛病：从"要记得同步"变成**结构上不可能不同**。
+             ⚠️ 内容列封顶 920 且左对齐，右侧留白是**有意的** —— ⛔ 不要拉满，
+                输入框拉到 1000 宽，眼睛读一行要横跑过去。 -->
         <div class="edit-grid">
         <div class="edit-col-main">
+
+        <!-- v3 §3.5（总工提，Joe 未反对 —— ⚠️ 全单唯一一条不是 Joe 提出的功能）：
+             改过字段后离开会**静默丢失**，现在没有任何防护。⛔ 不用原生 confirm（零弹窗规矩）。 -->
+        <div class="dirtybar" id="dirtyBar" hidden>⚠️ 有未保存的修改 —— 现在离开这一页会丢掉。</div>
 
         <!-- ══ 图片：主列**第一个**模块（A10-R1，Joe 当面定）══
              一个列表，**第一张就是主图**（挂「封面」角标）。不再有"选择主图 / 更多图片"两段分立形态。
@@ -333,7 +353,11 @@
                 删图无确认、**每张图的 alt 输入框**（AirSonde 的 alt 从 name 派生，契约里没有
                 放 alt 的位置 —— 做了就是第二个 moq，而这一单正在删掉第一个）。 -->
         <section class="card">
-          <h3>产品图片 <span class="h3sub">第一张即封面 · 拖动换序 · 自动转 WebP · 单张 ≤2MB</span></h3>
+          <!-- v3 §3.3：那行小字进 (?)。⭐ (?) 里装的是**被删掉的那些信息本身**，
+               ⛔ 不是换一句客套话 —— 删了正文又不进 (?)，信息就真的没了。
+               ⚠️ 「第一张即封面」「拖动换序」看图就知道（有角标、能拖），
+                  「自动转 WebP」「≤2MB」只在撞上时才需要 ⇒ 全部收进 (?)。 -->
+          <h3>产品图片 <span class="q2" title="第一张就是封面（主图），拖动缩略图可以换顺序。上传时自动转成 WebP；单张超过 2MB 会被压缩，压得太狠时缩略图下面会标出来。">?</span><span class="cnt" id="imgCount"></span></h3>
           <!-- A12-5：添加入口是**网格里的最后一格**，尺寸与缩略图一致，就一个「+」。
                原来那个整宽大虚线框占了半屏，而它承担的信息量只有"点这里加图"。
                ⚠️ 投放区是**整个网格**（含这一格），不只这一格 —— 见 app.js 的 drop 绑定。
@@ -344,7 +368,11 @@
               <span class="iadd-plus">＋</span>
             </label>
           </div>
-          <!-- ⛔ 底部那行 .imglimits 常驻说明已撤（D 批 §4）：全部信息进了卡副标（h3sub），⛔ 不说两遍。 -->
+          <!-- ⛔ 底部那行 .imglimits 常驻说明已撤（D 批 §4）：全部信息进了卡副标，⛔ 不说两遍。
+               🔴 但 #mainImgNote **跟着状态卡一起搬到这里来了，⛔ 没有随卡删掉** ——
+                  它装的是一条**真警告**：改上架状态时「保存会把图片搬到另一个目录」。
+                  那不是装饰，删了就没有任何地方会告诉他这件事。 -->
+          <p class="hint" id="mainImgNote" hidden></p>
         </section>
 
         <section class="card">
@@ -357,117 +385,104 @@
         </div>
 
         <div class="row2">
-          <div class="field">
-            <label for="f_model">型号 <b class="req">必填</b><span class="h3sub"> model</span></label>
+          <div class="field" id="fld_model">
+            <!-- v3 §3.3：`model` / `category` 那两个字段名小字已删（⛔ 它们是字段名不是给人看的信息）。 -->
+            <label for="f_model">型号 <b class="req">必填</b></label>
             <!-- ⛔ 不自动派生（Joe 当面定：「型号 model 我们自己填写就可以了」）。
                  不预填、不建议、不猜 —— 编一个型号比留空更坏，因为它看起来像是真的。 -->
             <input id="f_model" name="model" placeholder="AK101" spellcheck="false">
           </div>
-          <div class="field">
-            <label for="f_category">机型 <b class="req">必填</b><span class="h3sub"> category</span></label>
+          <div class="field" id="fld_category">
+            <label for="f_category">机型 <b class="req">必填</b></label>
             <select id="f_category" name="category"></select>
+            <p class="badmsg" hidden>还没选机型</p>
           </div>
+        </div>
+
+        <!-- ══ 传感器：v3 从独立卡降为卡内一个 field（Joe 定的填写顺序第 4 项）══
+             ⚠️ 标签行右端的「已选 N / M」是 Joe 要核的东西：标题里写 16-in-1 / 10-in-1，
+                这里能一眼对上。⛔ M 取 taxonomy 的真实长度，不写死。
+             ⛔ 不重排 chip 顺序 —— 顺序是 taxonomy 的数据，不是排版偏好。 -->
+        <div class="field" id="fld_sensors">
+          <label class="flab">传感器 <b class="req">必填</b><span class="q2" title="至少选一个。点一下切换选中；顺序按分类里定的来，这里不排序。">?</span><span class="cnt" id="sensorCount"></span></label>
+          <div class="chips" id="f_sensors"></div>
+          <p class="badmsg" hidden>至少选一个传感器</p>
+        </div>
+
+        <!-- ══ 参数表：v3 同样降为卡内一个 field ══
+             🔴 只搬 markup，⛔ 固定 7 行的逻辑（821ffee）一行不改：
+                空值不写键 / 固定键在前 / 自定义键原样保留。
+             🔴 英文键（Dimensions 等）**必须保留显示** —— 它不是字段名，
+                它是**真正印在官网上给客户看的那个词**（specs 的键直接渲染，且进 JSON-LD）。 -->
+        <div class="field">
+          <label class="flab">参数表 <span class="q2" title="前 7 行是固定项，留空就不会写进官网。下面可以自己加行；键会原样印在官网的参数表上，所以用英文。">?</span></label>
+          <div class="kv kv-fixed" id="f_specs_fixed"></div>
+          <div class="kvdiv" id="specsDivider" hidden>自定义参数</div>
+          <div class="kv" id="f_specs"></div>
+          <button type="button" class="add" data-add="specs">+ 添加参数</button>
         </div>
 
         <!-- slug 在界面上叫「网址」（Joe：「slug 是啥，我不太明白」，D 批 §4）：
              灰前缀 airsonde.com/products/ + slug；新建自动生成可改，编辑态只读（改 slug = 改文件名，本阶段不支持）。
              ⚠️ 自动值**必须看得见且可改**，不许藏起来：藏起来的话，人是在提交之后才第一次看到这个网址。 -->
         <div class="field">
-          <label class="flab" for="f_slug">网址 <span class="fmeta">slug · 上线后锁定</span><span class="q2" title="由产品标题自动生成，新建时可改；上线后锁定——改了等于换网址，搜索引擎和已发出去的链接都会失效。">?</span></label>
+          <!-- v3 §3.3：`slug · 上线后锁定` 那行小字进 (?)（(?) 里已经写着"上线后锁定"了）。 -->
+          <label class="flab" for="f_slug">网址 <span class="q2" title="由产品标题自动生成，新建时可以改；上线后锁定——改了等于换网址，搜索引擎和已经发出去的链接都会失效。">?</span></label>
           <div class="urlwrap"><span class="urlpre">airsonde.com/products/</span><input id="f_slug" name="slug" spellcheck="false"></div>
+          <p class="hint" id="slugHint" hidden>由标题自动生成，现在可以改；上线后锁定。</p>
+        </div>
+
+        <!-- A16 Meta description（总工派单 2026-09-03，Joe 确认「安排」）。v3 搬到网址下面（Joe 定）。
+             官网产品页 <meta name="description"> 与 og:description 都用它；留空 ⇒ 官网沿用自动拼接。
+             🔴 硬限 160、超出计数变红且**保存按钮禁用** —— 这套逻辑**必须跟着搬过来**，
+                ⛔ 别在删「更多」卡的时候一起丢了（服务端契约同样硬拒，界面只是先告诉你）。
+             ⚠️ 空值保存 = 字段不写（readForm 送 null ⇒ 服务端删键），⛔ 不是写空串。 -->
+        <div class="field">
+          <label for="f_metadesc">Meta description <span class="q2" title="搜索结果里显示的那句话。留空的话官网会用自动拼接的描述。最多 160 个字符，超了保存会被禁用。">?</span></label>
+          <textarea id="f_metadesc" name="metaDescription" rows="2" spellcheck="true" data-anchor="metaDescription"></textarea>
+          <div class="shint" id="f_metadesc_cnt"></div>
         </div>
 
         </section>
 
+        <!-- ══ 卖点：v3 第三张卡（⛔ 它之后没有别的卡了）══ -->
         <section class="card">
-          <h3>传感器 <span class="h3sub">至少选一个 · 点选</span></h3>
-          <div class="chips" id="f_sensors"></div>
-        </section>
-
-        <!-- ══ 更多（选填）══ 新建时收起，编辑时展开 -->
-        <details class="card more" id="moreFields">
-          <summary>更多（选填）<span class="h3sub">Meta description · 卖点 · 参数表 · 内部字段</span></summary>
-
-          <!-- A16 Meta description（总工派单 2026-09-03，Joe 确认「安排」）。
-               官网产品页 <meta name="description"> 与 og:description 都用它；留空 ⇒ 官网沿用自动拼接。
-               ⚠️ 硬限 160：超出计数变红且**保存按钮禁用**（服务端契约同样硬拒，界面只是先告诉你）。
-               ⚠️ 空值保存 = 字段不写（readForm 送 null ⇒ 服务端删键），⛔ 不是写空串。 -->
-          <div class="field">
-            <label for="f_metadesc">Meta description <span class="h3sub">metaDescription · 搜索结果里那句话</span></label>
-            <textarea id="f_metadesc" name="metaDescription" rows="2" spellcheck="true" data-anchor="metaDescription"></textarea>
-            <div class="shint" id="f_metadesc_cnt"></div>
-          </div>
+          <h3>卖点 <span class="q2" title="一行一条。可以从阿里/电商后台整段复制粘贴进来，保存时按换行拆开，行首的项目符号和序号会自动去掉。">?</span><span class="cnt" id="hlCount"></span></h3>
 
           <!-- A17 卖点改成一个大输入框（Joe 2026-09-03）：「留个大输入框，我们一次性复制粘贴进去；
                卖点基本是 AI 写的或从电商平台复制的，现在要复制 6 次」。
                一行一条。保存时按换行拆回 highlights: string[]（契约不变，官网不用动）；
                每行 trim、去行首项目符号/序号、去不可见字符（零宽/BOM/U+FFFC/私用区），空行丢弃。
                ⚠️ 原来的逐条输入框 + 「N 个字符，契约说的是短句」黄字已撤，只留一行灰字「共 N 条」。 -->
-          <div class="field">
-            <label for="f_highlights">卖点 <span class="h3sub">highlights · 一行一条，可整段粘贴</span></label>
-            <!-- G 批 §6：8 行内滚 → 自动长高。Joe 的用法是**整段粘贴**，
-                 ⚠️ 内滚框会把"我到底粘进去了几条"藏在视口外面 —— 那正是他要看的那件事。
-                 rows=4 = 地板；再高由**布局**顶开（`.grow-wrap` 的替身 ::after，见 style.css），
-                 ⛔ 不由 JS 量 —— 量就要挑时刻和挑宽度，而那三个坑全踩过了（syncGrow 的注释里有实测数）。 -->
-            <div class="grow-wrap">
-              <textarea id="f_highlights" name="highlights" rows="4" spellcheck="true" data-anchor="highlights" data-autogrow></textarea>
-            </div>
-            <div class="shint" id="f_highlights_cnt"></div>
+          <!-- G 批 §6：8 行内滚 → 自动长高。Joe 的用法是**整段粘贴**，
+               ⚠️ 内滚框会把"我到底粘进去了几条"藏在视口外面 —— 那正是他要看的那件事。
+               rows=4 = 地板；再高由**布局**顶开（`.grow-wrap` 的替身 ::after，见 style.css），
+               ⛔ 不由 JS 量 —— 量就要挑时刻和挑宽度，而那三个坑全踩过了（syncGrow 的注释里有实测数）。 -->
+          <div class="grow-wrap">
+            <textarea id="f_highlights" name="highlights" rows="4" spellcheck="true" data-anchor="highlights" data-autogrow placeholder="从阿里 / 电商后台整段复制粘贴进来即可，一行一条。"></textarea>
           </div>
+        </section>
 
-          <div class="field">
-            <label>参数表 <span class="h3sub">specs · 前 7 行固定，官网按这个顺序显示</span></label>
-            <!-- 固定 7 行（Joe 2026-09-04）：**存英文键、显示中文标签**。
-                 🔴 中文只是 Admin 的标签，⛔ 绝不写进 JSON —— 官网直接渲染这些键，
-                    而且 specs 同时进 JSON-LD 的 PropertyValue（airsonde-web/src/lib/jsonld.ts:80），
-                    ⇒ 英文键名是给 Google 看的结构化数据，不只是页面上的一行字。
-                 ⚠️ 标签是纯文本不是 input：键名是契约的一部分，不该由这里改。
-                 ⚠️ 行由 JS 建（SPEC_FIXED 是唯一真源），⛔ 别在这里再抄一份键名。 -->
-            <div class="kv kv-fixed" id="f_specs_fixed"></div>
-            <div class="kv" id="f_specs"></div>
-            <button type="button" class="add" data-add="specs">+ 添加参数</button>
-          </div>
-
-          <!-- A10-E：从红框独立卡降成这里的一行。
-               🔴 红色留给**真正会阻断**的东西 —— 一个选填的内部字段顶着红框排在主列，
-                  是在稀释红色的意义，久了人就不把红当回事了。
-               ⭐ 但说明文字保留（另一条常驻）：它是红线，且校验器只在**粘错地方**时才吼，
-                  "只能放这里"这件事本身没有任何闸会主动告诉你。 -->
-          <div class="field">
-            <label for="f_supplier">supplierRef <b class="internal">内部字段</b></label>
-            <input id="f_supplier" name="supplierRef" spellcheck="false">
-            <p class="hint">🔴 绝不上站。供应商链接<b>只能</b>放这里——粘进 specs / highlights 会被直接拒绝。</p>
-          </div>
-        </details>
+        <!-- 🔴 supplierRef 的输入框与那段红字已删（Joe 2026-09-04：「supplierRef 内部字段干掉」）。
+             ⚠️ 他说的是**输入框**，⛔ 没说数据 —— 实测 36 个产品里 20 个此刻存着值，
+                AK35 那条是阿里巴巴链接、别处无备份。
+             ⇒ readForm **完全不提这个键**（与 moq 同一种处理），服务端因此保持原值不动。
+                ⛔ 绝不能送 null：那是「显式清空」，会让他每保存一个产品就静默抹掉一条链接。
+             ⚠️ 契约里「供应商链接粘进 specs / highlights 会被拒」那道校验**一个字没动**。 -->
 
         </div><!-- /edit-col-main -->
-
-        <!-- ══ 侧栏 340（D 批 §4）：上架状态（两段切换，改的是表单值，保存才写）+ 记录 ══ -->
-        <div class="edit-col-side">
-          <!-- 上架状态：**新建时整块不出现**（JS 控制，沿用原 statusCard 的 hidden），固定写 draft。
-               🔴 f_status 仍是那个 <select>（隐藏）——它是**值的唯一容器**：loadContract 填选项、
-               fillForm 设值、readForm 读值、change 监听（图片搬目录提示）全部机制不动；
-               两段切换只是它的 UI，点击 = 设 select 值 + dispatch change。⛔ 不造第二个状态真源。 -->
-          <section class="card" id="statusCard">
-            <h3>上架状态</h3>
-            <select id="f_status" name="status" hidden></select>
-            <div id="statusSeg"></div>
-            <div class="krow"><span class="k">官网</span><span class="v" id="dSitePath">—</span></div>
-            <p class="hint" id="mainImgNote" hidden></p>
-          </section>
-          <!-- 记录：数据来自 /api/audit?slug=<slug>（口径写在 (?) 里）。懒加载，不阻塞编辑。 -->
-          <section class="card" id="recordCard" hidden>
-            <h3>记录 <span class="q2" title="按这个产品的数据文件（JSON）的 commit 算：后台的每次保存（含图片操作）都会碰它，所以都在；别处只动图片不动 JSON 的改动不在这份里。">?</span></h3>
-            <div id="recordBody"><span class="hint0">读取中…</span></div>
-          </section>
-        </div><!-- /edit-col-side -->
         </div><!-- /edit-grid -->
 
         <!-- ⚠️ images.main 的路径仍然由**服务端**（planImages）算。这里留一个隐藏字段
              只为了把当前值带回去，不给人手填 —— 手填等于让人去维护一条服务端已经在维护的规则。
              ⚠️ 隐藏而不是删掉：readForm 仍然读它，删了会让 images.main 变成空。 -->
         <input type="hidden" id="f_imgmain" name="images.main">
-        <!-- ⚠️ mainImgNote 已随状态卡搬去侧栏（D 批）。 -->
+        <!-- ⛔ v3 已删（Joe 2026-09-04）：
+             · #recordCard「记录」整块 —— ⚠️ 连带后果：编辑页不再有「谁在什么时候改了什么」的入口。
+               总工建议审计日志页支持按产品筛选，但 **Joe 尚未点头 ⇒ 本单不做**，
+               ⛔ 也不许偷偷把记录卡留着假装没删。
+             · #dSitePath「官网 路径」—— 与「网址」字段是同一个事实，⛔ 不占两个显示位。
+             · #dSiteLink「看官网页 ↗」—— Joe 点名删。 -->
 
         <div class="actions">
           <span class="actions-note" id="actionsNote"></span>
@@ -479,7 +494,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=95"></script>
+<script src="/app.js?v=97"></script>
 </body>
 </html>
 

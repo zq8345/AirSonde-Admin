@@ -463,7 +463,9 @@ button:disabled, [disabled] {
 /* 页头：标题 17/700 + 12 灰副标 + 右侧动作（附录 C.1 页标题 17；一屏至多一个品牌绿实心主按钮） */
 .page-head { display: flex; align-items: center; gap: var(--space-12); margin-bottom: 14px; }
 .page-head h1 { margin: 0; font-size: 17px; font-weight: 700; }
-.page-head .page-sub { font-size: 12px; color: var(--muted); }
+/* v3 §3.6：这一格从"灰字副标"变成**装两段切换的位置** ⇒ 不再压字号/颜色，
+   否则里面的段位控件会被继承成一个看不清的小灰块。 */
+.page-head .page-sub { display: flex; align-items: center; }
 .page-head .page-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .page-head > .primary { margin-left: auto; }
 
@@ -722,10 +724,46 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    ⚠️ 这是 `.topbar` 那条死规则的同一个形状：规则活得比它服务的那段 HTML 久，
       而症状（版面变窄）完全不像是 CSS 里多了一条轨道。
    ⇒ 单栏。⛔ 不贴边：给一个上限，宽屏上不至于把一行输入框拉到两千像素。 */
-/* D 批 §4：主栏 1fr + 侧栏 340（窄屏塌一列，侧栏跟到主栏后面） */
-.edit-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--space-16); align-items: start; max-width: 1400px; }
-@media (max-width: 1080px) { .edit-grid { grid-template-columns: minmax(0, 1fr); } }
-.edit-col-side { min-width: 0; }
+/* ⛔ v3（Joe 2026-09-04）：侧栏取消 ⇒ **单列**。
+   「记录」「保存前还缺」都删了、上架状态搬进了 .detail-bar ⇒ `.edit-col-side` 又一次
+   从 HTML 里消失。⚠️ 这次**规则跟着一起删**，⛔ 不留那条空轨道 ——
+   上面那段注释记的正是"规则活得比 HTML 久"栽过的那一次，别再栽第二次。
+   ⭐ 单列的连带好处：新建态与编辑态的宽度从"要记得同步"变成**结构上不可能不同**。
+   ⚠️ 920 是**有意的上限**，右边留白不是没做完：输入框拉到 1000 宽，读一行要横跑过去。 */
+.edit-grid { display: grid; grid-template-columns: minmax(0, 1fr); max-width: 920px; }
+/* ══ v3 新增（Joe 2026-09-04）══ */
+/* 顶部操作条里的上架状态两段切换。新建态锁死在「未上架」⇒ 整段变淡且不可点。 */
+.bar-seg { flex: 0 0 auto; }
+.bar-seg.is-locked { opacity: .55; pointer-events: none; }
+/* 🔴 禁用的保存按钮必须说得出为什么禁用 ——「保存前还缺」那张卡删掉之后，这行红字是它唯一的替代。
+   ⚠️ 它只在**真的缺东西**时出现（违反时才出声），⛔ 不做常驻说明。 */
+.whymiss { font-size: 13px; color: var(--text-critical); font-weight: 600; white-space: nowrap; }
+/* 未保存提醒（§3.5）。⛔ 不用原生 confirm —— Admin 的零弹窗规矩。 */
+.dirtybar { background: var(--bg-caution-soft); border: 1px solid var(--border-caution); color: var(--text-caution);
+  border-radius: var(--radius); padding: var(--space-8) var(--space-12); font-size: 13px; margin: 0 0 var(--space-16); }
+/* 卡标题右端的计数（共 N 张 / 共 N 条 / 已选 N / M）。⛔ 数字一律从真源算，不写死。 */
+.cnt-t { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--text-secondary); }
+.card > h3 .cnt-t { margin-left: auto; }
+/* 字段级红：缺必填项时**就地**标红 + 一行红字（⛔ 不只在顶部说一句） */
+.field.is-bad input, .field.is-bad select, .field.is-bad .chips { border-color: var(--border-critical); }
+.field.is-bad .chips { border: 1px solid var(--border-critical); border-radius: 8px; padding: var(--space-6); }
+.badmsg { margin: var(--space-4) 0 0; font-size: 12px; color: var(--text-critical); }
+/* 参数表：固定行与自定义行之间的分隔（mockup 的 .divider）。⚠️ 没有自定义行时不出现。 */
+.kvdiv { font-size: 12px; color: var(--text-secondary); margin: var(--space-12) 0 var(--space-6);
+  display: flex; align-items: center; gap: var(--space-8); }
+.kvdiv::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+/* 🔴 固定行标签 = 中文 + **英文键**。英文键不是字段名，它是真正印在官网参数表上、
+   并进 JSON-LD PropertyValue 的那个词 ⇒ 必须看得见（SPEC §3.3 点名保留）。
+   ⚠️ 中英**上下两行**（mockup 的 `.kfix em{display:block}`）——
+      我第一版按同一行排，结果「纸箱毛重 / Carton gross weight」直接叠在一起。
+   ⚠️ 固定行用 grid（标签列定宽 180），⛔ 不沿用自定义行那套 `flex: 0 0 32%`：
+      32% 在 920 宽下只有 ~290px，而这一列要装两行字，弹性宽度会随视口漂。 */
+.kv-fixed .kv-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: var(--space-8); align-items: center; }
+.kv-lab { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.kv-lab em { display: block; font-style: normal; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--hint); }
+/* ≈990 分屏：标签列收窄（SPEC §4-8）。中英本来就是上下两行，收窄不会挤。 */
+@media (max-width: 1100px) { .kv-fixed .kv-row { grid-template-columns: 120px minmax(0, 1fr); } }
+
 /* 网址字段：灰前缀 + 输入框拼成一条（D 批 §4） */
 .urlwrap { display: flex; align-items: center; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg); overflow: hidden; }
 .urlwrap .urlpre { flex: 0 0 auto; padding: var(--space-8) 0 var(--space-8) var(--space-12); color: var(--hint); font-size: 14px; white-space: nowrap; }

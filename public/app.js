@@ -382,13 +382,23 @@ function renderList() {
   const total = state.list.length;
   const nPub = state.list.filter((i) => i.status === "published").length;
   const nDraft = state.list.filter((i) => i.status === "draft").length;
-  $("#listSub").textContent = total ? `${total} 个 · ${nDraft ? `未上架 ${nDraft}` : "全部在线"}` : "";
+  // ══ v3 §3.6（Joe 2026-09-04）══
+  // 🔴 「N 个 · 未上架 M」**整句删掉**：两段切换搬到标题旁之后，
+  //    「在线 25 | 未上架 9」自己就把总数说清楚了（25 + 9 = 34）——
+  //    ⚠️ 同一个事实原来占了**两个显示位**，而且两个位置还会各自算一遍。
+  //    ⛔ 不是藏起来：这一格现在不再写任何东西。
+  $("#listSub").innerHTML = "";
+  if (total) {
+    $("#listSub").append(segControl(
+      [["published", "在线", nPub], ["draft", "未上架", nDraft]], state.statusSeg,
+      (v) => { state.statusSeg = v; state.selected.clear(); renderList(); }));
+  }
 
-  // ── 「状态」列头 = 两段切换 在线 (N) | 未上架 (N)（Joe：「一共就 2 种状态」）──
-  //    ⛔ 「产品」列头不放任何控件（Joe 先指产品列、后定两段切换；切换住状态列）。
-  const thS = $("#thStatus"); thS.innerHTML = "";
-  thS.append(segControl([["published", "在线", nPub], ["draft", "未上架", nDraft]], state.statusSeg,
-    (v) => { state.statusSeg = v; state.selected.clear(); renderList(); }));
+  // ── 「状态」列头：v3 起是**纯文字**（Joe 定）──
+  //    ⚠️ 原来那一格放的是**筛选器**，而下面每一行那格放的是「在线」这个**状态值** ——
+  //       列头该说"这一列是什么"，⛔ 不是"用什么筛"。筛选器已搬到标题旁。
+  const thS = $("#thStatus");
+  if (thS.textContent !== "状态") { thS.innerHTML = ""; thS.textContent = "状态"; }
 
   // ── 「机型」列头 = 漏斗菜单：全部机型 / Desktop (17) / …（数字为当前列表口径）──
   //    选项从真实数据里长，显示名取契约（谁可筛 ← 数据；叫什么 ← taxonomy.json）。
@@ -719,7 +729,6 @@ async function select(slug, opts = {}) {
   // 🔴 数据到达前把表单藏起来（D 批）：双态撤了之后编辑面板常显，不藏的话加载中会露出
   //    **上一个产品的残留值**（dev 下长达数秒）——人在那期间打的字会被 fillForm 覆盖。
   $("#editPane").hidden = true; $("#previewBtn").hidden = true;
-  $("#dSiteLink").hidden = true; $("#recordCard").hidden = true;
   state.filePath = "读取中…";
   renderList();
 
@@ -735,13 +744,9 @@ async function select(slug, opts = {}) {
 
   const p = body.product || {};
   cache.set(slug, p);
-  // D 批：编辑即详情 —— 标题就是产品名（纯文字，17/700 省略）；「看官网页 ↗」住头部右端，仅已上架。
-  //    ⚠️ 链接用**已保存的** state.slug，不是输入框里的值 —— 刚改完还没提交时官网仍是旧地址。
+  // D 批：编辑即详情 —— 标题就是产品名（纯文字，17/700 省略）。
+  // ⛔ v3：「看官网页 ↗」整组已删（元素 + 这里的三行绑定），Joe 点名。
   $("#dTitle").textContent = p.name || slug;
-  const sl = $("#dSiteLink");
-  sl.hidden = p.status !== "published";
-  sl.href = siteUrl(state.slug);
-  sl.title = p.status === "published" ? "在官网打开这一页（新标签）" : "";
   state.filePath = body.path;
 
   const v = body.validation || { ok: true, errors: [], warnings: [] };
@@ -754,71 +759,42 @@ async function select(slug, opts = {}) {
   setFormMode(false);
   $("#editPane").hidden = false; $("#previewBtn").hidden = false;
   void opts;                       // 旧签名 opts.view 已无意义（只有一个态），参数留着不破坏调用方
-  $("#recordCard").hidden = false;
-  loadRecord(slug);                // 懒加载，不 await —— 记录晚到不挡编辑
+  // v3：刚载入 = 干净态、还没试过保存。⚠️ 必须在 fillForm **之后** ——
+  //    fillForm 是程序赋值，不触发 input 事件，但 renderImages/renderFixedSpecs 会重绘，
+  //    保险起见统一在这里归零，⛔ 不依赖"赋值不冒泡"这个假设。
+  state.saveAttempted = false;
+  markClean();
+  paintMissing();
   renderList();
 }
 
-/** 侧栏「记录」卡：这个产品的数据文件的 commit 记录（/api/audit?slug=）。 */
-async function loadRecord(slug) {
-  const box = $("#recordBody");
-  box.innerHTML = ""; box.append(el("span", "hint0", "读取中…"));
-  try {
-    const { body } = await api(`/api/audit?slug=${encodeURIComponent(slug)}&limit=100`);
-    if (state.slug !== slug) return;      // 人已经切走了 —— 迟到的响应不许画到别的产品身上
-    box.innerHTML = "";
-    const es = body.entries || [];
-    if (!es.length) { box.append(el("span", "hint0", "还没有记录。")); return; }
-    const row = (k, ...nodes) => {
-      const r = el("div", "krow"); r.append(el("span", "k", k));
-      const v = el("span", "v"); nodes.forEach((n) => v.append(typeof n === "string" ? document.createTextNode(n) : n));
-      r.append(v); box.append(r);
-    };
-    const last = es[0];
-    row("最后修改", el("span", "mono", `${fmtStamp(last.date)} · ${(last.operator || "—").replace(/@.*$/, "")}`));
-    if (last.fields) row("改了", el("span", "mono", last.fields));
-    // 创建 = 这份记录里最早的一条。⚠️ 拿满 100 条说明更早的没取到 —— 那时**不冒充**它是创建时间。
-    if (es.length < 100) row("创建", el("span", "mono", fmtStamp(es[es.length - 1].date)));
-    const a = el("a", "lnk mono-link", last.shortSha); a.href = last.url; a.target = "_blank"; a.rel = "noopener";
-    row("commit", a);
-    const all = el("button", "linkish", "这条产品的全部改动 →"); all.type = "button";
-    // ⚠️ 不清 state.audit：审计缓存是全量那份，过滤在渲染层做 —— 清了会白拉一次 20s 的接口
-    all.onclick = () => { state.auditSlug = slug; showNav("audit"); if (state.audit) renderAudit(); };
-    row("", all);
-  } catch (e) {
-    box.innerHTML = ""; box.append(el("span", "hint0", "记录读取失败：" + e.message));
-  }
-}
+/* ⛔ v3（Joe 2026-09-04：「记录…干掉」）：`loadRecord()` **整个函数已删**，
+   不是留着不调 —— 一个零调用的函数，下一个人会以为它还有用。
+   ⚠️ 连带后果记在 index.html 那段注释里：编辑页不再有「谁在什么时候改了什么」的入口。
+   总工建议审计日志页支持按产品筛选，但 Joe 尚未点头 ⇒ 本单不做，⛔ 也不偷偷留着记录卡。 */
 
-/** 侧栏上架状态：两段切换是 f_status（隐藏 select）的 UI —— 点击 = 设值 + dispatch change，⛔ 不是第二个真源。 */
+/**
+ * 上架状态两段切换 —— v3 起住在 .detail-bar 里（原来在侧栏状态卡）。
+ * 🔴 它只是 `#f_status`（隐藏 select）的 UI：点击 = 设 select 值 + dispatch change。
+ *    ⛔ 不是第二个状态真源 —— loadContract 填选项 / fillForm 设值 / readForm 读值全部走那个 select。
+ * ⚠️ 新建态**锁死在「未上架」且不可点**（SPEC §3.1）：新产品一律 draft，
+ *    给一个点得动却不该动的控件，比不给更坏。
+ * ⛔ v3 已删：`paintSitePath()` 与它画的那行「官网 /products/<slug>」——
+ *    那与「网址」字段是**同一个事实**，同一个事实不占两个显示位。
+ */
 function paintStatusSeg() {
   const host = $("#statusSeg"); if (!host) return;
   host.innerHTML = "";
   const cur = $("#f_status").value || "draft";
+  host.classList.toggle("is-locked", !!state.isNew);
   host.append(segControl([["published", "在线"], ["draft", "未上架"]], cur, (v) => {
+    if (state.isNew) return;                 // 新建态锁死，⛔ 不给"点得动却不生效"
     // 状态是二值必填 —— 再点同一段（v=null）不是"全部"，保持原值不变
     if (!v || v === cur) return;
     const sel = $("#f_status"); sel.value = v;
     sel.dispatchEvent(new Event("change", { bubbles: true }));   // 图片搬目录那条提示靠它
-    paintStatusSeg(); paintSitePath();
+    paintStatusSeg();
   }));
-  paintSitePath();
-}
-/** 状态卡里那行「官网 /products/<slug>」：已上架 = 链接；未上架 = 灰字说明这一页不存在。 */
-function paintSitePath() {
-  const v = $("#dSitePath"); if (!v) return;
-  v.innerHTML = "";
-  const slug = state.slug || $("#f_slug").value.trim();
-  if (!slug) { v.append(el("span", "hint0", "—")); return; }
-  if ($("#f_status").value === "published" && !state.isNew) {
-    const a = el("a", "lnk", `/products/${slug}`);
-    a.href = siteUrl(slug); a.target = "_blank"; a.rel = "noopener";
-    v.append(a);
-  } else {
-    const s = el("span", "hint0", `/products/${slug}`);
-    s.title = "未上架 —— 官网上还没有这一页";
-    v.append(s);
-  }
 }
 
 /**
@@ -838,11 +814,14 @@ function setFormMode(isNew) {
   const sb = $("#previewBtn"); if (sb) sb.textContent = saveBtnLabel();
   pane.classList.toggle("is-new", isNew);
   pane.classList.toggle("is-edit", !isNew);
-  // status 只在编辑态出现：新建的东西必然还没核过图，
-  // 给一个只有一个正确答案的下拉框 = 制造一次无谓的决策。
-  $("#statusCard").hidden = isNew;
-  // 编辑态把折叠区**打开**（不是删掉 details —— 结构一份，状态两种）
-  document.querySelectorAll("#editPane details.more").forEach((d) => { d.open = !isNew; });
+  // v3：状态段位搬进 .detail-bar 且**两态都在**，新建态锁死在「未上架」不可点。
+  // ⚠️ 原来是新建态整块 hidden；改成"在但锁死"是照 mockup 帧 2 ——
+  //    人需要**看见**"新产品会是未上架的"，而不是猜。⛔ 锁死判据只写在 paintStatusSeg 一处。
+  const sh = $("#slugHint"); if (sh) sh.hidden = !isNew;   // "自动生成、上线后锁定"那句只在新建态说
+  paintStatusSeg();
+  // ⛔ v3：原来这里有一行 `details.more` 的展开 —— 「更多」卡整张撤了
+  //    （Meta 搬进基本信息、supplierRef 输入框删）⇒ 结构上已无折叠块，
+  //    留着那行就是对着不存在的元素查询。**删元素要连绑定一起删。**
 }
 
 /** 标题 → slug。⚠️ 只做能确定的事：小写、非法字符换连字符、去掉首尾与重复连字符。 */
@@ -859,9 +838,7 @@ function startNew() {
   clearProductPanes();
   state.slugTouched = false;            // 新建时 slug 跟随标题，直到人自己动它
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
-  $("#dSiteLink").hidden = true;        // 还不存在的东西也没有官网页
-  $("#recordCard").hidden = true;       // 也没有记录（按钮/卡随状态渲染，无对象就不出现）
-  $("#f_slug").readOnly = false;
+  // ⛔ v3：#dSiteLink / #recordCard 两行绑定随元素一起删（看官网页、记录卡都撤了）。
   $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
   $("#dTitle").textContent = "新建产品";
   state.filePath = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
@@ -870,6 +847,10 @@ function startNew() {
   fillForm(state.draft);
   setFormMode(true);
   $("#editPane").hidden = false; $("#previewBtn").hidden = false;   // D 批：编辑即详情，没有 tab 可切
+  // v3：新建页一进来是干净的、还没试过保存 ⇒ ⛔ 不满屏红；但按钮旁要说清为什么点不下去。
+  state.saveAttempted = false;
+  markClean();
+  paintMissing();
   renderList();
 }
 
@@ -1211,8 +1192,14 @@ function renderImages() {
     box.insertBefore(card, addTile);
   });
 
-  const note = $("#mainImgNote");
-  if (note) note.textContent = list.length ? "" : "还没有图片。第一张会成为封面（主图）。";
+  paintImgCount();
+  // ⚠️ 图片增/删/拖动换位都是**程序改 DOM**，委托监听接不到 ⇒ 脏态在这里补一次。
+  //    ⛔ 别改成在每个 onclick 里各调 —— 拖动那条路不是按钮，一定会被忘掉（下面那段注释说的就是它）。
+  if (state.draft) markDirty();
+  // ⛔ v3：这里原来还往 #mainImgNote 写「还没有图片。第一张会成为封面（主图）。」——
+  //    ① 那句话现在卡标题的「共 0 张」+「＋」格已经说了；
+  //    ② 🔴 更要紧的是：**一个元素两个写入方**，renderImages 每次重绘都会把
+  //       「改状态会搬图」那条警告覆盖掉。⇒ 这个元素现在**只归状态变更那一条用**。
 
   // 🔴 图片增 / 删 / 拖动换位**全都**要经过这里 ⇒ 这一处就守住了图片那一路。
   //    ⚠️ Joe 撞的正是这条路：删完图，面板还写着「图片无改动」。
@@ -1291,7 +1278,10 @@ function renderFixedSpecs(specs) {
   SPEC_FIXED.forEach(([key, label]) => {
     const r = el("div", "kv-row");
     // ⚠️ 标签是 <label> 纯文本不是 input：键名是契约的一部分，不该由这里改。
-    const lab = el("label", "k kv-lab", label);
+    // 🔴 中文标签 + **英文键**（SPEC §3.3 点名保留）：英文键不是字段名，
+    //    它是真正印在官网参数表上、并进 JSON-LD PropertyValue 的那个词。
+    const lab = el("label", "k kv-lab");
+    lab.append(document.createTextNode(label), el("em", null, key));
     const iv = el("input", "v"); iv.value = (specs && specs[key]) || "";
     iv.placeholder = "留空 = 不写进官网";
     iv.dataset.anchor = `specs.${key}`;
@@ -1302,6 +1292,12 @@ function renderFixedSpecs(specs) {
   });
 }
 
+/** 「自定义参数」那条分隔线：⚠️ 没有自定义行时不出现（⛔ 不做常驻空标题）。 */
+function paintSpecsDivider() {
+  const d = $("#specsDivider"); if (!d) return;
+  d.hidden = !$("#f_specs").querySelector(".kv-row");
+}
+
 function kvRow(container, k, v) {
   const r = el("div", "kv-row");
   const ik = el("input", "k"); ik.value = k || ""; ik.placeholder = "键";
@@ -1309,7 +1305,9 @@ function kvRow(container, k, v) {
   // specs 的提示是 `specs.<key>` ⇒ 值那一格认领它，键一改就跟着改。
   const claim = () => { iv.dataset.anchor = `specs.${ik.value.trim()}`; };
   ik.addEventListener("input", claim); claim();
-  const d = el("button", "del-row", "×"); d.type = "button"; d.onclick = () => r.remove();
+  const d = el("button", "del-row", "×"); d.type = "button";
+  // ⚠️ 删行是**程序改 DOM**，不触发 input/change ⇒ 委托监听接不到 ⇒ 这里显式补两件事。
+  d.onclick = () => { r.remove(); paintSpecsDivider(); markDirty(); };
   r.append(ik, iv, d); container.append(r);
 }
 
@@ -1320,15 +1318,20 @@ function fillForm(p) {
   $("#f_model").value = p.model || "";
   $("#f_category").value = p.category || "";
   $("#f_status").value = p.status || "draft";
-  paintStatusSeg();   // 侧栏两段切换是它的 UI（D 批）—— 换产品/新建都要重画到当前值
+  paintStatusSeg();   // 两段切换是它的 UI —— 换产品/新建都要重画到当前值
+  // ⚠️ 上一个产品的「改状态会搬图」警告必须清掉：它是**针对那一次改动**的，
+  //    留着就会串到下一个产品身上，而那时它是假的。
+  const _mn = $("#mainImgNote"); if (_mn) { _mn.textContent = ""; _mn.hidden = true; }
   // ⚠️ moq 的输入框已撤（A10-C：它是死字段，官网渲染层 0 处引用）。
   //    **契约字段没动**，现存值也不会被碰 —— 见 readForm 里那段。
   $("#f_imgmain").value = p.images?.main || "";
-  $("#f_supplier").value = p.supplierRef || "";
+  // ⛔ v3：`$("#f_supplier").value = …` 已删（输入框撤了）。
+  //    ⚠️ **数据没删**：readForm 完全不提这个键 ⇒ 服务端保持原值。见 readForm 里那段。
   $("#f_metadesc").value = p.metaDescription || "";
   paintMetaDesc();   // 计数与"保存"可用态跟着新值走 —— 换产品时不能留着上一个的红字/禁用
 
   $("#f_sensors").querySelectorAll("input").forEach((cb) => { cb.checked = (p.sensors || []).includes(cb.value); });
+  paintSensorCount();
 
   // 卖点：数组 → 一行一条（A17）。⚠️ 用 "\n" 不用 "\r\n"：textarea 的 value 内部一律是 LF。
   $("#f_highlights").value = (p.highlights || []).join("\n");
@@ -1345,6 +1348,7 @@ function fillForm(p) {
   Object.entries(p.specs || {})
     .filter(([k]) => !SPEC_FIXED_KEYS.has(k))
     .forEach(([k, v]) => kvRow(s, k, v));
+  paintSpecsDivider();
   // 🔴 每次填表都从草稿**重建**图片列表：留着上一个产品的列表会把它的图带到这一个身上
   state.imgList = imgListFromDraft(p);
   renderImages();
@@ -1407,7 +1411,13 @@ function readForm() {
     // ⛔ 别送 ""：契约把空串当错误（与 moq 同一条规矩），官网模板也不该看到一个假值。
     metaDescription: nz($("#f_metadesc").value),
     specs,
-    supplierRef: nz($("#f_supplier").value),
+    // 🔴 **`supplierRef` 这个键同样完全不出现**（v3，Joe 2026-09-04：「supplierRef 内部字段干掉」）。
+    //    ⚠️ 他说的是**输入框**，⛔ 没说数据 —— 实测 36 个产品里 20 个此刻存着值，
+    //       AK35 那条是阿里巴巴链接，别处没有备份。
+    //    ⛔ 最容易犯的错就是照着上面那些字段写成 `supplierRef: nz($("#f_supplier").value)`：
+    //       输入框没了 ⇒ 读到 undefined ⇒ 送 null ⇒ **他每保存一个产品就静默抹掉一条链接**。
+    //    ⇒ 与 moq 同一种处理：键不出现 = 「我没收到」= mergeProduct 保持原样。
+    //    判据在验收里：有值的产品不改任何值保存 ⇒ diff 的 del 行数 = 0 且 supplierRef 那行是 ctx。
     // images 是个对象：整体送，缺 main 让校验器报
     images: gallery ? { main: main ?? "", gallery } : { main: main ?? "" },
   };
@@ -1842,9 +1852,14 @@ function paintMetaDesc() {
   if (n === 0) { cnt.classList.add("cnt-empty"); cnt.textContent = "留空 —— 官网沿用自动拼接的描述"; }
   else if (lim && n > lim) { over = true; cnt.classList.add("cnt-over"); cnt.textContent = `${n} / ${lim} 字符 —— 超出上限，保存已禁用，请删到 ${lim} 以内`; }
   else { cnt.classList.add("cnt-ok"); cnt.textContent = lim ? `${n} / ${lim} 字符` : `${n} 字符`; }
-  // ⚠️ 只在这里改 previewBtn.disabled，全仓再无第二处 ⇒ 不会出现"谁禁的、谁该解"的漂移
-  $("#previewBtn").disabled = over;
+  // 🔴 v3 起有**两条**禁用理由（Meta 超限 / 必填项没填）。
+  //    ⚠️ 原来的注释说"只在这里改 disabled，全仓再无第二处" —— 现在不能再那样写了，
+  //       但那条规矩的**意图**要守住：⛔ 不许两处各自 `disabled = …`，
+  //       否则会出现"我把 Meta 删短了，按钮却还是灰的（另一处禁的）"。
+  //    ⇒ 改成：这里只**记录自己那条理由**，`paintMissing()` 是**唯一**真正落 disabled 的地方。
+  $("#previewBtn").dataset.metaOver = over ? "1" : "0";
   $("#previewBtn").title = over ? "Meta description 超过上限，删到上限以内才能保存" : "";
+  paintMissing();
 }
 $("#f_metadesc").addEventListener("input", paintMetaDesc);
 
@@ -1862,10 +1877,98 @@ function parseHighlights(text) {
     .filter(Boolean);
   return out.length ? out : null;
 }
+/* ══════════ v3 计数（Joe 2026-09-04）══════════
+ * 🔴 每个数都**从真源算**：mockup 里的 `19` / `25` / `9` 是画图时填的快照，
+ *    ⛔ 写死任何一个，都会在 Joe 改 taxonomy 或加产品的当天变成谎话。
+ */
 function paintHighlightsCount() {
-  const cnt = $("#f_highlights_cnt"); if (!cnt) return;
+  const cnt = $("#hlCount"); if (!cnt) return;
   const n = (parseHighlights($("#f_highlights").value) || []).length;
-  cnt.textContent = `共 ${n} 条`;   // 只有这一行灰字，⛔ 不再有"短句"警告
+  cnt.textContent = `共 ${n} 条`;   // ⛔ 不再有"短句"警告
+}
+function paintImgCount() {
+  const c = $("#imgCount"); if (!c) return;
+  c.textContent = `共 ${(state.imgList || []).length} 张`;
+}
+/** 已选 N / M。⚠️ M = taxonomy 里传感器的真实条数，⛔ 不是写死的 19。 */
+function paintSensorCount() {
+  const c = $("#sensorCount"); if (!c) return;
+  const box = $("#f_sensors");
+  const total = box.querySelectorAll("input").length;
+  const on = box.querySelectorAll("input:checked").length;
+  c.innerHTML = "";
+  c.append(document.createTextNode("已选 "));
+  const b = el("b", on ? "" : "is-zero", String(on));
+  c.append(b, document.createTextNode(` / ${total}`));
+}
+
+/* ══════════ v3 §3.4 校验：违反时才出声 ══════════
+ * 「保存前还缺」那张卡删掉之后，禁用的保存按钮就哑了 ⇒ 这里是它唯一的替代。
+ * ⛔ 不写"请填写必填项"，要写出**具体缺的项**；同时那几处**就地标红**。
+ * ⚠️ 只报"空着"这一类，⛔ 不在这里复制契约校验器的规则 —— 那是服务端的活，
+ *    这里只回答一个问题：**为什么这个按钮点不下去。**
+ */
+function paintMissing() {
+  const pane = $("#editPane");
+  if (!pane || pane.hidden) return;
+  const miss = [];
+  const mark = (id, bad) => {
+    const f = $(id); if (!f) return;
+    f.classList.toggle("is-bad", bad);
+    const m = f.querySelector(".badmsg"); if (m) m.hidden = !bad;
+  };
+  const noName = !$("#f_name").value.trim();
+  const noModel = !$("#f_model").value.trim();
+  const noCat = !$("#f_category").value;
+  const noSensor = !$("#f_sensors").querySelectorAll("input:checked").length;
+  if (noName) miss.push("产品标题");
+  if (noModel) miss.push("型号");
+  if (noCat) miss.push("机型");
+  if (noSensor) miss.push("传感器");
+  // ⚠️ 两个时机，是故意分开的（mockup 帧 2 的说明：「**点过一次保存**，暴露出缺的两项」）：
+  //    · 按钮旁那行红字 —— **只要按钮是灰的就该说**，那正是它存在的理由；
+  //    · 字段**就地标红** —— 等人真的试过一次保存再标。
+  //    ⛔ 一进新建页就满屏红，会让红色在真正该看的时候不被当回事。
+  const showInline = !!state.saveAttempted;
+  mark("#fld_model", showInline && noModel);
+  mark("#fld_category", showInline && noCat);
+  mark("#fld_sensors", showInline && noSensor);
+
+  const why = $("#whyMiss");
+  // 🔴 Meta 超限是**另一条**禁用理由，它由 paintMetaDesc 管（全仓只有那一处改 disabled）。
+  //    ⇒ 这里只在"没有超限"时接管按钮，⛔ 两处各自 disabled 会变成"谁禁的、谁该解"。
+  const metaOver = $("#previewBtn").dataset.metaOver === "1";
+  if (why) { why.hidden = !miss.length; why.textContent = miss.length ? `还缺：${miss.join("、")}` : ""; }
+  $("#previewBtn").disabled = metaOver || miss.length > 0;
+}
+
+/* ══════════ v3 §3.5 未保存提醒 ══════════
+ * ⚠️ 这是全单**唯一一条不是 Joe 提出的功能**（总工提，Joe 未反对）—— 交付时单列。
+ * 改过字段后离开会静默丢失，此前没有任何防护。
+ * ⛔ 不用原生 confirm（Admin 的零弹窗规矩）：拦下来 + 页面内提示，人自己再点一次。
+ */
+function markDirty() {
+  if (state.dirty) return;
+  state.dirty = true;
+  const b = $("#dirtyBar"); if (b) b.hidden = false;
+}
+function markClean() {
+  state.dirty = false;
+  state.leaveArmed = false;
+  const b = $("#dirtyBar"); if (b) b.hidden = true;
+}
+/**
+ * 离开前拦一次。返回 true = 放行。
+ * ⚠️ 第一次点拦下并把提示改成"再点一次就丢弃"；第二次点放行 ——
+ *    ⛔ 不做成永远拦不过去，也⛔ 不用系统弹窗。
+ */
+function confirmLeave() {
+  if (!state.dirty) return true;
+  if (state.leaveArmed) return true;
+  state.leaveArmed = true;
+  const b = $("#dirtyBar");
+  if (b) { b.hidden = false; b.textContent = "⚠️ 有未保存的修改 —— 再点一次「返回列表」就会丢弃它们。"; }
+  return false;
 }
 /**
  * G 批 §6：`[data-autogrow]` 的 textarea 随内容长高，**不内滚**。
@@ -1904,7 +2007,21 @@ document.querySelectorAll("textarea[data-autogrow]").forEach((ta) => {
   ta.addEventListener("input", () => syncGrow(ta));
 });
 $("#f_highlights").addEventListener("input", paintHighlightsCount);
+
+/* ══ v3 接线：一个入口管住"字段变了" ══
+ * 🔴 用**捕获阶段的委托**挂在表单上，⛔ 不给每个控件各绑一次：
+ *    新增字段（今天就加了三个）不会被忘掉，而"忘绑一个"的症状是
+ *    "改了那一项，脏提醒不出来" —— 没有任何报错。
+ * ⚠️ chip 是 label 包 checkbox ⇒ change 事件同样冒泡到这里，传感器计数一并跟着走。
+ */
+$("#editPane").addEventListener("input", () => { markDirty(); paintMissing(); }, true);
+$("#editPane").addEventListener("change", () => {
+  markDirty(); paintSensorCount(); paintMissing();
+}, true);
+
 $("#backBtn").onclick = () => {
+  if (!confirmLeave()) return;          // v3 §3.5：拦一次（⛔ 不是原生 confirm）
+  markClean();
   $("#detailView").hidden = true; $("#listView").hidden = false;
   state.slug = null; state.isNew = false; resetPending(); $("#preview").hidden = true;
   renderList();
@@ -1924,14 +2041,20 @@ $("#bulkCat").onchange = (e) => {
   const v = e.target.value; e.target.value = "";
   if (v) bulk([...state.selected], v, "category");
 };
-$("#editPane").onsubmit = doPreview;
+// ⚠️ 「试过一次保存」这个事实要在 doPreview 之前落下 —— 就地标红靠它。
+//    ⛔ 不放进 doPreview 里面：那个函数里有多条 early return，会漏。
+$("#editPane").onsubmit = (e) => { state.saveAttempted = true; paintMissing(); return doPreview(e); };
 // ⚠️ 「还原」按钮已撤（Joe 2026-08-26）。绑定必须一起删：
 //    对着不存在的元素 `.onclick=` 会当场抛 TypeError，而它在模块顶层 ⇒
 //    **整份 app.js 停在这一行**，症状是"整个后台白屏"，看起来完全不像是删了个按钮。
 // ⚠️ 卖点的「+ 加一条」也已撤（A17：卖点改成一个大输入框）—— 元素和这里的分支一起删，
 //    ⛔ 不留 `else repeatRow(...)` 那种对着不存在容器的死绑定。现在只剩 specs 一个 data-add。
 document.querySelectorAll(".add[data-add]").forEach((b) => {
-  b.onclick = () => { if (b.dataset.add === "specs") kvRow($("#f_specs"), "", ""); };
+  b.onclick = () => {
+    if (b.dataset.add !== "specs") return;
+    kvRow($("#f_specs"), "", "");
+    paintSpecsDivider(); markDirty();   // 同上：程序加行，委托监听接不到
+  };
 });
 // ═══════════════ A8 媒体库 ═══════════════
 //
@@ -3150,7 +3273,17 @@ function showNav(which) {
   //    刚存过的话，拿旧的 sha 去保存会撞乐观锁；更糟的是在旧值上编辑。
   if (SITE_SECTIONS[which]) loadSite(which);
 }
-document.querySelectorAll(".nav-item[data-nav]").forEach((b) => { b.onclick = () => showNav(b.dataset.nav); });
+// ⚠️ 拦截挂在**点击**上，⛔ 不挂在 showNav() 里面：
+//    showNav 还被内部调用（如媒体页点图跳到那个产品），那些不该被拦。
+//    ⇒ 判据落在"人主动切走"这个动作上，不落在函数名上。
+document.querySelectorAll(".nav-item[data-nav]").forEach((b) => {
+  b.onclick = () => {
+    // 只有正停在编辑页且脏了才拦（v3 §3.5：返回列表 / 切左栏两条路）
+    if (!$("#detailView").hidden && !confirmLeave()) return;
+    markClean();
+    showNav(b.dataset.nav);
+  };
+});
 
 // ⚠️ 这里原来是 updateDirty()：往 sticky 条上的「未改动 / N 处改动」写字。
 //    那一格已随 .editbar 一起撤掉（Joe 2026-08-26）⇒ 整个函数删掉，不留空转的版本。
@@ -3199,9 +3332,18 @@ $("#f_imgfile").onchange = (e) => {
 }
 
 // status 改了 ⇒ 图片路径会跟着搬家，立刻在界面上说出来，别等到预览才让人发现
+//
+// 🔴 **既有缺陷，v3 顺手修**：`#mainImgNote` 在 HTML 里带着 `hidden`，而全仓**没有一处**
+//    把它 unhide 过 ⇒ 这条警告从写下的那天起**一次都没显示过**（往它写的另一句也一样）。
+//    ⚠️ 这是「删元素没删绑定」的镜像：**绑定活着、元素在、只是永远看不见** ——
+//       没有任何报错，`textContent` 每次都赋值成功，闸也查不出来。
+//    ⇒ 之所以在本单修而不是只报：v3 把状态卡整张删了，我把这个元素搬进图片卡并写了
+//       「它装的是一条真警告」——**不修的话那句注释本身就是假的**，交付就是错的。
 $("#f_status").addEventListener("change", () => {
+  const note = $("#mainImgNote"); if (!note) return;
   const dir = $("#f_status").value === "published" ? "products/" : "products/_draft/";
-  $("#mainImgNote").textContent = `⚠️ status 改为 ${$("#f_status").value} ⇒ 保存时图片会搬到 ${dir}（在同一个 commit 里）。`;
+  note.textContent = `⚠️ 上架状态改为「${statusLabel($("#f_status").value)}」⇒ 保存时图片会搬到 ${dir}（在同一个 commit 里）。`;
+  note.hidden = false;                       // ← 缺的就是这一行
 });
 
 // ── 过时的确认面板：内容一变，上一次的结论就不许再摆着 ──
