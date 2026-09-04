@@ -239,6 +239,46 @@ async function loadList() {
   state.list = body.items || [];
   state.list.forEach((it) => { if (!it.error) cache.set(it.slug, it); });
   renderList();
+  loadSiteBuild();          // ⚠️ 不 await：官网状态晚到不该挡住列表
+}
+
+/**
+ * 官网构建状态（审计①）。⛔ 替掉那句**恒为真**的「已提交，线上生效有延迟」。
+ *
+ * 🔴 三态都要说得出口：
+ *   ok      ⇒ 什么都不显示（⛔ 不做"一切正常"的常驻绿条：那又是一句恒真的话）
+ *   stale   ⇒ 红条，写清两个 sha 和已经多少分钟
+ *   unknown ⇒ **也必须出声**：「无法确认官网状态」。
+ *            ⚠️ 这一态最容易被省掉，而省掉它的后果正是这次事故的形状 ——
+ *               告警从不亮，与"一切正常"长得一模一样。
+ * ⚠️ 连请求本身失败（端点挂了 / 网络断了）也落 unknown，⛔ 不静默 catch。
+ */
+async function loadSiteBuild() {
+  const bar = $("#siteBuildBar"); if (!bar) return;
+  const short = (s) => String(s || "").slice(0, 7) || "—";
+  let b;
+  try {
+    const r = await api("/api/site-build");
+    b = r.body;
+    if (!b || !b.state) throw new Error("响应里没有 state");
+  } catch (e) {
+    bar.innerHTML = "";
+    bar.append(mkNotice("warn", `⚠️ **无法确认官网状态** —— 查询失败：${String(e.message || e).slice(0, 120)}`));
+    return;
+  }
+  bar.innerHTML = "";
+  if (b.state === "ok") return;                    // ⛔ 正常时不占位置
+  if (b.state === "unknown") {
+    bar.append(mkNotice("warn",
+      `⚠️ **无法确认官网状态** —— ${b.detail || "读不到官网的构建戳"}。`
+      + `⚠️ 这**不等于**官网正常，也不等于它坏了：现在这一项查不出来。`));
+    return;
+  }
+  // stale
+  bar.append(mkNotice("bad",
+    `🔴 **官网已停止更新** —— 线上跑的是 \`${short(b.liveSha)}\`，`
+    + `你的最新改动是 \`${short(b.headSha)}\`，已 **${b.minutes} 分钟**没生效。`
+    + `⚠️ 现在保存的内容**不会出现在 airsonde.com 上**，直到构建恢复。`));
 }
 
 /**
@@ -1782,7 +1822,14 @@ async function doCommit(prev, btn) {
       const nFiles = Array.isArray(b.files) ? b.files.length : null;
       if (nFiles != null) ok.append(document.createTextNode(`  ·  这一个 commit 落了 ${nFiles} 个文件`));
       box.prepend(ok);
-      box.prepend(mkNotice("warn", "官网重建需要一两分钟。**现在去刷 airsonde.com 看到的仍是旧内容，这不是没保存成功。**"));
+      // ⚠️ 这句话原来是「官网重建需要一两分钟，现在刷还是旧内容，这不是没保存成功」——
+      //    **它恒为真**：构建正常时对，构建死了三小时它还是它（2026-09-04 就这么过去了三小时）。
+      //    ⇒ 保留"要等一会儿"这个事实，但**把结论指向那个可证伪的判据**，
+      //      ⛔ 不再让它单独承担"官网到底有没有更新"这件事。
+      box.prepend(mkNotice("warn",
+        "官网重建需要一两分钟，现在去刷 airsonde.com 看到的仍是旧内容。"
+        + "⚠️ **过几分钟回产品列表看一眼** —— 如果官网停止更新了，那里会亮红条。"));
+      loadSiteBuild();      // 保存完顺手重查一次：下次回列表时那条状态是新的
       btn.remove();
 
       // 🔴 待上传清单必须清空：不清的话，下一次保存会把同一批图**再传一遍**，

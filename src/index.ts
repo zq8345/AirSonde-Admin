@@ -5,7 +5,7 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, mapLimit, GH_CONCURRENCY, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, siteFetch, SiteEgressDenied, mapLimit, GH_CONCURRENCY, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 // ⚠️ catlabels.ts 已删除（A13）：它在**运行时解析官网 lib/products.ts** 去取分类显示名。
 //    契约 v1.4 之后，显示名的真源是 taxonomy.json，而 products.ts 里的 CATEGORY_LABELS
 //    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
@@ -321,6 +321,77 @@ app.get("/api/products-expanded", async (c) => {
     console.error(JSON.stringify({ evt: "expand_failed", msg: String(e) }));
     return c.json({ error: "读取失败", detail: String(e) }, 502);
   }
+});
+
+/**
+ * ─────────── 官网构建戳：线上跑的是哪一版 ───────────
+ *
+ * 🔴 2026-09-04 的实事：官网 09:53 停止部署，**12:43 才被发现** ——
+ *    近三小时里 Joe 每保存一次，后台都回他一句「已提交，线上生效有延迟」。
+ *    ⚠️ 问题不是缺一句告警，是**那句话恒为真**：构建正常时它对，构建死了三小时它还是它。
+ *    **一个恒真的提示不携带任何信息，却长得像在提供信息。**
+ *
+ * ⇒ 判据换成可证伪的：**读官网产物自报的 sha，与数据仓 HEAD 比**。
+ *    产物自带构建身份 ⇒ 这是一次相等比较，⛔ 不是"页面在不在""产品数对不对"那种推断。
+ *
+ * 三态，⛔ 缺一不可：
+ *   ok      两个 sha 相同 ⇒ 官网就是最新的
+ *   stale   不同且已超过 STALE_MINUTES ⇒ **红条**，写清两个 sha 和多少分钟
+ *   unknown **读不到**（网络失败 / 被出站白名单拒 / 404 / 解析失败）
+ *           ⇒ 必须说「**无法确认官网状态**」。
+ *           🔴 这一态是整件事的核心：⛔ 不许沉默、⛔ 更不许当成 ok ——
+ *              否则这道"防假绿"的闸，自己会以假绿的方式失效，
+ *              而症状（告警从不亮）与"一切正常"长得一模一样。
+ */
+const SITE_BUILD_URL = "https://airsonde.com/build.json";
+/** 超过这么久还没生效才算"停了" —— 一次正常构建约 1 分钟，10 分钟留足余量。 */
+const STALE_MINUTES = 10;
+
+app.get("/api/site-build", async (c) => {
+  const repo = c.env.GITHUB_REPO, branch = c.env.GITHUB_BRANCH;
+  if (!repo || !branch) return c.json({ state: "unknown", detail: "配置缺失：GITHUB_REPO / GITHUB_BRANCH" });
+
+  // ① 数据仓 HEAD（顺带拿到它的提交时间 —— "已多少分钟没生效"要从**改动落地那一刻**算起，
+  //    ⛔ 不从 build.json 的 builtAt 算：那是上一次成功构建的时间，方向反了）
+  let headSha = "", headDate = "";
+  try {
+    const r = await ghFetch(c.env, `/repos/${repo}/commits/${encodeURIComponent(branch)}`);
+    if (!r.ok) throw new Error(`读 HEAD 失败 ${r.status}`);
+    const j = (await r.json()) as any;
+    headSha = String(j?.sha || "");
+    headDate = String(j?.commit?.committer?.date || j?.commit?.author?.date || "");
+    if (!headSha) throw new Error("响应里没有 sha");
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "sitebuild_head_failed", msg: String(e).slice(0, 200) }));
+    return c.json({ state: "unknown", detail: `读不到数据仓 HEAD：${String(e).slice(0, 160)}` });
+  }
+
+  // ② 官网自报的构建身份
+  let liveSha = "", builtAt = "";
+  try {
+    const r = await siteFetch(c.env, SITE_BUILD_URL);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = (await r.json()) as any;
+    liveSha = String(j?.sha || "");
+    builtAt = String(j?.builtAt || "");
+    if (!liveSha) throw new Error("build.json 里没有 sha");
+  } catch (e) {
+    // ⚠️ 出站被自己的白名单拒 ⇒ 也走这里。**说清是被谁拒的**，
+    //    否则下一个人会去查网络，而真正该改的是那份名单。
+    const denied = e instanceof SiteEgressDenied;
+    console.error(JSON.stringify({ evt: "sitebuild_live_failed", denied, msg: String(e).slice(0, 200) }));
+    return c.json({
+      state: "unknown", headSha, headDate,
+      detail: denied ? `出站白名单拒绝：${String(e).slice(0, 160)}` : `读不到官网 build.json：${String(e).slice(0, 160)}`,
+    });
+  }
+
+  const minutes = headDate ? Math.max(0, Math.round((Date.now() - Date.parse(headDate)) / 60000)) : null;
+  const same = liveSha === headSha;
+  // ⚠️ 不同但还没超时 ⇒ 仍报 ok：那多半就是正在构建。⛔ 别把"正常的一分钟"报成故障，
+  //    一个天天误报的告警会在真出事那天被无视。
+  const state = same ? "ok" : (minutes !== null && minutes >= STALE_MINUTES ? "stale" : "ok");
+  return c.json({ state, liveSha, headSha, builtAt, headDate, minutes, staleAfter: STALE_MINUTES });
 });
 
 // ─────────── 审计日志：谁在什么时候改了哪个产品 ───────────

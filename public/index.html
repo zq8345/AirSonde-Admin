@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=104">
+<link rel="stylesheet" href="/style.css?v=105">
 </head>
 <body>
 
@@ -95,6 +95,11 @@
   <main class="main">
     <!-- ══════ 列表视图 ══════ -->
     <section id="listView">
+      <!-- 🔴 官网构建状态（审计① / Joe 2026-09-04）。空着时不占位置。
+           它替掉的是那句**恒为真**的「已提交，线上生效有延迟」——
+           官网 09:53 停到 12:43 才被发现，而那三小时里后台一直在说同一句话。
+           ⚠️ 三态都要说得出口：正常(不显示) / 停了(红) / **无法确认(也必须说)**。 -->
+      <div id="siteBuildBar"></div>
       <!-- crm-skin B 批（§3）：⛔ 原 全部/在线/未上架 tab 条 + 「全部机型」下拉已删（元素 + 绑定 + state.tab 三处）。
            筛选住列头：「状态」= 两段切换 在线|未上架（默认无选中 = 全部）；「机型」= 漏斗菜单。「产品」列头不放任何控件。 -->
       <div class="page-head">
@@ -494,7 +499,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=104"></script>
+<script src="/app.js?v=105"></script>
 </body>
 </html>
 

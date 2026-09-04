@@ -139,6 +139,41 @@ export async function ghFetch(env: Env, path: string, init: RequestInit = {}): P
 export const hasWriteToken = (env: Env): boolean => !!tokenFor(env);
 
 /**
+ * 官网（非 GitHub）出站白名单。
+ *
+ * ⚠️ 审计派单写的是「把 airsonde.com 加进 `assertEgressAllowed`」——
+ *    **那条闸做不到这件事**：它第一行就是 `if (m === "GET" || m === "HEAD") return`，
+ *    只管**写**，根本不看 GET 去哪个域；而 `ghFetch` 的 URL 又写死了 `${GH}`，
+ *    压根到不了 airsonde.com。⇒ 原来的白名单不存在，这里是**新造**的一条。
+ * 🔴 但派单的**意图**照办：出站仍然只从这个文件出去，且**有一份可以被拿掉来做实测的名单** ——
+ *    判据 4（把域名临时移出名单 ⇒ 必须落到「无法确认」而不是沉默）因此才有靶子。
+ * ⛔ 不允许任意 URL：一个"想读哪就读哪"的出站口，下一个人会拿它去读别的东西，
+ *    而那时没有任何一处会拦。
+ */
+const SITE_HOSTS = new Set(["airsonde.com"]);
+
+/** 出站被白名单拒绝时抛它 —— 调用方要能把"我方拒绝"与"对方挂了"分开。 */
+export class SiteEgressDenied extends Error {}
+
+/**
+ * 读官网上的一个公开文件（当前只用于 `build.json` 构建戳）。
+ * ⚠️ 只允许 GET，且只允许白名单里的 host；⛔ 不带任何凭证（那是公开资源，
+ *    带上凭证等于把它变成一次有身份的请求）。
+ */
+export async function siteFetch(env: Env, url: string): Promise<Response> {
+  void env;
+  let u: URL;
+  try { u = new URL(url); } catch { throw new SiteEgressDenied(`不是合法 URL：${url}`); }
+  if (u.protocol !== "https:") throw new SiteEgressDenied(`只允许 https：${url}`);
+  if (!SITE_HOSTS.has(u.hostname)) {
+    throw new SiteEgressDenied(
+      `出站被拒：${u.hostname} 不在官网白名单里（当前允许 ${[...SITE_HOSTS].join(", ") || "（空）"}）。`,
+    );
+  }
+  return fetch(u.toString(), { method: "GET", headers: { "User-Agent": UA } });
+}
+
+/**
  * 同时打开的出站连接上限。⚠️ 这个数**不是**子请求总数上限。
  *
  * 🔴 2026-09-04 实测（dev，34 个产品）：`Promise.all(files.map(readProductFile))` 这种
