@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=118">
+<link rel="stylesheet" href="/style.css?v=121">
 </head>
 <body>
 
@@ -189,6 +189,9 @@
           <div class="cth"><span class="sec-title">机型</span>
             <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="categories"
                     title="进入管理态才能改名 / 删除 / 新增">管理</button>
+            <!-- 「全部放弃」：只在编辑态且真有未保存改动时出现（syncManageBtns 控制显隐）。
+                 ⚠️ 它必须**说清放弃了什么** —— 一句"确定放弃？"回答不了"我会失去什么"。 -->
+            <button type="button" class="linkish discardbtn" data-axis="categories" hidden>全部放弃</button>
           </div>
           <table class="ptable">
             <thead><tr>
@@ -210,6 +213,9 @@
           <div class="cth"><span class="sec-title">传感器</span>
             <button type="button" class="btn-secondary btn-mini managebtn" aria-pressed="false" data-axis="sensors"
                     title="进入管理态才能改名 / 删除 / 新增">管理</button>
+            <!-- 「全部放弃」：只在编辑态且真有未保存改动时出现（syncManageBtns 控制显隐）。
+                 ⚠️ 它必须**说清放弃了什么** —— 一句"确定放弃？"回答不了"我会失去什么"。 -->
+            <button type="button" class="linkish discardbtn" data-axis="sensors" hidden>全部放弃</button>
           </div>
           <div class="two-in">
             <table class="ptable">
@@ -516,7 +522,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=118"></script>
+<script src="/app.js?v=121"></script>
 </body>
 </html>
 

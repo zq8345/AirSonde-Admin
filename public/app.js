@@ -31,6 +31,12 @@ const state = {
   // ⚠️ 这是**默认值**，不是"记住上次"：切到未上架、切走再回来，照样回到在线（见 showNav）。
   //    ⛔ 不许做成 localStorage 记忆 —— 那样"我上次看的"会冒充"默认"，而两者的行为不同。
   statusSeg: "published",     // 「状态」列头两段切换：null = 全部 · "published" · "draft"（点同一段再点 = 取消）
+  // ⭐ 分类页暂存区（Joe 2026-09-04「编辑 / 保存」）。
+  // 🔴 改名/新增/删除在这里**只进内存**，点「保存」才一次性提交 ⇒ **一次保存 = 一个 commit**。
+  //    ⚠️ 这样「保存」两个字才是真话。原来点「管理中」什么也不保存，
+  //       而那句假话比没有按钮更坏：他会以为不点它改动就不生效，其实早写进仓了。
+  // ⛔ 不持久化（不进 localStorage）：刷新就该没有，⛔ 但离开前必须拦一次。
+  axisPending: { categories: [], sensors: [] },
   catSel: "",                 // 「机型」列头漏斗：""=全部机型 · 某个 category value
   auditSrc: "",               // 审计页「来源」漏斗：""=全部 · admin · other
   auditOp: "",                // 审计页「操作人」漏斗：""=全部 · 某个 operator
@@ -2068,6 +2074,37 @@ function confirmLeave() {
   return false;
 }
 /**
+ * 分类页离开拦截（第 4 条边界 1）。与 confirmLeave 同一套：第一次拦下并说清**会丢什么**，
+ * 第二次放行。⛔ 不做成永远拦不过去，也⛔ 不用系统弹窗。
+ */
+let catsLeaveArmed = false;
+function confirmLeaveCats() {
+  const n = pendingTotal();
+  if (!n) { catsLeaveArmed = false; return true; }
+  if (catsLeaveArmed) {
+    // 🔴 第二次点 = 放行，而屏幕上刚说过「再点一次就会丢弃它们」
+    //    ⇒ **必须真的丢弃**。实测发现过：走掉了但暂存还在内存里，
+    //      切回分类页它们又冒出来 —— 那句提示当场变成假话，
+    //      而更坏的是他以为已经放弃了，下次点「保存」会把它们一起提交。
+    catsLeaveArmed = false;
+    state.axisPending = { categories: [], sensors: [] };
+    state.axisManage = { categories: false, sensors: false };
+    const bar0 = $("#dirtyBar"); if (bar0) bar0.hidden = true;
+    if (state.cats) renderCats();
+    return true;
+  }
+  catsLeaveArmed = true;
+  const lines = [...pendingLines("categories"), ...pendingLines("sensors")];
+  const bar = $("#dirtyBar");
+  if (bar) {
+    bar.hidden = false;
+    // ⚠️ 说清**是哪几处**，⛔ 不只说个数字 —— 数字回答不了"我会失去什么"。
+    bar.textContent = `⚠️ 分类页有 ${n} 处未保存：${lines.join("；")} —— 再点一次就会丢弃它们。`;
+  }
+  return false;
+}
+
+/**
  * G 批 §6：`[data-autogrow]` 的 textarea 随内容长高，**不内滚**。
  *
  * ⚠️ 地板由 HTML 的 `rows` 出（rows=4），⛔ 这里不写第二个数字 ——
@@ -3390,6 +3427,12 @@ async function taxonomyOp(payload, btn) {
       return false;
     }
     wroteOk = true; commitSha = body.commitSha;
+    // 🔴🔴 暂存**只在这里清**，而且是**显式的一行**。
+    //    ⛔ 绝不放进 finally：finally 在失败路径上也会跑 ⇒ 一次 409 就把他刚改的东西全抹掉，
+    //       而屏幕上只显示"提交失败" —— 他会以为重试一下就行，其实活已经没了。
+    //    ⚠️ 位置也重要：必须在**确认 wrote === true 之后**，⛔ 不在请求发出时清。
+    state.axisPending = { categories: [], sensors: [] };
+    state.axisManage = { categories: false, sensors: false };   // 保存完退出编辑态
     // ⚠️ 先重读再写结果 —— loadCats() 会重画 #catsSummary，结果落在 #catsResult 才不会被它抹掉。
     await loadCats();
     out.append(mkNotice("ok", `✅ ${body.what} —— commit ${String(body.commitSha || "").slice(0, 7)}。${body.note || ""}`));
@@ -3406,6 +3449,89 @@ async function taxonomyOp(payload, btn) {
   }
 }
 
+/* ══════════ 分类页暂存区（第 4 条）══════════ */
+
+/** 这一轴有几处未保存。⚠️ 判据是**改了几样东西**，⛔ 不是"点了几下"—— 见 pushPending 的合并。 */
+function pendingCount(axis) { return (state.axisPending[axis] || []).length; }
+function pendingTotal() { return pendingCount("categories") + pendingCount("sensors"); }
+
+/**
+ * 往暂存区加一处改动，**并合并同一条上的重复操作**。
+ *
+ * 🔴 合并不是优化，是**让「有 N 处未保存」这句话为真**：
+ *    同一个取值改名三次仍然只是"一处改动"，不合并的话屏幕会说"3 处"，
+ *    而提交上去也确实是 3 条 op —— 数字与事实都错，且没有任何症状。
+ * 🔴 "本批新增的又删掉" ⇒ **两条一起撤**，⛔ 不是追加一条 delete：
+ *    追加的话保存时会是 add+delete 一对，服务端算出来内容没变、回一句"无需写入"，
+ *    而他明明改过别的东西 —— 那条消息会让他以为整批都没保存。
+ */
+function pushPending(axis, op) {
+  const list = state.axisPending[axis] || (state.axisPending[axis] = []);
+  if (op.op === "edit") {
+    const added = list.find((x) => x.op === "add" && x.value === op.value);
+    if (added) { added.label = op.label; return; }            // 本批新增的：直接改那条 add
+    const i = list.findIndex((x) => x.op === "edit" && x.value === op.value);
+    if (i >= 0) list[i] = op; else list.push(op);
+  } else if (op.op === "delete") {
+    if (list.some((x) => x.op === "add" && x.value === op.value)) {
+      state.axisPending[axis] = list.filter((x) => x.value !== op.value);   // 新增又删 ⇒ 撤干净
+      return;
+    }
+    state.axisPending[axis] = list.filter((x) => !(x.op === "edit" && x.value === op.value));
+    state.axisPending[axis].push(op);
+  } else {
+    list.push(op);
+  }
+}
+
+/**
+ * 暂存里**指不到任何一行**的改动。
+ *
+ * 🔴 这不是理论情形：`loadCats()` 刷新之后列表会变（别人删了一条 / 换了机器上的数据），
+ *    而暂存是内存里的。那时这条 op 仍算在「N 处未保存」里、仍会被一起提交，
+ *    **却在屏幕上一个字都看不见** —— 正是第 4 条要消灭的那件事本身。
+ * ⚠️ 实测发现的路径：拿一个大小写不对的取值（`Radiation` vs 真值 `radiation`）
+ *    进暂存 ⇒ 计数说 3 处，屏幕上只画得出 2 处。⛔ 不许静默。
+ */
+function pendingOrphans(axis, items) {
+  const have = new Set(items.map((x) => x.value));
+  return (state.axisPending[axis] || []).filter((o) => o.op !== "add" && !have.has(o.value));
+}
+
+/** 撤销某一条上的全部暂存改动（那一行的「撤销」）。 */
+function dropPending(axis, value) {
+  state.axisPending[axis] = (state.axisPending[axis] || []).filter((x) => x.value !== value);
+}
+
+/**
+ * 把暂存改动折到服务端给的那一份上，**得到他即将保存的样子**。
+ *
+ * 🔴 这一函数是第 4 条的核心：不画出来的话，「保存」保存的是**他看不见的东西** ——
+ *    那比原来那句假话更坏。⛔ 不许"暂存归暂存、表格照旧渲染"。
+ * ⚠️ 与服务端 applyOps 折的是同一批 op、同一个顺序；⛔ 但这里**不做判定**
+ *    （能不能删由服务端在写入那一刻数引用说了算），这里只负责**显示**。
+ */
+function axisView(axis, items) {
+  const rows = items.map((it) => ({ ...it, _kind: null, _oldLabel: null }));
+  (state.axisPending[axis] || []).forEach((o) => {
+    if (o.op === "add") {
+      rows.push({ value: o.value, label: o.label, refCount: 0, refs: [], canDelete: true, onSite: false,
+        _kind: "added", _oldLabel: null });
+      return;
+    }
+    const r = rows.find((x) => x.value === o.value);
+    if (!r) return;
+    if (o.op === "edit") {
+      if (r._oldLabel === null) r._oldLabel = r.label;
+      r.label = o.label;
+      if (r._kind !== "added") r._kind = "renamed";
+    } else if (o.op === "delete") {
+      r._kind = "deleted";
+    }
+  });
+  return rows;
+}
+
 function renderCats() {
   const c = state.cats; if (!c) return;
   const sum = $("#catsSummary"); sum.innerHTML = "";
@@ -3413,6 +3539,22 @@ function renderCats() {
   // 🔴 有产品读不出来 ⇒ 引用计数**不完整**，此时"0 个在用"不是"没人用"，是"我没看全"。
   //    这一行必须在最前面，因为它决定了下面每一个「删除」是不是可信的。
   if (c.unreadable) sum.append(mkNotice("bad", `🔴 ${c.unreadableNote}`));
+
+  // 🔴 暂存里指不到行的改动**必须吼出来**：它算在「N 处未保存」里、会被一起提交，
+  //    但在表格上画不出来 ⇒ 不说的话，「保存」保存的就是他看不见的东西。
+  const orph = [...pendingOrphans("categories", c.categories), ...pendingOrphans("sensors", c.sensors)];
+  if (orph.length) {
+    const n = el("div", "notice notice-bad");
+    appendMd(n.appendChild(el("div")),
+      `🔴 有 **${orph.length}** 处未保存的改动**在下面的表里找不到对应的行** —— 多半是这份列表在你编辑期间被刷新过。`);
+    const ul = el("ul", "dangling-list");
+    orph.forEach((o) => ul.append(el("li", null,
+      `${o.op === "delete" ? "删除" : "改名"} ${o.axis === "categories" ? "机型" : "传感器"} ${o.value}`)));
+    n.append(ul);
+    appendMd(n.appendChild(el("div")),
+      "⛔ 它们仍会被一起提交，而服务端多半会拒。**建议先撤销它们** —— 各自那一行已经不在了，用「全部放弃」重来最稳。");
+    sum.append(n);
+  }
 
   // ⭐ 对账：每个产品的 category 都必须落在轴里。落不进去的产品在下表上**根本不出现**。
   const known = new Set(c.categories.map((x) => x.value));
@@ -3457,11 +3599,19 @@ function renderAxis(axis, tb, items, good) {
   // 🔴 **按轴**取管理态，不是一个全局开关：管机型时不该把传感器那栏也解锁。
   const manage = canWrite && !!state.axisManage[axis];
   tb.innerHTML = "";
-  items.forEach((it) => {
+  // 🔴 渲染的是**暂存折算之后**的样子，⛔ 不是服务端那一份 ——
+  //    否则「保存」保存的是他看不见的东西（第 4 条的核心判据）。
+  axisView(axis, items).forEach((it) => {
     const tr = el("tr");
+    if (it._kind) tr.classList.add("pend-" + it._kind);
 
     const tdName = el("td");
     const nm = el("div", "pname", it.label || it.value);
+    // ⚠️ 暂存态要**在这一行上说出来**，⛔ 不只在顶部写个总数 ——
+    //    总数回答不了"我到底改了哪几条"，而那正是他按下保存前要确认的。
+    if (it._kind === "renamed") { const t = el("span", "pendtag", "改名"); t.title = `原来叫「${it._oldLabel}」`; nm.append(t); }
+    if (it._kind === "added") nm.append(el("span", "pendtag", "新增"));
+    if (it._kind === "deleted") nm.append(el("span", "pendtag pendtag-del", "待删除"));
     // 只留一个名字（Joe 2026-09-03：「取值和显示名保持一致，用一个就行」）——
     // 行内**不再显示取值副行（含管理态）**；两者不同的存量（如 Wall-mounted/wall-mounted、App/APP）
     // 取值只在 title 里留一条可查（hover），⛔ 不占一行。
@@ -3508,28 +3658,41 @@ function renderAxis(axis, tb, items, good) {
     //    Joe 定的。理由比"更整洁"硬：默认态原本摆着 28 个红色删除按钮，其中一半点了没反应。
     //    把破坏性入口从默认态拿掉，"看起来能点其实不能点"这个问题从源头就没有了。
     if (canWrite && manage) {
-      const bEdit = el("button", "linkish", "改名"); bEdit.type = "button";
-      bEdit.onclick = () => startRename(tr, tdName, axis, it);
-      tdAct.append(bEdit);
-
-      const bDel = el("button", "linkish danger", "删除"); bDel.type = "button";
-      if (!it.canDelete) {
-        // ⚠️ 禁用**必须带原因**：一个灰掉的按钮什么也没告诉人，人只会以为后台坏了。
-        bDel.disabled = true;
-        // 🔴 title 挂在 **td 上，不挂在按钮上**：`disabled` 的按钮在 Chrome 里
-        //    不接收指针事件，挂在它自己身上的 title 很可能永远不出现 ——
-        //    那就成了"我以为写了说明，屏幕上其实什么都没有"。
-        //    挂在 td 上，命中测试落到 td，说明跟着鼠标走。
-        tdAct.title = it.refCount
-          ? `还有 ${it.refCount} 个产品在用：${it.refs.join("、")}`
-          : "有产品读不出来，此刻数不准谁在用 —— 任何删除都先拒绝";
-      } else {
-        bDel.onclick = () => {
-          if (!confirm(`删除${axis === "categories" ? "机型" : "传感器"}「${it.label || it.value}」（${it.value}）？\n\n服务端会再数一次引用；有人在用就会被拒。`)) return;
-          taxonomyOp({ axis, op: "delete", value: it.value }, bDel);
-        };
+      // 🔴 三个动作**都只进暂存**，⛔ 一律不立即提交 —— 提交只发生在「保存」那一下。
+      //    这就是「保存」两个字成为真话的全部代价，也是它的全部理由。
+      if (it._kind) {
+        // 已经改过的行：给一条退路。⚠️ 没有退路的暂存等于"手一抖就只能整批放弃"。
+        const bUndo = el("button", "linkish", "撤销"); bUndo.type = "button";
+        bUndo.title = "把这一行的未保存改动去掉";
+        bUndo.onclick = () => { dropPending(axis, it.value); renderCats(); };
+        tdAct.append(bUndo);
       }
-      tdAct.append(bDel);
+      if (it._kind !== "deleted") {
+        const bEdit = el("button", "linkish", "改名"); bEdit.type = "button";
+        bEdit.onclick = () => startRename(tr, tdName, axis, it);
+        tdAct.append(bEdit);
+
+        const bDel = el("button", "linkish danger", "删除"); bDel.type = "button";
+        // ⚠️ `canDelete` 是服务端**上一次扫描**的结论，这里只拿它做提示。
+        //    🔴 真正的引用闸在写入那一刻由服务端再数一次 —— ⛔ 这里不复述那个判定。
+        if (!it.canDelete && it._kind !== "added") {
+          bDel.disabled = true;
+          // 🔴 title 挂在 **td 上，不挂在按钮上**：`disabled` 的按钮在 Chrome 里
+          //    不接收指针事件，挂在它自己身上的 title 很可能永远不出现 ——
+          //    那就成了"我以为写了说明，屏幕上其实什么都没有"。
+          tdAct.title = it.refCount
+            ? `还有 ${it.refCount} 个产品在用：${it.refs.join("、")}`
+            : "有产品读不出来，此刻数不准谁在用 —— 任何删除都先拒绝";
+        } else {
+          bDel.onclick = () => {
+            // ⛔ 这里**不再 confirm**：它现在只是标记待删，保存前随时能撤销，
+            //    而保存那一步本身就是他的确认动作。多一个弹窗只会让人闭眼点。
+            pushPending(axis, { axis, op: "delete", value: it.value });
+            renderCats();
+          };
+        }
+        tdAct.append(bDel);
+      }
     }
     // ⚠️ 只读态这一格是**空的**，不写"只读"两个字：那一列在只读态本来就没有标题，
     //    每行印一遍"只读"只是把 14 行都填上同一个不携带信息的词。
@@ -3541,6 +3704,17 @@ function renderAxis(axis, tb, items, good) {
 
 /** 行内改名。⛔ 只动 label —— value 那一格连输入框都不给。 */
 function startRename(tr, tdName, axis, it) {
+  // 🔴 编辑态**独占整行**：名字格铺满，其余格让位。
+  //    ⚠️ 传感器那两张子表一张只有 253px、名字格 99.5px —— 不让位的话
+  //       输入框只剩 14px、按钮被压到 25px 宽而把文字竖排（Joe 截图那个样子）。
+  //    ⛔ 不改回去用固定宽度：列宽随视口和内容变，写死的数字当场就错。
+  // ⚠️ 用 `hidden` 而不是 `style.display`：这一族在本文件里统一走 `hidden`，
+  //    而且 `.ptable td` 没有设 display ⇒ `[hidden]` 不会被作者样式顶掉（已实测）。
+  //    ⛔ 不需要恢复：取消/保存都走 renderCats() 整表重画。
+  const others = [...tr.children].filter((td) => td !== tdName);
+  const span = tr.children.length;
+  others.forEach((td) => { td.hidden = true; });
+  tdName.colSpan = span;
   tdName.innerHTML = "";
   const box = el("div", "axisedit");
   const inp = el("input"); inp.type = "text"; inp.value = it.label || it.value;
@@ -3554,11 +3728,13 @@ function startRename(tr, tdName, axis, it) {
   const cancel = () => renderCats();
   no.onclick = cancel;
   inp.onkeydown = (e) => { if (e.key === "Escape") cancel(); if (e.key === "Enter") ok.click(); };
-  ok.onclick = async () => {
+  ok.onclick = () => {
     const label = inp.value.trim();
     if (!label) { inp.focus(); return; }
     if (label === (it.label || "")) return cancel();
-    await taxonomyOp({ axis, op: "edit", value: it.value, label }, ok);
+    // ⛔ 不再直接提交：进暂存，等「保存」一次性提交（第 4 条）。
+    pushPending(axis, { axis, op: "edit", value: it.value, label });
+    renderCats();
   };
 }
 
@@ -3568,16 +3744,28 @@ function syncManageBtns() {
   const canWrite = !!state.write?.enabled;
   ["categories", "sensors"].forEach((axis) => {
     const on = canWrite && !!state.axisManage[axis];
+    const n = pendingCount(axis);
     const b = document.querySelector(`.managebtn[data-axis="${axis}"]`);
     if (b) {
       // 扳手线条图标（⛔ 不用 emoji，附录 C.6）；path 抄 mockup 的 I.tool
       b.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>';
-      b.append(document.createTextNode(on ? " 管理中" : " 管理"));
+      // 🔴 「编辑 / 保存」（Joe 2026-09-04 定）。⚠️ 它现在是**真话**：
+      //    编辑态里的改名/新增/删除只进暂存，点「保存」才一次性提交（一次保存 = 一个 commit）。
+      //    ⛔ 原来这两个字是假的 —— 点「管理中」什么也不保存，而改动早就写进仓了。
+      b.append(document.createTextNode(on ? (n ? ` 保存 ${n} 处` : " 保存") : " 编辑"));
       b.classList.toggle("on", on);
-      b.setAttribute("aria-pressed", String(on));   // 管理态是个开关，语义上就是 pressed
+      b.classList.toggle("primary", on && n > 0);   // 有东西要存时它才是主按钮
+      b.setAttribute("aria-pressed", String(on));   // 编辑态是个开关，语义上就是 pressed
       // 写入闸没开时禁用并说明原因 —— 让人点了没反应，正是这一批在修的病。
       b.disabled = !canWrite;
-      if (!canWrite) b.title = "当前不能保存（写入闸或 token 未就绪），所以也不给管理入口";
+      if (!canWrite) b.title = "当前不能保存（写入闸或 token 未就绪），所以也不给编辑入口";
+      else b.title = on ? (n ? `把这 ${n} 处改动一次性提交（一个 commit）` : "没有未保存的改动，点它退出编辑") : "进入编辑态才能改名 / 删除 / 新增";
+    }
+    // 「全部放弃」：⚠️ 只在**有东西可放弃**时出现，⛔ 不常驻占位。
+    const d = document.querySelector(`.discardbtn[data-axis="${axis}"]`);
+    if (d) {
+      d.hidden = !(on && n > 0);
+      d.textContent = `全部放弃（${n}）`;
     }
     // 新增表单跟着同一个开关走（三个动作一条规则，不留特例）。
     const f = $(ADD_FORM[axis]);
@@ -3585,14 +3773,44 @@ function syncManageBtns() {
   });
 }
 
+/** 这一轴的暂存改动，逐条说成人话 —— 确认框和「放弃」都要拿它说清**放弃/提交的是什么**。 */
+function pendingLines(axis) {
+  const L = axis === "categories" ? "机型" : "传感器";
+  return (state.axisPending[axis] || []).map((o) =>
+    o.op === "add" ? `新增${L}「${o.label}」`
+    : o.op === "delete" ? `删除${L}「${o.value}」`
+    : `把${L}「${o.value}」改名为「${o.label}」`);
+}
+
 ["categories", "sensors"].forEach((axis) => {
   const b = document.querySelector(`.managebtn[data-axis="${axis}"]`);
-  if (!b) return;
-  b.onclick = () => {
-    state.axisManage[axis] = !state.axisManage[axis];
-    // ⚠️ 退出管理态时要重画：正开着的行内改名输入框必须跟着收掉，
-    //    否则会留下一个能打字、按保存却已经不该存在的框。
-    if (state.cats) renderCats(); else syncManageBtns();
+  if (b) b.onclick = async () => {
+    if (!state.axisManage[axis]) {                 // 「编辑」：进编辑态
+      state.axisManage[axis] = true;
+      if (state.cats) renderCats(); else syncManageBtns();
+      return;
+    }
+    // 「保存」
+    const lines = pendingLines(axis);
+    if (!lines.length) {                            // 没东西要存 ⇒ 直接退出，⛔ 不发空请求
+      state.axisManage[axis] = false;
+      if (state.cats) renderCats(); else syncManageBtns();
+      return;
+    }
+    // ⚠️ 确认框里**逐条列出**要提交什么。⛔ 不写"确认保存 N 处改动？"——
+    //    数字回答不了"我到底改了什么"，而这一下会产生真 commit。
+    if (!confirm(`确认保存这 ${lines.length} 处改动？\n\n${lines.join("\n")}\n\n一次保存 = 一个 commit，会触发官网重建。`)) return;
+    await taxonomyOp({ ops: state.axisPending[axis] }, b);
+  };
+
+  // 「全部放弃」——⚠️ 必须**说清放弃了什么**，⛔ 不是一句"确定放弃？"
+  const d = document.querySelector(`.discardbtn[data-axis="${axis}"]`);
+  if (d) d.onclick = () => {
+    const lines = pendingLines(axis);
+    if (!lines.length) return;
+    if (!confirm(`放弃这 ${lines.length} 处未保存的改动？\n\n${lines.join("\n")}\n\n放弃之后它们就没了（仓里本来也没写进去）。`)) return;
+    state.axisPending[axis] = [];
+    renderCats();
   };
 });
 
@@ -3611,8 +3829,17 @@ function syncManageBtns() {
     if (!label) { form.label.focus(); return; }
     const value = axis === "categories" ? slugify(label) : label;
     if (!value) { form.label.focus(); return; }
-    const okDone = await taxonomyOp({ axis, op: "add", value, label }, form.querySelector("button"));
-    if (!okDone) return;
+    // ⛔ 不再直接提交：进暂存，等「保存」一次性提交（第 4 条）。
+    if ((state.cats?.[axis] || []).some((x) => x.value === value)
+        || (state.axisPending[axis] || []).some((x) => x.op === "add" && x.value === value)) {
+      // ⚠️ 本地先挡一次重复：服务端仍会再判一次（它才是真源），
+      //    但让人**在按保存之前**就知道，⛔ 不是攒到提交那一刻才告诉他。
+      $("#catsResult").innerHTML = "";
+      $("#catsResult").append(mkNotice("bad", `${axis === "categories" ? "机型" : "传感器"}里已经有「${value}」了。`));
+      return;
+    }
+    pushPending(axis, { axis, op: "add", value, label });
+    renderCats();
     form.reset();
     // ⚠️ 这一句是**事实**，不是客套：官网的 productTypePhrase 是 src/lib/products.ts 里
     //    一张写死的表（后台的写入范围到不了那个文件）。新机型不在表里 ⇒ 产品页的
@@ -3731,6 +3958,10 @@ function showNav(which) {
   //    放进去等于**点「未上架」也会被弹回在线** —— 那不是默认值，那是锁死。
   // ⚠️ 「从机型的在用数点过来」那条路（renderAxis 里）在 showNav 之后**显式**把它设回 null，
   //    所以那条路不受影响：它要的是那个机型的全部产品，含未上架。
+  // ⚠️ 切走分类页时把"再点一次"的武装解除 —— ⛔ 不让它跨页残留，
+  //    否则下次从别处切走会被一个与当前页无关的拦截挡一下。
+  if (which !== "cats") catsLeaveArmed = false;
+
   if (which === "products") state.statusSeg = "published";
 
   if (which === "media") {
@@ -3752,6 +3983,10 @@ document.querySelectorAll(".nav-item[data-nav]").forEach((b) => {
   b.onclick = () => {
     // 只有正停在编辑页且脏了才拦（v3 §3.5：返回列表 / 切左栏两条路）
     if (!$("#detailView").hidden && !confirmLeave()) return;
+    // 🔴 分类页的**未保存暂存**同样要拦（第 4 条边界 1）：
+    //    暂存只在内存里，切走就没了 —— ⛔ 不许静默丢弃，那是把一个假话换成另一个。
+    //    ⚠️ 复用同一套两次点击的形状（confirmLeave + #dirtyBar），⛔ 不发明第二种拦法。
+    if (state.nav === "cats" && b.dataset.nav !== "cats" && !confirmLeaveCats()) return;
     markClean();
     showNav(b.dataset.nav);
   };
@@ -3901,7 +4136,10 @@ if (typeof ResizeObserver === "function") {
   }
 })();
 
-
-
-
-
+// 🔴 刷新 / 关标签也要拦（第 4 条边界 1）。暂存只在内存里，⛔ 不持久化 ——
+//    刷新之后它就该没有，但**没有提醒地没有**是不行的。
+// ⚠️ 现代浏览器只认 preventDefault + returnValue，文案由浏览器自己出，⛔ 我们写什么都不显示。
+//    ⇒ 这一条只保证"他被问过一次"；"丢的是哪几处"由页内那条 #dirtyBar 负责说。
+window.addEventListener("beforeunload", (e) => {
+  if (state.nav === "cats" && pendingTotal()) { e.preventDefault(); e.returnValue = ""; }
+});

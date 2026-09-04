@@ -150,6 +150,71 @@ const clone = (t: Taxonomy): Taxonomy => JSON.parse(JSON.stringify(t));
  * 稳定序列化。⚠️ `$comment` 原样保留并排在最前 —— 它是给下一个读这个文件的人看的说明。
  * ⚠️ 每个轴按 order 排序后写出：文件顺序与显示顺序一致，diff 才读得懂。
  */
+/** 一次保存里的一处改动。⚠️ `value` 对 add 是新键，对 edit/delete 是被改的那一条。 */
+export type TaxOp = { axis: Axis; op: "add" | "edit" | "delete"; value: string; label?: string; order?: number };
+
+/** 批量失败时抛这个 —— 🔴 带**第几处**，⛔ 不是一句笼统的错误。 */
+export class OpFailed extends Error {
+  // ⚠️ 显式字段，⛔ 不用构造器参数属性（`constructor(readonly index...)`）——
+  //    selftest 是 `node` 直接 import 这个 .ts，走的是 **strip-only** 模式，
+  //    参数属性在那里直接 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`。
+  //    ⇒ tsc 过 ≠ 自检跑得起来：这个文件有**两个消费者**，语法要取交集。
+  index: number;
+  refs?: string[];
+  constructor(index: number, message: string, refs?: string[]) {
+    super(message);
+    this.index = index;
+    this.refs = refs;
+  }
+}
+
+/**
+ * 把一批改动**按序**折到轴上（一次保存 = 一个 commit 的那个"一批"）。
+ *
+ * 🔴 纯函数：不读仓、不发请求。引用查询由调用方以 `refsFor` 传进来 ——
+ *    这样它能在 selftest 里用**真的 `refsOf` + 真的产品数据**跑，⛔ 不需要桩。
+ *
+ * ⚠️ **顺序有意义**：同一批里可以先 add 再 edit 同一个 value。
+ *    ⛔ 不许重排、⛔ 不许去重 —— 那会让"我按这个顺序改的"与"实际写入的"对不上，
+ *      而两者不一致时屏幕上不会有任何提示。
+ *
+ * ⚠️ 任何一处失败 ⇒ **整批不生效**（抛出，调用方一个字节都别写）。
+ *    ⛔ 不做"能改几处算几处"：那会让人以为都保存了，而实际只保存了一半。
+ */
+export function applyOps(
+  t: Taxonomy,
+  ops: readonly TaxOp[],
+  refsFor: (axis: Axis, value: string) => string[],
+): { tax: Taxonomy; done: string[] } {
+  let next = t;
+  const done: string[] = [];
+  ops.forEach((o, i) => {
+    if (o.op === "add") {
+      if (next[o.axis].some((x) => x.value === o.value)) {
+        throw new OpFailed(i, `${AXIS_LABEL[o.axis]}里已经有「${o.value}」了`);
+      }
+      next = addItem(next, o.axis, { value: o.value, label: String(o.label ?? o.value) });
+      done.push(`新增${AXIS_LABEL[o.axis]} ${o.value}`);
+    } else if (o.op === "edit") {
+      // ⛔ 只改 label / order。value 一旦创建不可改 —— 它已经写进产品 JSON，改它 = 改数据。
+      try { next = editItem(next, o.axis, o.value, { label: o.label, order: o.order }); }
+      catch (e) { throw new OpFailed(i, String((e as Error).message)); }
+      done.push(`改${AXIS_LABEL[o.axis]} ${o.value} 的显示名`);
+    } else {
+      // 🔴🔴 唯一防线：自己数引用、自己拒绝。官网构建不会替我们把关（见本文件顶部四层实验）。
+      // ⚠️ 引用查的是**产品**，而轴的增删改不改变任何产品的归属 ⇒ 一批之内 refs 不会变。
+      const refs = refsFor(o.axis, o.value);
+      if (refs.length) {
+        throw new OpFailed(i, `拒绝删除「${o.value}」—— 还有 ${refs.length} 个产品在用`, refs);
+      }
+      try { next = deleteItem(next, o.axis, o.value); }
+      catch (e) { throw new OpFailed(i, String((e as Error).message)); }
+      done.push(`删除${AXIS_LABEL[o.axis]} ${o.value}`);
+    }
+  });
+  return { tax: next, done };
+}
+
 export function serializeTaxonomy(t: Taxonomy): string {
   const out: Record<string, unknown> = {};
   if (t.$comment) out.$comment = t.$comment;

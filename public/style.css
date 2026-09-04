@@ -755,9 +755,35 @@ button.danger:not(.linkish) { background: var(--bg-critical-soft); border: 1px s
   border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
 .axisadd button { white-space: nowrap; }
 /* 行内改名：输入框顶掉那一格的显示名，不跳走、不开弹窗。 */
+/* 🔴 内联改名态（Joe 2026-09-04 截图：那一行整个垮了）。实测 1278 档 —— ⛔ 不是只有 990：
+     传感器是**两张子表并排**，一张只有 253.5px、名字格只有 99.5px
+     ⇒ 输入框 `flex:1 1 0` + `min-width:0` 让完位之后只剩 **14px**；
+       「保存」「取消」被压成 **25px 宽 × 43px 高** —— 25px 只够一个汉字 ⇒ **每个字竖排成一列**。
+   ⚠️ 真正的宽度约束是**子表**（253px），⛔ 不是整张卡（约 520px）。按卡宽设计会再错一次。
+
+   两处一起修，⛔ 不是二选一：
+   ① 按钮 `flex: 0 0 auto` + `nowrap` —— **根治竖排**：竖排的成因永远是
+      "flex 子项被允许缩到比内容还窄"。⛔ 不靠 min-width 拍一个数字去挡。
+   ② 编辑态**独占整行**（startRename 里把名字格 colSpan 铺满、其余格让位）——
+      给输入框腾出宽度。⛔ 不压字号（闭集），⛔ 不截断按钮文字。 */
 .axisedit { display: flex; gap: var(--space-6); align-items: center; }
 .axisedit input { font: inherit; font-size: 13px; padding: var(--space-4) var(--space-6); min-width: 0; flex: 1 1 0;
   border: 1px solid var(--border-accent); border-radius: 5px; background: var(--bg-surface); color: var(--text-primary); }
+.axisedit button { flex: 0 0 auto; white-space: nowrap; }
+
+/* ══ 分类页暂存态（第 4 条）══
+   🔴 暂存必须**在行上看得见**：只在顶部写个总数的话，「保存」保存的仍是他看不见的东西。
+   ⚠️ 待删那一行**划掉 + 压暗**，⛔ 不是直接从表里拿掉 ——
+      拿掉的话"它还在、只是要被删"与"它已经没了"在屏幕上同形，而后者是假的。 */
+.pendtag { display: inline-block; margin-left: var(--space-6); padding: 0 6px; border-radius: 9px;
+  font-size: 12px; line-height: 17px; font-weight: 600; white-space: nowrap;
+  background: var(--bg-caution-soft); color: var(--text-caution); }
+.pendtag-del { background: var(--bg-critical-soft); color: var(--text-critical); }
+tr.pend-deleted .pname { text-decoration: line-through; opacity: .6; }
+tr.pend-added { background: var(--bg-success-soft); }
+tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
+/* 「全部放弃」是撤销动作 ⇒ 保持 .linkish 的分量，⛔ 不做成与「保存」同权重的按钮。 */
+.discardbtn { margin-left: var(--space-6); }
 /* 危险动作要长得像危险动作 —— 与「改名」并排时不能是同一个灰。 */
 .linkish.danger { color: var(--text-critical); }
 

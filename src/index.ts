@@ -21,6 +21,7 @@ import {
 } from "./contract";
 import {
   validateTaxonomy, axesOf, valuesOf, refsOf, unreadableCount, addItem, editItem, deleteItem,
+  applyOps, OpFailed, type TaxOp,
   serializeTaxonomy, AXIS_LABEL, type Taxonomy, type Axis,
 } from "./taxonomy";
 import { summarizeDiff } from "./diff";
@@ -1446,15 +1447,40 @@ app.put("/api/taxonomy", async (c) => {
   const operator = operatorOf(c);
   if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
 
-  let body: { axis?: Axis; op?: string; value?: string; label?: string; order?: number; expectedSha?: string };
+  let body: {
+    axis?: Axis; op?: string; value?: string; label?: string; order?: number;
+    ops?: { axis?: Axis; op?: string; value?: string; label?: string; order?: number }[];
+    expectedSha?: string;
+  };
   try { body = await c.req.json(); } catch (e) { return c.json({ wrote: false, error: "请求体不合法", detail: String(e) }, 400); }
 
-  const axis = body.axis as Axis;
-  if (axis !== "categories" && axis !== "sensors") {
-    return c.json({ wrote: false, error: `未知的轴：${body.axis}（只支持 categories / sensors）` }, 400);
+  // 🔴 单 op **规格化成一元数组**，⇒ 下面只有**一条**代码路径。
+  //    ⛔ 不写"单条走老路、批量走新路"两套：两套会各自演化，
+  //       而它们的差异只会在"批量能过、单条被拒"这种形态上暴露出来，那时没人知道该信哪一套。
+  const rawOps = Array.isArray(body.ops) && body.ops.length ? body.ops : [body];
+  if (rawOps.length > 50) {
+    return c.json({ wrote: false, error: "一次最多 50 处改动", detail: `收到 ${rawOps.length} 处。` }, 400);
   }
-  const value = String(body.value || "").trim();
-  if (!value) return c.json({ wrote: false, error: "value 必填" }, 400);
+
+  // 逐条校验形状。🔴 报错必须说清**是第几条** —— 一批里挂了一条，
+  //    只说"axis 不合法"的话，人得自己去数是哪一条。
+  // ⚠️ 用 `TaxOp`（真源在 taxonomy.ts），⛔ 不在这里抄一份同形的字面量类型 ——
+  //    抄一份时 `op: string` 会把 "add"|"edit"|"delete" 这个约束悄悄放宽，
+  //    于是"哪些 op 合法"就有了两个真源，而放宽的那一份不会报错。
+  const ops: TaxOp[] = [];
+  for (let i = 0; i < rawOps.length; i++) {
+    const o = rawOps[i]!;
+    const axis = o.axis as Axis;
+    if (axis !== "categories" && axis !== "sensors") {
+      return c.json({ wrote: false, error: `第 ${i + 1} 处：未知的轴「${o.axis}」（只支持 categories / sensors）` }, 400);
+    }
+    const value = String(o.value || "").trim();
+    if (!value) return c.json({ wrote: false, error: `第 ${i + 1} 处：value 必填` }, 400);
+    if (o.op !== "add" && o.op !== "edit" && o.op !== "delete") {
+      return c.json({ wrote: false, error: `第 ${i + 1} 处：未知操作「${o.op}」（只支持 add / edit / delete）` }, 400);
+    }
+    ops.push({ axis, op: o.op, value, label: o.label, order: o.order });
+  }
 
   try {
     const { tax, sha, path } = await loadTaxonomy(c.env);
@@ -1466,39 +1492,46 @@ app.put("/api/taxonomy", async (c) => {
     const taxConflict = staleConflict(body.expectedSha, sha, "分类轴");
     if (taxConflict) return c.json(taxConflict, 409);
 
-    let next: Taxonomy;
-    let what: string;
-    if (body.op === "add") {
-      if (tax[axis].some((x) => x.value === value)) {
-        return c.json({ wrote: false, error: `${AXIS_LABEL[axis]}里已经有「${value}」了` }, 422);
-      }
-      next = addItem(tax, axis, { value, label: String(body.label || value) });
-      what = `新增${AXIS_LABEL[axis]} ${value}`;
-    } else if (body.op === "edit") {
-      // ⛔ 只改 label / order。value 一旦创建不可改 —— 它已经写进产品 JSON，改它 = 改数据。
-      next = editItem(tax, axis, value, { label: body.label, order: body.order });
-      what = `改${AXIS_LABEL[axis]} ${value} 的显示名`;
-    } else if (body.op === "delete") {
-      // 🔴🔴 唯一防线：自己数引用、自己拒绝。官网构建不会替我们把关。
-      const products = await listExpanded(c.env);
+    // 🔴 引用只读**一次**，而且读的是**这一批开始之前**的产品。
+    //    ⚠️ 轴的增删改**不会改变任何产品的归属** ⇒ 一批之内 refs 不会变，
+    //       每条 delete 各读一次只是重复同样的答案，还会把子请求打满
+    //       （Workers 子请求上限一旦触顶，后面的读会静默返回失败，而计数照常）。
+    //    ⛔ 但也不许"没有 delete 也去读" —— listExpanded 是几十个子请求。
+    let products: any[] | null = null;
+    const needRefs = ops.some((o) => o.op === "delete");
+    if (needRefs) {
+      products = await listExpanded(c.env);
       const unreadable = unreadableCount(products);
       if (unreadable) {
         return c.json({ wrote: false, error: "拒绝删除",
           detail: `有 ${unreadable} 个产品读不出来 —— 它们引用了什么看不见。此时"没人在用"这个结论不成立，所以先拒绝。` }, 422);
       }
-      const refs = refsOf(products, axis, value);
-      if (refs.length) {
-        return c.json({ wrote: false, error: "拒绝删除：还有产品在用",
-          refs, refCount: refs.length,
-          detail: `「${value}」还被 ${refs.length} 个产品使用。先把它们改成别的${AXIS_LABEL[axis]}，再回来删。` +
-                  `
-⚠️ 官网构建**不会**替我们拦这一步（实测），所以这里必须拦。`,
+    }
+
+    // ── 按序 fold —— 判定在 `applyOps`（纯函数，selftest 用**真的 refsOf + 真产品数据**跑它）。
+    //    ⛔ 这里不写第二份 fold：写两份的话，selftest 绿的是一份、线上跑的是另一份。
+    let next: Taxonomy, done: string[];
+    try {
+      const r0 = applyOps(tax, ops, (axis, value) => refsOf(products || [], axis, value));
+      next = r0.tax; done = r0.done;
+    } catch (e) {
+      if (e instanceof OpFailed) {
+        console.error(JSON.stringify({ evt: "taxonomy_batch_rejected", operator, at: e.index, msg: e.message }));
+        return c.json({
+          wrote: false,
+          error: `第 ${e.index + 1} 处：${e.message}`,
+          failedAt: e.index,
+          ...(e.refs && e.refs.length ? { refs: e.refs, refCount: e.refs.length } : {}),
+          // 🔴 这句话是这一批里最重要的信息：**别让人以为保存成功了一半。**
+          detail: "**整批都没有写入**，⛔ 没有产生任何 commit。"
+            + "你的改动还在编辑器里 —— 改掉这一处再保存即可。"
+            + (e.refs && e.refs.length
+              ? `\n先把这 ${e.refs.length} 个产品改成别的取值，再回来删。`
+                + `\n⚠️ 官网构建**不会**替我们拦这一步（实测），所以这里必须拦。`
+              : ""),
         }, 422);
       }
-      next = deleteItem(tax, axis, value);
-      what = `删除${AXIS_LABEL[axis]} ${value}`;
-    } else {
-      return c.json({ wrote: false, error: `未知操作：${body.op}（只支持 add / edit / delete）` }, 400);
+      throw e;
     }
 
     const v = validateTaxonomy(next);
@@ -1508,14 +1541,16 @@ app.put("/api/taxonomy", async (c) => {
     const cur = await readRepoFile(c.env, path);
     if (text === cur.text) return c.json({ wrote: false, reason: "内容与仓里的完全相同，无需写入" });
 
+    // 🔴 **一次保存 = 一个 commit**（与产品列表批量同一个模型，⛔ 不发明第二套）。
+    const what = done.length === 1 ? done[0]! : `${done.length} 处改动`;
     const r = await commitFiles(c.env, {
-      message: `admin: taxonomy ${what} (${operator})
-
-来源：admin.airsonde.com`,
+      message: `admin: taxonomy ${what} (${operator})\n\n` +
+        (done.length > 1 ? done.map((d) => `· ${d}`).join("\n") + "\n\n" : "") +
+        `来源：admin.airsonde.com`,
       files: [{ path, text }],
     });
-    console.log(JSON.stringify({ evt: "taxonomy_ok", operator, axis, op: body.op, value, commit: r.commitSha }));
-    return c.json({ wrote: true, ...r, what,
+    console.log(JSON.stringify({ evt: "taxonomy_ok", operator, count: done.length, ops: done, commit: r.commitSha }));
+    return c.json({ wrote: true, ...r, what, applied: done,
       note: "已提交。官网由 Cloudflare Pages 重建，约 1 分钟后生效。" });
   } catch (e) {
     if (e instanceof EgressDenied) return c.json({ wrote: false, error: "写能力未开启", detail: String(e.message) }, 403);
