@@ -3,7 +3,7 @@
   "categories": [
     {
       "value": "desktop",
-      "label": "E2E 改名 A",
+      "label": "Desktop [FIXTURE]",
       "order": 1
     },
     {
@@ -35,7 +35,7 @@
   "sensors": [
     {
       "value": "CO2",
-      "label": "E2E 改名 C",
+      "label": "CO2 [FIXTURE]",
       "order": 1
     },
     {
@@ -102,11 +102,6 @@
       "value": "combustible-gas",
       "label": "combustible-gas [FIXTURE]",
       "order": 14
-    },
-    {
-      "value": "e2e-tmp-mtms85i1",
-      "label": "E2E 新增 B",
-      "order": 15
     }
   ]
 }
