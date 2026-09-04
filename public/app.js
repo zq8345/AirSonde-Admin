@@ -480,7 +480,9 @@ function renderList() {
     setThumb(th, it.image ? rawUrl(it.image) : null, it.name || it.slug);
     tdImg.append(th); tr.append(tdImg);
 
-    const tdName = el("td");
+    // col-name：让 CSS 挂得住"名字这一列"（第 11 条要它与图片列一起顶对齐）。
+    //    ⛔ 不用 :nth-child 定位 —— 前面插一列就会静默指错格子。
+    const tdName = el("td", "col-name");
     if (it.error) {
       tdName.append(el("div", "li-name", it.slug));
       tdName.append(el("div", "li-sub bad", `🔴 ${it.error}${it.detail ? "：" + it.detail : ""}`));

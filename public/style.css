@@ -572,7 +572,13 @@ th.filt { position: relative; overflow: visible; }
                         ⇒ 有意保留，不属于同一族。
      .idel/.featdel  ✅ 是盒子和按钮的尺寸，不是"撑住文字"（.gcard/.mcard 已删） */
 .ptable .col-ck { width: 34px; }
-.ptable .col-img { width: 54px; }
+/* ⚠️ 跟着 --li-thumb 走，⛔ 不写第二个数：两个数各改各的，迟早出现"图比列宽"。 */
+.ptable .col-img { width: calc(var(--li-thumb) + 10px); }
+/* 🔴 只有这两列顶对齐 —— Joe 要的是「图上边缘与标题顶对齐」，而 `.ptable td` 全局是 middle。
+   ⛔ 不把整张表改成 top：状态/型号/机型/操作那几格居中是对的，行变高后它们靠上会显得散。
+   ⚠️ 短标题行的图会比文字块略高一点 —— 那是**恒定尺寸**换来的代价，
+      比图片逐行忽大忽小好（总工 2026-09-04 裁定）。 */
+#listView .ptable tbody .col-img, #listView .ptable tbody .col-name { vertical-align: top; }
 /* 🔴 与 col-model **同一种修法**（见下面那段说明）。
    ⚠️ 那段说明是几天前诊断型号列时写的，结论白纸黑字「表格里的 width 是建议不是下限」——
       **而我当时只把修法用在型号列，紧挨着的这两列一个字没动。**
@@ -632,7 +638,21 @@ th.filt { position: relative; overflow: visible; }
    ⚠️ 取 64px 不是照抄 wanew 的 40：AirSonde 眼下最大的问题恰恰是产品图
       （审计记录有被判死的图仍在生产上，含一张可辨识儿童照出现在 16 个 URL），
       列表缩略图还要承担"一眼看出这张图有问题"的职责，40px 做不到。 */
-.thumb-sm { width: 44px; height: 44px; border-radius: 6px; background: var(--bg); }   /* 列表缩略图 44 圆角 6（crm-skin §3） */
+/* ⭐ 第 11 条（Joe 2026-09-04）：「预览图上面与标题栏上对齐、与传感器下对齐；
+   要么把图片改大一点，要么把标题改小一点」⇒ **放大图**，⛔ 不缩标题
+   （字号是闭集，缩它要动宪法；而且标题是他扫列表时最先读的东西）。
+
+   🔴 尺寸**恒定，⛔ 不逐行变**：块高逐行不同（标题一行 vs 两行），
+      跟着块高走会让图忽大忽小 —— 比现在更难看。
+   ⇒ 取「标题两行 + 传感器一行」那个块高当基准，**由它的组成算出来**，⛔ 不是试出来的数：
+        标题 2 行 = 2 × 1.4em（.ptable .li-name 的 line-height，em 在这里是 13px）= 36.4
+      + .namestack 的 gap 4
+      + .senrow 一行 20（.senchip line-height 18 + 上下边框各 1）
+      = 60.4
+   ⚠️ 判据是「图顶 = 标题顶」且「全表一个尺寸」，⛔ 不是这个数字本身 ——
+      数字变了不算回归，两者对不齐才算。 */
+:root { --li-thumb: calc(2 * 1.4 * 13px + 4px + 20px); }   /* = 60.4，见上推导 */
+.thumb-sm { width: var(--li-thumb); height: var(--li-thumb); border-radius: 6px; background: var(--bg); }
 .thumb-empty { color: var(--text-secondary); font-size: 12px; }
 .filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 13px; font-weight: 600; cursor: pointer;
   background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); margin: 0 0 var(--space-6); }
@@ -1110,7 +1130,7 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
    但父级 .namestack 没有 ⇒ flex 子项按内容算最小宽 ⇒ chip 行把「产品」列顶到 460px，
    把 型号/机型/操作 三列挤出卡片右缘（实测 998/1101/1201 > 卡右 943，表格出横滚）。
    ⚠️ 症状出现在**别的列**上，而病根在这一列的最小宽 —— 只看"谁被挤没了"会查错地方。 */
-.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: 44px; gap: 4px; min-width: 0; }   /* 撑到 44 的缩略图那么高 */
+.namestack { display: flex; flex-direction: column; justify-content: space-between; min-height: var(--li-thumb); gap: 4px; min-width: 0; }   /* 撑到缩略图那么高，⛔ 不写第二个数 */
 
 /* 🔴 标题**恒占 2 行**：短的补足（min-height）、长的截断带省略号（line-clamp）。
    两边都要 —— 只截不补，短标题那行会矮一截，等高就没了。
@@ -1118,9 +1138,14 @@ input::placeholder, textarea::placeholder { color: var(--text-secondary); opacit
 /* 🔴 标题**允许换行、最多两行**（line-clamp）。⛔ 不许 nowrap：表格单元里 nowrap 会让这一列取 max-content，
    最长的那条标题（AK17 那条 120 字）会把整张表撑出卡片，状态/型号/机型/操作四列全部挤到看不见 ——
    B 批第一版就是这么坏的（1278 实测：四个列头全在卡片右边界之外）。 */
+/* 🔴 `min-height` 是这次补上的。上面那段注释一直写着「短的补足（min-height）」，
+   **可 CSS 里从来没有这一条** —— 实测短标题行（AK35/AK8/AK3）文字块只有 44，
+   而两行标题的行是 60.4 ⇒ 行不等高，图也就无从与两端对齐。
+   ⚠️ 注释描述了一个没实现的行为，而这种偏差**不会报错、不会变红**，
+      只会让人以为已经做过了。 */
 .ptable .li-name {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-  overflow: hidden; line-height: 1.4; word-break: break-word;
+  overflow: hidden; line-height: 1.4; word-break: break-word; min-height: calc(2 * 1.4em);
 }
 
 /* 传感器行：**绝不换行**（换行会顶高行高，等高当场就没了）。
