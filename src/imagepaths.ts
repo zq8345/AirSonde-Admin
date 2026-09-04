@@ -16,9 +16,63 @@ export const ASSETS_ROOT = "src/assets/";
 export const PUB_DIR = "products";
 export const DRAFT_DIR = "products/_draft";
 
-/** 该 status 下，图片应当在哪个目录。 */
-export function dirForStatus(status: string): string {
-  return status === "published" ? PUB_DIR : DRAFT_DIR;
+/**
+ * 型号 → 文件夹名。⚠️ 必须与服务端建文件夹那道闸**同一个口径**
+ * （`index.ts` 的 `MEDIA_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/`）——
+ * 两边口径不一致的话，会出现"这个名字建得出来、却写不进去"或者反过来。
+ * ⛔ 不做花哨的转写：只小写 + 把非 [a-z0-9] 压成单个连字符 + 去首尾。
+ * 🔴 算不出合法名字时返回 null，调用方**回落到根目录**（⛔ 不是编一个名字）。
+ */
+export function folderForModel(model: string | undefined | null): string | null {
+  const s = String(model ?? "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
+  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(s) ? s : null;
+}
+
+/**
+ * 该 status 下，图片应当在哪个目录。
+ *
+ * 批 2（Joe 2026-09-04：「每个文件夹用型号作为名称」）：
+ *   - published + 有合法型号 ⇒ `products/<型号小写>`
+ *   - draft                 ⇒ `products/_draft`（**一个字没改**）
+ *   - published 但型号算不出合法名 ⇒ 回落 `products/` 根目录
+ *
+ * 🔴 回落到根**不是**兜底凑合，它是唯一安全的选择：官网的 glob 现在是递归的，
+ *    但根目录和型号目录都在构建范围内 ⇒ 回落的图照样上得了站；
+ *    而随便编一个目录名会让"这张图属于谁"从此对不上。
+ * ⚠️ 型号缺失时 Joe 会在保存前就被必填校验拦下（型号是必填），所以这条路很窄 ——
+ *    但窄不等于不存在，⛔ 不留一条会写出坏路径的分支。
+ */
+export function dirForStatus(status: string, model?: string | null): string {
+  if (status !== "published") return DRAFT_DIR;
+  const f = folderForModel(model);
+  return f ? `${PUB_DIR}/${f}` : PUB_DIR;
+}
+
+/**
+ * **存量**图片这一次该待在哪个目录。⚠️ 与 `dirForStatus` 是两件事，别合并。
+ *
+ * 🔴 批 2 的边界就在这里：Joe 要的是「**以后**新存的图落进型号文件夹」，
+ *    ⛔ 不是「**保存一下就把已有的图搬过去**」—— 那是批 3，要一个产品一个 commit 地做。
+ *
+ * 🔴 实测（2026-09-04，39 个产品逐个跑服务端 preview）：
+ *    如果存量路径也按 `dirForStatus` 归一化，**25 个 published 产品在"什么都不改"
+ *    的保存下都会被重写 images 路径**（各 8~9 行 add + 8~9 行 del）——
+ *    也就是 Joe 随手保存一个产品，就顺带触发了一次没人要的迁移，
+ *    而那次迁移的图**还没被搬**，官网当场缺图。
+ *
+ * 规则：
+ *   - draft ⇒ 必须在 `products/_draft/`（不在就搬）——**与批 2 之前完全一致**
+ *   - published ⇒ **只要它不在 `_draft/` 里就原地不动**（根目录或型号目录都算数）
+ *     ⚠️ 递归 glob 已上生产（批 1），两处都在构建范围内 ⇒ 原地不动不会让官网缺图。
+ *   - published 且当前在 `_draft/` ⇒ 这是一次**真的**状态转换，图本来就要搬出来，
+ *     顺势落进型号目录（`toDir`）。
+ */
+export function dirForExisting(status: string, currentPath: string, toDir: string): string {
+  const inDraft = currentPath.startsWith(DRAFT_DIR + "/");
+  if (status !== "published") return DRAFT_DIR;
+  if (inDraft) return toDir;             // 真的要搬出来 ⇒ 顺势进型号目录
+  return currentPath.slice(0, currentPath.lastIndexOf("/"));   // 原地不动
 }
 
 /** JSON 里的相对路径 → 仓内真实路径。 */
@@ -123,12 +177,17 @@ export interface ImagePlan {
 export function planImages(
   slug: string,
   status: string,
+  // 🔴 `model` 插在 `status` **后面**，不是加在参数表末尾（批 2）：
+  //    加在末尾且可选的话，漏传的调用点会**静默**回落到 `products/` 根目录 ——
+  //    图能上站、看起来一切正常，只是没进型号文件夹，而这正是本单要做的那件事。
+  //    插在这里 ⇒ 漏传是**编译错误**（TS）或自检断言失败，⛔ 不是一个悄悄错掉的默认值。
+  model: string | null | undefined,
   current: { main?: string; gallery?: string[] } | null,
   next: { main?: string; gallery?: (string | null)[] } | null,
   uploads: Upload[] = [],
   removeGallery: number[] = [],
 ): ImagePlan {
-  const dir = dirForStatus(status);
+  const dir = dirForStatus(status, model);
   const ops: FileOp[] = [];
   const uploadBySlot = new Map<string | number, Upload>(uploads.map((u) => [u.slot, u]));
   // 🔴 新图的编号一律从这里领（A10-R1-c）：已占用 max+1，用一个发一个，绝不回头。
@@ -153,9 +212,10 @@ export function planImages(
       // ⚠️ 两个地方各报一次同一个错，消息迟早不一致。
       return { images: { main: "" }, ops };
     }
-    mainJson = retarget(src, dir);
+    // ⚠️ 存量图走 dirForExisting，⛔ 不是 dir —— 批 2 只改"以后往哪写"，不碰"已经写在哪"。
+    mainJson = retarget(src, dirForExisting(status, src, dir));
     if (repoPath(src) !== repoPath(mainJson)) {
-      ops.push({ op: "copy", path: repoPath(mainJson), fromPath: repoPath(src), why: `status=${status} ⇒ 主图搬到 ${dir}/` });
+      ops.push({ op: "copy", path: repoPath(mainJson), fromPath: repoPath(src), why: `status=${status} ⇒ 主图搬到 ${dirForExisting(status, src, dir)}/` });
       ops.push({ op: "delete", path: repoPath(src), why: "搬家后删掉原位置（git 里没有 move，只有加+删）" });
     }
   }
@@ -181,9 +241,10 @@ export function planImages(
     }
     // 没有上传却是 null ⇒ 调用方给错了。不静默跳过：静默跳过会让那一位凭空消失。
     if (!g) throw new Error(`gallery[${i}] 是占位 null 但本次没有对应的上传 —— 调用方给的 uploads 与顺序对不上。`);
-    const t = retarget(g, dir);
+    const gDir = dirForExisting(status, g, dir);   // 同上：存量不迁移
+    const t = retarget(g, gDir);
     if (repoPath(g) !== repoPath(t)) {
-      ops.push({ op: "copy", path: repoPath(t), fromPath: repoPath(g), why: `status=${status} ⇒ gallery[${i}] 搬到 ${dir}/` });
+      ops.push({ op: "copy", path: repoPath(t), fromPath: repoPath(g), why: `status=${status} ⇒ gallery[${i}] 搬到 ${gDir}/` });
       ops.push({ op: "delete", path: repoPath(g), why: "搬家后删掉原位置" });
     }
     keep.push(t);

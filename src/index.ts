@@ -579,7 +579,10 @@ app.post("/api/products/batch", async (c) => {
       //    批改 category 时这里传的是**没变的** status ⇒ planImages 算出 0 项搬迁，
       //    而不是"category 分支不调用 planImages"。一条路径，行为不可能分叉。
       const nextStatus = String((merged as any).status ?? existing.status ?? "");
-      const plan = planImages(slug, nextStatus, existing.images ?? null, (merged as any).images ?? null, [], []);
+      // 批 2：图片落点 = status + **型号**（published ⇒ products/<型号小写>）。
+      //  ⚠️ 批量改 category 不动 model ⇒ 这里传的是没变的 model ⇒ 仍然算出 0 项搬迁。
+      const plan = planImages(slug, nextStatus, (merged as any).model ?? existing.model ?? null,
+        existing.images ?? null, (merged as any).images ?? null, [], []);
       (merged as any).images = plan.images;
 
       const v = validateProduct(merged, axes);
@@ -737,6 +740,7 @@ app.post("/api/products/:slug/preview", async (c) => {
     // 与 PUT 同一套图片规划 —— 预览必须显示"图片会被搬到哪里"，那是这次改动的一部分
     const plan = planImages(
       slug, String((merged as any).status || "draft"),
+      ((merged as any).model ?? (existing as any)?.model ?? null),   // 批 2：型号决定目录
       (existing as any)?.images ?? null, (merged as any).images ?? null,
       previewUploads, previewRemove,
     );
@@ -937,6 +941,7 @@ app.put("/api/products/:slug", async (c) => {
     const plan = planImages(
       slug,
       String((merged as any).status || "draft"),
+      ((merged as any).model ?? (existing as any)?.model ?? null),   // 批 2：型号决定目录
       (existing as any)?.images ?? null,
       (merged as any).images ?? null,
       uploads,
