@@ -635,6 +635,9 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
    ⛔ 不能挤成一句 —— `.notice` 没有 pre-wrap，靠 \n 排不出行。 */
 .dangling-list { margin: var(--space-4) 0 var(--space-4) 0; padding-left: 18px; }
 .dangling-list li { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; word-break: break-all; }
+/* 孤儿入口被拒（审计④）：位置照占，但**一眼看得出点不动** ——
+   ⛔ 不许做成"看着能点、点了没反应"，那种控件人会反复点、然后以为界面坏了。 */
+.mtag.is-refused { opacity: .55; cursor: not-allowed; text-decoration: line-through; }
 
 /* ═══ 设置页：只读口径卡片 ═══
    两栏（宽屏）：每张卡是一个独立的问题（能不能写 / 谁能进 / 落到哪 / 哪一版 / 契约），

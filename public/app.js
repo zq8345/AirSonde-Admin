@@ -2280,7 +2280,21 @@ function renderFolderGrid(m) {
   //    它是唯一会引导破坏性操作（清理）的信号 —— 文件夹网格上只能看出**哪个文件夹**有孤儿，
   //    ⛔ 没有"一次列全"的入口的话，5 张孤儿散在 5 个文件夹里就得点进 5 次才看得全。
   //    ⚠️ 一个只在出问题时才有用的入口，恰恰不能等出问题了再补。
-  if (m.orphans > 0) {
+  // 🔴🔴 **结论不可信时不给清单**（审计④，照搬 taxonomy 那道硬闸的形状：
+  //    `canDelete: refs.length===0 && unreadable===0` —— 读不出来的产品引用了什么看不见，
+  //    此时"没人在用"这个结论**不成立**）。
+  //    ⚠️ 这里的后果比 taxonomy 更重：孤儿清单唯一的用途就是引导清理，
+  //       而被误判的"孤儿"里可能正躺着官网在用的图，删了不可逆。
+  // ⛔ 但**不许静默藏起来**：入口消失 = 屏幕上什么都没发生，
+  //    而"有孤儿却没有入口"与"没有孤儿"在界面上同形 —— 那是另一种骗人。
+  //    ⇒ 位置照占、话照说、**就是不给点**。
+  if (m.orphans > 0 && m.orphansTrustworthy === false) {
+    const ob = el("button", "mtag is-refused", "未被引用 —— 本次算不出");
+    ob.type = "button"; ob.disabled = true;
+    ob.title = "有产品 JSON 读不出来，它们引用了什么看不见 ⇒ 算出来的\"孤儿\"里可能混着官网在用的图。"
+      + "先修好上面点名的那几个文件，这个清单才有意义。";
+    head.append(ob);
+  } else if (m.orphans > 0) {
     const ob = el("button", "mtag", `未被引用 ${m.orphans}`); ob.type = "button";
     ob.title = `把散落在各个文件夹里的 ${m.orphans} 张一次列全`;
     ob.onclick = () => { state.mediaFolder = ORPHAN_VIEW; renderMedia(); };
@@ -2430,6 +2444,10 @@ function folderCard(k, files, product, inDraft) {
  * ⚠️ 判据仍只有服务端盖的 `f.orphan`，⛔ 这里不写第二遍 `!referencedBy.length`。
  */
 function renderOrphanList(m) {
+  // 🔴 闸在**两处**都要有，⛔ 不能只守入口：
+  //    `state.mediaFolder` 是会留存的（切到别处再回来、上一次扫描时还可信），
+  //    只守入口的话，一次刷新就能带着旧视图进到这里 —— 而这里正是那份不可信清单。
+  if (m.orphansTrustworthy === false) return renderOrphanRefused(m);
   const files = m.files.filter((f) => f.orphan);
   $("#mediaSub").textContent = "";
   $("#mediaHead").innerHTML = "";
@@ -2443,14 +2461,53 @@ function renderOrphanList(m) {
   box.append(crumb);
 
   // ⚠️ 这一句不是装饰：人到这一页来多半是想清理，而"未被引用"**不等于**"可以删"。
-  box.append(mkNotice("warn", "**未被引用 ≠ 可以删。** 这里只是列出「没有任何产品 JSON 指向它」的图 —— "
-    + "确认之后再删，⛔ 删除仍然会二次确认。"));
+  // ⚠️ 这一句原本写着「删除仍然会二次确认」——**那是假的**：
+  //    这个后台按设计**没有删图能力**（本文件上方：「⛔ 只报告，绝不提供一键清理孤儿」，
+  //    服务端也没有任何删图端点）。真删是在仓里删的，**没有任何二次确认兜着他**。
+  //    ⇒ 一句承诺了不存在的护栏的话，比没有护栏更危险。
+  box.append(mkNotice("warn", "**未被引用 ≠ 可以删。** 这里只是列出「没有任何产品 JSON 指向它」的图。"
+    + "⚠️ 这个后台**不删图**，删是在仓里手动删的 —— **没有二次确认兜着你**，删错了也不可逆。"));
 
   const grid = el("div", "mgal");
   files.forEach((f) => grid.append(mediaCard(f)));
   box.append(grid);
   $("#mediaEmpty").hidden = files.length > 0;
   if (!files.length) $("#mediaEmpty").textContent = "没有未被引用的图片 —— 干净。";
+}
+
+/**
+ * 孤儿清单的**拒绝页**（审计④）。
+ *
+ * 🔴 判据不是"有没有孤儿"，是"**这个结论算不算得出来**"。
+ *    有产品 JSON 读不出来 ⇒ 它们声明的引用看不见 ⇒ 那些图会被算成孤儿。
+ *    此时给出清单，等于把**在用的图**摆进一个标题叫"未被引用"的页面。
+ * ⛔ 不给"我知道风险，还是看一眼"的旁路：这一页的唯一用途就是引导清理，
+ *    一个带着风险提示的清单，人照样会照着它删。
+ */
+function renderOrphanRefused(m) {
+  $("#mediaSub").textContent = "";
+  $("#mediaHead").innerHTML = "";
+  const box = $("#mediaGroups"); box.innerHTML = "";
+  const crumb = el("div", "fcrumb");
+  const back = el("button", "linkish", "← 全部文件夹"); back.type = "button";
+  back.onclick = () => { state.mediaFolder = null; renderMedia(); };
+  crumb.append(back, el("span", "hint0", "/"), el("b", null, "未被引用"));
+  box.append(crumb);
+  const n = el("div", "notice notice-bad");
+  appendMd(n.appendChild(el("div")),
+    "🔴 **这份清单这次算不出来，所以不给。**");
+  appendMd(n.appendChild(el("div")),
+    `有 ${(m.unreadable || []).length} 个产品的数据文件读不出来 ——`
+    + "它们**引用了哪些图看不见**，那些图会被算成「未被引用」。"
+    + "照这份清单清理，删掉的可能正是官网在用的图，**而且不可逆**。");
+  if ((m.unreadable || []).length) {
+    const ul = el("ul", "dangling-list");
+    m.unreadable.forEach((slug) => ul.append(el("li", null, slug)));
+    n.append(ul);
+  }
+  appendMd(n.appendChild(el("div")), "⇒ 先把上面这几个文件修好，这一页会自己恢复。");
+  box.append(n);
+  $("#mediaEmpty").hidden = true;
 }
 
 /** 点进一个文件夹：只看这一个。 */
