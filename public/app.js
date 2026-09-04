@@ -47,6 +47,8 @@ const state = {
   //      文件夹结构本身已经做到那件事；页头「N 张 · 在用 K」也仍给着那个数。
   //      ⛔ 但这条要说出来，不能静默丢 —— 已报总工转告 Joe。
   mediaFolder: null, mediaQ: "",
+  // 排序：name(默认) | count | live。⛔ 不持久化 —— 它是"我现在想这么看"，不是一项设置。
+  mediaSort: "name",
   audit: null,
   cats: null,       // /api/taxonomy：两个轴 + 每条的 refs/refCount/canDelete（引用计数由服务端数）
   /**
@@ -2210,6 +2212,17 @@ function renderFolderGrid(m) {
   search.type = "search"; search.placeholder = "搜型号 / 文件名"; search.value = state.mediaQ || "";
   search.oninput = () => { state.mediaQ = search.value; renderMedia(); search.focus(); };
   head.append(search);
+  // 排序（Joe：「加个排序」）。⛔ 只有三项 —— 派单里的第四项「最近更新」**做不了**：
+  //    `/api/media` 读的是 git tree，而 **tree 里没有时间**（它只有 path/size/sha/mode）。
+  //    ⚠️ 拿 `sha` 或数组顺序去排会是「**算得出、但不度量那件事**」——
+  //       排出来的顺序看着像"最近更新"，其实与时间无关，而且没有任何症状。
+  //    ⇒ ⛔ 宁可少一项，也不放一个会骗人的选项。已报总工（要它得先让服务端取 commit 时间）。
+  const sort = el("select", "msort");
+  [["name", "型号 A→Z"], ["count", "张数 多→少"], ["live", "在用优先"]]
+    .forEach(([v, t]) => sort.append(new Option(t, v)));
+  sort.value = state.mediaSort || "name";
+  sort.onchange = () => { state.mediaSort = sort.value; renderMedia(); };
+  head.append(sort);
   const nf = el("button", "btn-secondary", "＋ 新建文件夹"); nf.type = "button";
   nf.onclick = () => mediaPanel("folder");
   const up = el("button", "primary", "上传图片"); up.type = "button";
@@ -2222,8 +2235,25 @@ function renderFolderGrid(m) {
 
   const box = $("#mediaGroups"); box.innerHTML = "";
 
-  // ── 产品文件夹 ──
-  const names = [...productFolders].sort();
+  // ── 产品文件夹：排序 ──
+  // ⛔ 系统目录（草稿区 / 原图存档）**不参与排序，永远排最后** —— 它们下面单独一组。
+  // ⛔ 排序不持久化：刷新回默认。⚠️ 它是"我现在想这么看"，不是一项设置；
+  //    记住它会让下一次打开这一页的样子取决于上次点了什么，而人早忘了。
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  const names = [...productFolders].sort((a, b) => {
+    const fa = filesFor(a), fb = filesFor(b);
+    if (state.mediaSort === "count") {
+      const d = fb.files.length - fa.files.length;
+      if (d) return d;
+    } else if (state.mediaSort === "live") {
+      // 「在用优先」：型号文件夹里真有图的在前，图还在草稿区的在后。
+      // ⚠️ Joe 嫌乱多半就是这个 —— 现在按字母排，ak11c(草稿) 和 ak13a(在用) 是混着的。
+      const w = (x) => (x.files.length === 0 ? 2 : x.inDraft ? 1 : 0);
+      const d = w(fa) - w(fb);
+      if (d) return d;
+    }
+    return collator.compare(a, b);   // 兜底一律型号 A→Z ⇒ 排序稳定、⛔ 不出现"同一档内顺序乱跳"
+  });
   const grid = el("div", "fgrid");
   let shown = 0;
   names.forEach((k) => {

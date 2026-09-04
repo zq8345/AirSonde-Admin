@@ -746,9 +746,23 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .fcard:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
 /* 封面 = 产品主图（Joe 2026-09-04）。⛔ 原来的 2×2 四格拼贴 + 「+N」角标已撤：
    43 张卡 × 4 张缩略图 = 一屏 170 多张小图，噪音盖过信息。 */
-.fth { background: var(--panel); aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
+/* 🔴 1:1 + `contain`（Joe 2026-09-04：「我们所有上传的图片都是正方形 1:1 的，
+      这个预览图也改成 1:1，不然看着别扭」）。
+   ⚠️ 他说的现象是真的，但**"全是 1:1"这个前提不成立** —— 实测 230 张里只有 155 张
+      （67.4%）是严格 1:1；41 张**封面**里 14 张不是，其中 6 张严重偏离
+      （AK38 579×1972=0.294 · AK19 235×719=0.327 · AK33 0.465 · AK18A 0.603 ·
+        AK16D-CO 0.795 · AK30 1400×776=1.804）。
+   ⇒ 🔴 **`cover` 才是那个要换掉的东西，不是比例**：
+      旧的 4:3+cover 把 102 张方图裁掉了上下 —— 那才是"别扭"的来源；
+      而 1:1+cover 会把上面那 6 张裁掉 40~70%（AK38 基本只剩一段筒身）。
+   ⇒ 用 `contain`：**一张不裁**，非方图上下/左右留灰边。
+   ⚠️ 判据落在**这一页的用途**上 —— 它是用来"认出这是哪个产品"的，
+      而裁掉 70% 恰好破坏那件事。**齐 vs 认得出，认得出赢。**
+   📌 通用：`cover` 适合装饰性配图，`contain` 适合"要看清内容"的图。
+   ⚠️ 底色用 `--panel` 不用纯白：白底产品图配白底会和卡片糊在一起，看不出画面边界。 */
+.fth { background: var(--panel); aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
   overflow: hidden; }
-.fcover { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fcover { width: 100%; height: 100%; object-fit: contain; display: block; }
 /* 第三档回落：主图取不到、文件夹也没图 ⇒ 灰底占位，⛔ 不留碎图图标 */
 .fth.is-blank { background: var(--panel); }
 .fth > i { font-size: 12px; color: var(--hint); font-style: normal; }
@@ -772,6 +786,7 @@ button.danger { background: var(--bg-critical-soft); border: 1px solid var(--bor
 .fnote { font-size: 13px; color: var(--hint); margin: 14px 0 0; }
 .fnote .is-amber { color: var(--text-caution); }
 .msearch { width: 200px; }
+.msort { width: auto; }
 /* 文件夹内：面包屑 + 标题行 */
 .fcrumb { display: flex; align-items: center; gap: var(--space-8); font-size: 14px; margin-bottom: var(--space-16); }
 .fhead { display: flex; align-items: center; gap: 14px; margin-bottom: var(--space-16); }
