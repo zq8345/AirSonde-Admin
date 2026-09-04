@@ -802,6 +802,20 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
    ⇒ 37 是按编辑态最高的那个盒子**算出来的**，不是试出来的：
       `.linkish` 行高 19.5 + 按钮 padding 2×2 + 格子 padding 2×6 + 下边框 1 = 36.5 ⇒ 取 37。 */
 #catsView .ptable tbody td { height: 37px; }
+
+/* 🔴 名字列与「在用」数字之间**保底一条水槽**（Joe 2026-09-04：「Temperature36」看起来粘在一起）。
+
+   实测先说清楚：**间距不是 0**，它被两侧各 12px 的格内边距**托在 24px 的地板上**，
+   任何名字都压不到 0（扫过 990 / 1150 / 1278 / 1350 / 1500 / 1900 六档，最小 26.8px）。
+   ⚠️ 但 Joe 看到的那件事是**真的**：名字列自适应到"最长那个名字"，
+      于是最长的 `Temperature` 只剩 **0.9px** 余量、视觉间距 26.8，
+      而同列 `Humidity` 有 47.7 —— **同一列里差了 20px，最长那行看着就是贴上去的。**
+
+   ⇒ 一条规则解决：名字格右侧多留一段水槽。⛔ 不给 `Temperature` 写特例 ——
+     下次加一个更长的传感器名会同样犯（反向自证里塞过一个更长的假名字验过）。
+   ⛔ 不截断名字（那是 Joe 的数据），⛔ 不压字号；换行仍然允许
+     （`Combustible-gas` / `Data-History` 本来就换行，那是真实内容）。 */
+#catsView .ptable tbody td:first-child { padding-right: var(--space-20); }
 /* 批量条里的下拉：与旁边的按钮一样高，否则那一行会看起来是歪的 */
 /* 🔴 `width: auto` 是在挡全局那条 `input, select, textarea { width: 100% }`。
    ⚠️ 它一直在生效 —— 老的整条横幅里这个下拉本来就被拉成满行宽，只是那时它独占一行，**看不出来**。
