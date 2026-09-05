@@ -5,7 +5,7 @@
 
 import { Hono } from "hono";
 import type { Env } from "./env";
-import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, ghFetch, siteFetch, SiteEgressDenied, mapLimit, GH_CONCURRENCY, EgressDenied, ConflictError, ByteMismatchError } from "./github";
+import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToBytes, gitBlobShaBytes, ghFetch, siteFetch, SiteEgressDenied, mapLimit, GH_CONCURRENCY, EgressDenied, ConflictError, ByteMismatchError } from "./github";
 // ⚠️ catlabels.ts 已删除（A13）：它在**运行时解析官网 lib/products.ts** 去取分类显示名。
 //    契约 v1.4 之后，显示名的真源是 taxonomy.json，而 products.ts 里的 CATEGORY_LABELS
 //    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
@@ -1388,6 +1388,116 @@ app.put("/api/site-content", async (c) => {
     if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
     console.error(JSON.stringify({ evt: "site_content_failed", operator, msg: String(e) }));
     return c.json({ wrote: false, error: "写入失败", detail: String(e) }, 502);
+  }
+});
+
+// ───────────────── 站点固定资产位（本单只有微信二维码一个）─────────────────
+//
+// 🔴 与「媒体库上传」是**两件不同的事**，⛔ 不许合并到那个端点上：
+//    · 媒体库 = 往 `src/assets/products/<文件夹>/` **新增**一张图，同名一律拒（409）——
+//      理由写在那里：素材库里"同名不同图"是一笔查不出来的账。
+//    · 这里 = 官网上一个**固定位置**的图，「换二维码」这件事的全部含义就是**覆盖它**。
+//      官网 `src/pages/contact.astro:21` 是 `import wechatQr from '../assets/photos/wechat-qr.webp'`
+//      —— **静态 import，路径写死在源码里** ⇒ 能换掉它的办法只有一个：改这个路径上的字节。
+//      （已实测：origin/main 上该文件 37,118 字节，且全仓只有 contact.astro 这一处引用它。）
+//
+// 🔴 **写入范围就是下面这张表本身**：key 只能取表里的键，路径是常量，
+//    ⛔ 没有通配、⛔ 没有任何用户可控的路径片段。这一条就是这次范围扩展的边界。
+//    ⚠️ 将来要加第二个槽位 ⇒ 在这张表里加一行，⛔ 不要改成"传什么路径写什么路径"。
+//
+// ⚠️ 为什么这里**没有**乐观锁（⛔ 不是漏了）：站点内容那边必须锁，因为保存是一次**合并** ——
+//    后保存的人会把前一个人刚写进去的字段一起带走（丢失更新）。而这里是整块替换一个槽位，
+//    旧字节里没有任何东西会被带进新字节 ⇒ 不存在可丢的东西。真有两个人先后换，
+//    后换的那张本来就是最终想要的那张。
+//
+// ⚠️ 孤儿扫描碰不到它：media.ts 只扫 `src/assets/products/` 前缀（PRODUCT_IMG_PREFIX），
+//    而这张图在 `src/assets/photos/` 下 ⇒ 不会被判成"未被引用"而删掉。
+//    🔴 反过来说：**⛔ 绝不能把站点资产位放进 `src/assets/products/`** —— 放进去就是
+//    在孤儿名单里造一张"没有产品引用、但官网天天在用"的图，而孤儿的下场是被删。
+const SITE_ASSETS: Record<string, { path: string; rel: string; label: string; usedBy: string }> = {
+  "wechat-qr": {
+    path: "src/assets/photos/wechat-qr.webp",
+    rel: "photos/wechat-qr.webp",   // 与前端 rawUrl() 拼缩略图的形态一致（相对 src/assets/）
+    label: "微信二维码",
+    usedBy: "官网联系页 /contact/ 里 WeChat 那一行的悬停弹卡",
+  },
+};
+
+app.get("/api/site-asset/:key", async (c) => {
+  const key = c.req.param("key");
+  const a = SITE_ASSETS[key];
+  if (!a) return c.json({ error: `没有叫「${key}」的资产位。` }, 404);
+  try {
+    const res = await ghFetch(c.env, `/repos/${c.env.GITHUB_REPO}/contents/${a.path}?ref=${encodeURIComponent(c.env.GITHUB_BRANCH!)}`);
+    // ⚠️ ⛔ 不走 readRepoFile：那个函数会把字节按 UTF-8 解码成字符串 —— 对 webp 来说
+    //    解出来的是一串乱码，而且**不会报错**。这里只取元数据（sha/大小），不碰内容。
+    if (res.status === 404) {
+      return c.json({ key, ...a, exists: false, sha: null, size: 0,
+        hint: "官网仓里现在没有这个文件 —— 传一张上去就会创建它。" });
+    }
+    if (!res.ok) throw new Error(`GitHub ${res.status}：${(await res.text()).slice(0, 200)}`);
+    const j = (await res.json()) as any;
+    return c.json({ key, ...a, exists: true, sha: j.sha as string, size: (j.size as number) ?? 0 });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "site_asset_read_failed", key, msg: String(e) }));
+    return c.json({ error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+app.put("/api/site-asset/:key", async (c) => {
+  const operator = operatorOf(c);
+  if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
+
+  const key = c.req.param("key");
+  const a = SITE_ASSETS[key];
+  if (!a) return c.json({ wrote: false, error: `没有叫「${key}」的资产位。` }, 404);
+
+  let body: { base64?: string };
+  try { body = await c.req.json(); } catch (e) { return c.json({ wrote: false, error: "请求体不合法", detail: String(e) }, 400); }
+  if (!body.base64) return c.json({ wrote: false, error: "没有收到图片内容。未产生任何 commit。" }, 422);
+
+  // 🔴 校验在**发出任何写请求之前**，与产品图同一道闸（assertWebp：2MB 上限 + 按文件头认 WebP）。
+  //    ⛔ 不按扩展名认：内容是 PNG 而文件名是 .webp 这种错**没有任何症状**，能一直活到某天
+  //    某个按扩展名解析的工具遇上它。
+  let bytes: Uint8Array;
+  try {
+    bytes = base64ToBytes(body.base64);
+    assertWebp(bytes, a.label);
+  } catch (e) {
+    return c.json({ wrote: false, error: "图片不合格，未产生任何 commit", detail: String((e as Error).message) }, 422);
+  }
+
+  try {
+    // 与仓里字节完全相同就别提交 —— 空 commit 会让官网白重建一次，
+    // 而审计日志里会多一条"换过二维码"，与事实不符。（站点内容端点同样的做法。）
+    const probe = await ghFetch(c.env, `/repos/${c.env.GITHUB_REPO}/contents/${a.path}?ref=${encodeURIComponent(c.env.GITHUB_BRANCH!)}`);
+    let prevSha: string | null = null;
+    if (probe.ok) prevSha = ((await probe.json()) as any).sha ?? null;
+    const nextSha = await gitBlobShaBytes(bytes);
+    if (prevSha && prevSha === nextSha) {
+      return c.json({ wrote: false, reason: "这张图与仓里现在那张**一模一样**，无需写入（没有产生 commit，官网也不会重建）。", sha: prevSha });
+    }
+
+    const r = await commitFiles(c.env, {
+      message:
+        `admin: 换${a.label} (${operator})\n\n` +
+        `文件：${a.path}\n` +
+        `用处：${a.usedBy}\n` +
+        `来源：admin.airsonde.com`,
+      files: [{ path: a.path, base64: body.base64 }],
+    });
+    console.log(JSON.stringify({ evt: "site_asset_ok", key, operator, commit: r.commitSha, bytes: bytes.length }));
+    return c.json({ wrote: true, ...r, key, sha: nextSha, bytes: bytes.length,
+      note: "已提交。官网由 Cloudflare Pages 重建，约 1 分钟后站上可见 —— **保存成功不等于站上已经换了**，中间隔着一次构建。" });
+  } catch (e) {
+    // ⚠️ ⛔ 不写「写能力未开启」：EgressDenied 有三种来源（没开写 / 黑名单仓 / 生产分支），
+    //    只有第一种才是"没开写"。实测本机打官网仓命中的是**黑名单**那条，而写能力是开着的
+    //    ⇒ 那句话会把人支去查一个根本没关的开关。真正的理由在 detail 里，标题就别自作主张。
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "出站被本地策略拒绝", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
+    console.error(JSON.stringify({ evt: "site_asset_failed", key, operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "上传失败", detail: String(e) }, 502);
   }
 });
 

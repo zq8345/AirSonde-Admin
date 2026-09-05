@@ -278,6 +278,27 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
 .vprop-del { position: absolute; right: 0; top: 8px; background: none; border: 0; color: var(--red); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .vprop:first-of-type .vprop-del { top: -4px; }
 .vprop-del:hover { background: var(--tint-red); }
+/* 站点固定资产位（微信二维码）：当前图 | 新图 并排 + 右侧操作。
+   ⚠️ 它自带一条左边框和浅底 —— 这不是装饰：它在一张全是输入框的卡里，
+      而它**不归那张卡的「保存」管**（点「更换」当场提交）。长得跟旁边的字段一样，
+      就是在用样式说一句假话。 */
+.qrslot { border-left: 2px solid var(--border-strong); background: var(--bg-app); border-radius: 6px; padding: var(--space-12) var(--space-16); }
+.qrrow { display: flex; align-items: flex-start; gap: var(--space-16); flex-wrap: wrap; }
+.qrcell { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
+/* 二维码是方的 ⇒ 格子也是方的，⛔ 不用 .thumb 的 110×110 之外再造尺寸体系，直接沿用它的形状语言 */
+.qrthumb {
+  width: 96px; height: 96px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+/* contain 而不是 cover：二维码被裁掉一条边就**扫不出来了**，而缩略图看起来照样正常 */
+.qrthumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.qrcap { font-size: 12px; color: var(--hint); }
+.qrside { flex: 1 1 200px; display: flex; flex-direction: column; gap: var(--space-8); min-width: 180px; }
+.qracts { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
+.qrres:not(:empty) { margin-top: var(--space-12); }
+/* 🔴 只读态下这一块**不许被灰化**：全局 `.ro` 会把字段压成展示态，而这块的控件是能点的
+   （它挂着 data-selfsave，setSiteEditing 不碰它）—— 灰着却能点，是最糟的一种说法。 */
+.ro .qrslot, .ro .qrslot button, .ro .qrslot label { opacity: 1; }
 .req { color: var(--text-critical); font-size: 12px; font-weight: 600; margin-left: var(--space-4); }
 /* 输入框照 mockup .inp：白底 · --border-strong 描边 · 圆角 8 · 14px（C 批 §6，全站一次换） */
 input, select, textarea {
@@ -1405,5 +1426,19 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 #siteForm.ro input::placeholder, #siteForm.ro textarea::placeholder { color: transparent; }  /* 只读态不显示"填什么" */
 #siteForm.ro .q2, #siteForm.ro .fcnt, #siteForm.ro .inherit { display: none; }               /* 无提示（Joe 原话） */
 #siteForm.ro button, #siteForm.ro .vprop-del, #siteForm.ro .add { display: none; }           /* 动作全部不出现，不是灰着 */
+/* 🔴 上面那条只读皮**独立于 JS 那条同名规则** —— 它按标签名扫，`data-selfsave` 它根本不认识。
+   ⚠️ 实测栽在这里（2026-09-05）：JS 侧已经放行了（`disabled` 没被设上、`el.hidden` 也是 false），
+      而这一条把「更换 / 取消」两个 `<button>` 的 computed display 压成了 `none` ——
+      于是"按钮在不在"这件事，JS 读出来是"在"、屏幕上是"不在"。
+      ⛔ 判它只能落到 computed style / 真实几何上，`el.hidden` 是错的仪器。
+   ⇒ 把 JS 那条规则的**同一个意图**补到 CSS 侧：只读皮管的是「保存」会提交的那些控件，
+     自管保存的那一块不归它。
+   ⚠️ 用**加一条覆盖**而不是给上面那条加 `:not([data-selfsave] *)`：后者是 Selectors-4 的
+      复杂 :not()，老浏览器不认时**整条规则作废** ⇒ 只读态下所有动作按钮一起冒出来。
+      属性选择器则是全兼容的，坏也只坏这一块。
+   ⚠️ `[hidden]{display:none!important}`（148 行）仍然压得住这条 ⇒ 没选图时按钮照样是藏的。
+   ⚠️ 值取 inline-flex 只是照 `.btn-secondary`；`.qracts` 是 flex 容器 ⇒ 子项会被 blockify，
+      实际算出来都是 flex，这个值本身不承担布局。 */
+#siteForm.ro [data-selfsave] button { display: inline-flex; }
 #siteForm.ro .featcard { pointer-events: none; }                                             /* 精选卡只读：不拖不删 */
 #siteForm.ro .featadd, #siteForm.ro .featpickgrid, #siteForm.ro .featadd-head { display: none; }

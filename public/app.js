@@ -2798,7 +2798,14 @@ function setSiteEditing(on) {
   state.siteEditing = !!on;
   const form = $("#siteForm");
   form.classList.toggle("ro", !on);
-  form.querySelectorAll("input, textarea, select, button").forEach((el2) => { el2.disabled = !on; });
+  // 🔴 规则（⛔ 不是给二维码开的特例）：**这个开关只管「保存」按钮会提交的那些字段**。
+  //    自己管自己提交的控件挂 `data-selfsave`，编辑态碰不到它 —— 否则会出现
+  //    "只读态下二维码也点不动"，而那张图根本不在「保存」的提交范围里，
+  //    人会以为得先点「编辑」才能换图，点完又发现「保存」跟它没关系。
+  form.querySelectorAll("input, textarea, select, button").forEach((el2) => {
+    if (el2.closest("[data-selfsave]")) return;
+    el2.disabled = !on;
+  });
   $("#siteEdit").hidden = on;
   $("#siteCancel").hidden = !on;
   $("#siteSave").hidden = !on;
@@ -2908,6 +2915,146 @@ function siteField(parent, path, label, hint, opts = {}) {
   parent.append(wrap);
 }
 
+/**
+ * 站点**固定资产位** —— 本单只有一个：官网联系页那张微信二维码。
+ *
+ * 🔴 它**不走这一页的「保存」**：点「更换」当场就是官网仓的一个 commit。
+ *    ⇒ 界面必须把这句原样说出来。⛔ 不能让它长得像表单里的普通字段 ——
+ *      长得像的话，人会以为"选完图还要点保存"（其实点「更换」就已经提交了），
+ *      反过来也可能以为"我没点保存，所以刚才那张没上去"。两种误解都会让他再操作一次。
+ * ⚠️ 挂 `data-selfsave` ⇒ 不归 setSiteEditing 的只读/编辑态管（规则写在那里）。
+ *
+ * ⚠️ **当前图与新图并排**，⛔ 不是选完就把当前那张换掉 —— 换掉的话，"我到底要把哪张
+ *    替换成哪张"这件事在按下不可逆按钮的那一刻恰好看不见了。
+ */
+function siteAssetSlot(parent, key, label, hint) {
+  const wrap = el("div", "field qrslot");
+  wrap.dataset.selfsave = "1";
+  const lab = el("label", "flab", label);
+  const q = el("span", "q2", "?"); q.title = String(hint).replace(/\*\*/g, ""); lab.append(q);
+  wrap.append(lab);
+
+  const row = el("div", "qrrow");
+  const mkCell = (cap) => {
+    const cell = el("div", "qrcell");
+    const box = el("div", "qrthumb");
+    cell.append(box, el("span", "qrcap", cap));
+    row.append(cell);
+    return { cell, box };
+  };
+  const curCell = mkCell("现在这张");
+  const newCell = mkCell("要换成"); newCell.cell.hidden = true;
+
+  const side = el("div", "qrside");
+  const pick = el("label", "btn-secondary btn-mini");
+  const fi = el("input"); fi.type = "file"; fi.accept = "image/*"; fi.hidden = true;
+  pick.append(fi, document.createTextNode("选一张新的…"));
+  // ⚠️ 「更换」是描边不是绿实心：附录 C.7 的闭集写着**主动作一屏至多一个**，
+  //    而这一屏的绿实心已经被页头的「保存」占了（index.html `.primary#siteSave`）。
+  //    两个绿按钮会让人分不清哪一个才算"做完了这件事"。
+  // ⚠️ 「取消」用 .linkish —— 站内撤销动作既定的分量（见 style.css 791 行「全部放弃」）。
+  const go = el("button", "btn-secondary btn-mini", "更换"); go.type = "button"; go.hidden = true;
+  const undo = el("button", "linkish", "取消"); undo.type = "button"; undo.hidden = true;
+  const acts = el("div", "qracts");
+  acts.append(pick, go, undo);
+  side.append(acts);
+  const st = el("p", "hint0", "读取中…");
+  side.append(st);
+  row.append(side);
+  wrap.append(row);
+  const res = el("div", "qrres");
+  wrap.append(res);
+  parent.append(wrap);
+
+  let meta = null;     // 服务端说的"仓里现在是什么"
+  let picked = null;   // {base64, w, h, bytes}
+
+  const setThumbImg = (box, src, alt) => {
+    box.innerHTML = "";
+    if (!src) { box.append(el("span", "thumb-empty", alt)); return; }
+    const img = el("img"); img.alt = alt; img.src = src; box.append(img);
+  };
+
+  const paint = () => {
+    if (!meta) setThumbImg(curCell.box, null, "读不到");
+    else if (!meta.exists) setThumbImg(curCell.box, null, "还没有图");
+    else setThumbImg(curCell.box, rawUrl(meta.rel), "官网现在用的" + label);
+
+    newCell.cell.hidden = !picked;
+    go.hidden = !picked; undo.hidden = !picked;
+    // ⚠️ 写入闸没开时不给"更换"，并且**说出理由** —— 点了没反应正是这一批在修的病。
+    go.disabled = !picked || !state.write?.enabled;
+    if (!state.write?.enabled) go.title = "当前不能写入（写入闸或 token 未就绪）";
+    else go.title = `把官网仓里的 ${meta ? meta.path : ""} 换成这张 —— 点下去就是一次提交`;
+  };
+
+  const say = (t) => { st.textContent = t; };
+
+  (async () => {
+    try {
+      const { status, body } = await api("/api/site-asset/" + key);
+      if (status >= 400) { meta = null; say(body?.error || `读取失败（${status}）`); paint(); return; }
+      meta = body;
+      say(meta.exists
+        ? `官网仓 ${meta.path} · ${(meta.size / 1024).toFixed(0)} KB · ${meta.usedBy}`
+        : (meta.hint || "仓里还没有这个文件。"));
+      paint();
+    } catch (e) { meta = null; say("读取失败：" + e.message); paint(); }
+  })();
+
+  fi.onchange = async () => {
+    const f = fi.files && fi.files[0]; fi.value = "";
+    res.innerHTML = "";
+    if (!f) return;
+    say("转 WebP 中…");
+    try {
+      // 🔴 与产品图**同一个函数**：浏览器里转 WebP，服务端只认 WebP 且按文件头判。
+      //    ⛔ 不另写一份转换 —— 两份转换迟早在某个参数上分叉，而分叉没有症状。
+      const { blob, w, h, ow, oh } = await toWebp(f);
+      picked = { base64: await blobToBase64(blob), w, h, bytes: blob.size };
+      setThumbImg(newCell.box, URL.createObjectURL(blob), "要换上去的" + label);
+      // 🔴 「点更换就是提交」这句必须**在这一刻看得见**：只读态下 (?) 那个提示是被藏起来的
+      //    （style.css `#siteForm.ro .q2 { display:none }`），而这一刻恰恰是他要按下不可逆按钮之前。
+      say(`新图 ${w}×${h}${(ow !== w || oh !== h) ? `（原图 ${ow}×${oh}，已缩）` : ""} · ${(blob.size / 1024).toFixed(0)} KB`
+        + " · 点「更换」当场提交到官网仓，不用点上面的「保存」");
+    } catch (e) {
+      picked = null;
+      res.append(mkNotice("bad", "这张图用不了：" + e.message));
+      say("");
+    }
+    paint();
+  };
+
+  undo.onclick = () => { picked = null; res.innerHTML = ""; say(meta?.exists ? `官网仓 ${meta.path}` : ""); paint(); };
+
+  go.onclick = async () => {
+    if (!picked) return;
+    go.disabled = true; const t0 = go.textContent; go.textContent = "提交中…";
+    res.innerHTML = "";
+    try {
+      const { status, body } = await api("/api/site-asset/" + key, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ base64: picked.base64 }),
+      });
+      if (body && body.wrote === true) {
+        // 🔴 换 cacheBust 才能看见新图：raw.githubusercontent.com 有 ≈300s CDN 缓存，
+        //    路径又没变 ⇒ 不换的话缩略图还是旧的，而人会以为没传上去，**再传一次**。
+        state.cacheBust = body.commitSha;
+        picked = null; res.innerHTML = "";
+        meta = { ...meta, exists: true, sha: body.sha, size: body.bytes };
+        res.append(mkNotice("ok", body.note || "已提交。"));
+        say(`官网仓 ${meta.path} · ${(meta.size / 1024).toFixed(0)} KB`);
+      } else {
+        // wrote:false 也是**正常回答**（比如"跟现在这张一模一样"），⛔ 不当成失败报红
+        res.append(mkNotice(status >= 400 ? "bad" : "warn", body?.reason || body?.detail || body?.error || `没有写入（${status}）`));
+      }
+    } catch (e) {
+      res.append(mkNotice("bad", "更换失败：" + e.message));
+    }
+    go.textContent = t0; paint();
+  };
+}
+
 function siteCard(title, sub) {
   const s = el("section", "card");
   const h = el("h3", null, title);
@@ -2945,6 +3092,10 @@ function renderSite(keepDraft = false) {
     const r1 = el("div", "row2"); c.append(r1);
     siteField(r1, "contact.phone", "电话", "WhatsApp 与拨号链接都由这一个号码派生（wa.me / tel:）。号码只存这一处，不可能出现「号码改了链接没改」。以 + 和国家码开头。");
     siteField(r1, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
+    // 二维码紧跟微信号（Joe 2026-09-05 定的位置）。⚠️ 它是**图片**，不走这一页的「保存」——
+    //    理由与做法都在 siteAssetSlot 里，界面上也会明说。
+    siteAssetSlot(c, "wechat-qr", "微信二维码",
+      "官网联系页把鼠标停在 WeChat 那一行时弹出的那张图。**它不走这一页的「保存」**：选好图点「更换」当场就是官网仓的一次提交，约 1 分钟后站上生效。");
     siteField(c, "contact.address", "地址", "Google 地图链接由地址算出来，不单独存 —— 改了地址，地图自动跟着走。");
     const r2 = el("div", "row2"); c.append(r2);
     siteField(r2, "contact.hours", "营业时间");
