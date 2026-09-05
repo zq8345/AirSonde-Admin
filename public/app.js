@@ -3126,7 +3126,13 @@ function renderSite(keepDraft = false) {
     siteField(r2, "contact.response", "响应时间");
     form.append(c);
   } else if (sec === "home") {
+    // 🔴 `card-inline`（Joe 2026-09-05）：这两张卡里**值紧跟在标签后面、同一行**
+    //    （原来每个字段占两行，整块太高）。查看态与编辑态**同一份 markup** ——
+    //    与两态皮同一条规矩：只换 class，⛔ 不重画字段。
+    // ⚠️ 只挂在这两张卡上：SPEC 明写「首页精选产品及其他板块不动」，
+    //    ⛔ 绝不改全局 `.field` —— 那会连联系方式 / SEO / 产品页一起换掉。
     const h = siteCard("Hero", "首页第一屏");
+    h.classList.add("card-inline");
     siteField(h, "home.hero.eyebrow", "小标", null, { meta: "eyebrow" });
     siteField(h, "home.hero.headline", "大标题", "首页的 H1，搜索引擎最看重的一行。", { meta: "H1" });
     siteField(h, "home.hero.body", "副文案", null, { multiline: true, rows: 2 });
@@ -3137,6 +3143,7 @@ function renderSite(keepDraft = false) {
 
     // 卖点卡（§6 mockup）：每张 = row2（标题 | 正文），右上「删掉这张」红字；卡底「+ 加一张」描边小按钮
     const v = siteCard("卖点卡", `首页那几张小卡 · ${(state.siteDraft.home.valueProps || []).length} 张`);
+    v.classList.add("card-inline");   // 同上（Joe 红框里的第二块）
     (state.siteDraft.home.valueProps || []).forEach((_, i) => {
       const row = el("div", "vprop");
       const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
