@@ -71,6 +71,22 @@ const PUB = (m) => ({ model: m, status: "published" });
   ck("② AK16/D 与 AK16-D 是同一个地址 ⇒ 不记", decideRename(PUB("AK16/D"), { model: "AK16-D" }, "2026-09-05").record === false);
 }
 {
+  // 🔴 **改回原值也必须照实记**（官网窗 2026-09-05 指出，我复核成立）。
+  //    ⛔ 不许因为"它回到原值了"就跳过 —— 台账里此刻还留着 `/products/ak16/ → /products/ak16a/`，
+  //    不补上反向那条，`build-redirects` 解析终点仍是 `/products/ak16a/`，
+  //    于是它会为**现在真的活着的** `/products/ak16/` 发一条 301 **把活页整页跳走**。
+  //    ⚠️ 那是零症状故障：构建绿、页面在、只是没人到得了。
+  const back = decideRename({ model: "AK16A", status: "published" }, { model: "AK16" }, "2026-09-05");
+  ck("② 🔴 改回原值也照实记（不记 ⇒ 生成器会发一条把活页跳走的 301）",
+    back.record === true && back.entry.from === "/products/ak16a/" && back.entry.to === "/products/ak16/",
+    JSON.stringify(back));
+  // 反向自证：它走的是与正向**同一条**判据，⛔ 不是被某个特例放行的
+  const fwd = decideRename({ model: "AK16", status: "published" }, { model: "AK16A" }, "2026-09-05");
+  ck("② 正反两向对称：各自记各自那条",
+    fwd.record === true && fwd.entry.from === "/products/ak16/" && fwd.entry.to === "/products/ak16a/",
+    JSON.stringify(fwd));
+}
+{
   const r = decideRename({ model: "AK16", status: "draft" }, { model: "AK16A" }, "2026-09-05");
   ck("② 🔴 改名前是草稿 ⇒ 不记（那个地址从来没构建过）", r.record === false);
   ck("② 草稿情形要**说出来**，⛔ 不静默跳过", typeof r.note === "string" && r.note.includes("/products/ak16/"));
