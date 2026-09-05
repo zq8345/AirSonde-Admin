@@ -282,8 +282,16 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
    ⚠️ 查看态与编辑态**共用这一份**：只读皮把 input 变成透明无边框（padding-left:0），
       所以同一套 flex 在两态下都成立 —— ⛔ 不为查看态另写一份（两份迟早不一致）。 */
 .card-inline .field { display: flex; align-items: baseline; gap: var(--space-12); }
-/* 标签不再占满整行；`label{display:block;margin-bottom:4}` 的那 4px 在同行里是多余的 */
-.card-inline .field > .flab { flex: 0 0 auto; margin-bottom: 0; }
+/* 标签是**固定宽度的一列**（Joe 2026-09-05 第二轮：所有值的左沿落在同一条竖线上）。
+   🔴 ⛔ 不用 `flex: 0 0 auto`（按各自内容自适应）——那正是他指出的毛病：
+      标签长短不一 ⇒ 每行值的起点参差。实测改前只读态有 **7 个**不同的左沿、编辑态 **10 个**。
+   🔴 而且两态还**不一样**：只读皮把 `(?)` 藏掉（`#siteForm.ro .q2{display:none}`）⇒ 同一个标签
+      在两态下宽度不同 ⇒ 自适应方案下"同一条线"在两态之间必然对不齐。
+      **固定宽度天然消掉这一层** —— 这也是选它而不是选 `min-width` 的理由。
+   ⚠️ 152 取自实测：最宽的是「大标题·后半句 绿字(?)」139px（编辑态，含 `?`）+ 呼吸位。
+      ⛔ 不是拍的数。将来加更长的标签要回来重量一次。
+   ⚠️ 允许标签自己折行：超长时折成两行**仍然对齐**，⛔ 不让它把竖线顶开。 */
+.card-inline .field > .flab { flex: 0 0 152px; margin-bottom: 0; flex-wrap: wrap; }
 /* 🔴 `min-width:0` 不能省：flex 项默认 min-width:auto，长文本会把它撑过容器 ⇒ **整页横向滚动**。
    ⚠️ 基准 200px + 允许换行：窄到放不下时输入框整个掉到下一行（回到原来的两行样子），
       ⛔ 而不是被挤成一条缝 —— 那才是"窄窗不横向溢出"的真做法。 */
@@ -294,6 +302,10 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
 .card-inline .field > input,
 .card-inline .field > select,
 .card-inline .field > textarea { flex: 1 1 200px; min-width: 0; }
+/* 只读态下把下拉的原生箭头去掉：只读皮已经把边框底色洗成透明，只剩那个 ⌄ 还在
+   宣称"这里能点" —— 而它是 disabled 的。⛔ 不留一个说假话的可点提示。
+   ⚠️ 只在只读态去掉；编辑态**必须留着**，那是"这是个下拉不是输入框"的唯一提示。 */
+#siteForm.ro .card-inline select { appearance: none; -webkit-appearance: none; }
 
 /* 🔴 行变矮之后，卖点卡右上角那个绝对定位的「删掉这张」**压到了正文文本域上**。
    实测（A/B：加上/拿掉 .card-inline）：加上 ⇒ 重叠 60×18px，且 `elementFromPoint`
@@ -304,6 +316,19 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
    ⚠️ `.vprop-del` 是 `right:0` 绝对定位，参照的是 padding 盒 ⇒ 它仍贴右边缘，
       而里面的 `.row2` 被内容盒收窄，两者不再重叠。 */
 .card-inline .vprop { padding-right: 68px; }
+/* 行距统一（Joe 2026-09-05 第二轮）：四张卡之间原本是 **25px**（12 margin + 1 border + 12 padding），
+   而卡内字段之间是 16 ⇒ 一屏里两种行距。
+   🔴 ⛔ 修法不是把那条分隔线删掉：四张卡挨在一起共 16 行，没有那条线就分不出"第几张"从哪开始。
+      ⇒ **只压掉多出来的间距，线留着** —— 分组还在，而行距只剩一个值。
+   ⚠️ 写成 calc 是为了把**意图**留在代码里：这一段的总高度 = 普通行距（`--field-gap`），
+      三项加起来正好等于它（margin + 1px 边框 + padding）。
+      ⛔ 不填一个实测出来的魔数（比如 7）—— 那样 `--field-gap` 一改，这里就悄悄不齐了。
+   ⚠️ 上一个字段的 margin-bottom 与这里的 margin-top 会**合并**，所以总间距是这三项之和，
+      不是"16 + 这三项"（实测过：写 8/4 得到的是 13，不是 29）。 */
+.card-inline .vprop {
+  margin-top: var(--space-8);
+  padding-top: calc(var(--field-gap) - var(--space-8) - 1px);
+}
 
 /* 🔴 窄到一定程度就**整套关掉**，退回原来的"标签一行、内容一行"。
    实测（A/B，360px）：不关的话 `label.flab` 溢出 9px、`main` 横滚 24px ——
