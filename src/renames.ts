@@ -98,6 +98,70 @@ export function decideRename(
 
 export class LedgerError extends Error {}
 
+// ═══════════════ 型号回收：撞上历史地址就拒 ═══════════════
+//
+// 🔴 要防的（2026-09-05 两个窗独立撞出来的同一个洞）：
+//    ① AK16 → AK16A，台账记下 `/products/ak16/`
+//    ② 过一阵，**另一个产品**把型号改成 AK16 —— 唯一性检查只比**当前在架产品**，
+//       那时 AK16 已经空出来了 ⇒ 放行
+//    ③ `/products/ak16/` 又开始建页，而台账说它该 301 到 `/products/ak16a/`
+//       ⇒ 官网 `check-dist` 的 `renameStillLive` 报红 ⇒ **整站发不出去**，
+//         而错误指向一条几个月前的台账记录，看起来像台账坏了。
+//    ⚠️ 更实际的业务代价在前面：Google 里存着的旧链接会落到一个**不相干的产品**上。
+// ⇒ 在后台**能拒的那一刻拒**，比让它几个月后炸在构建里便宜得多。
+
+/** 顺着台账把一个地址解析到终点。⚠️ 带环保护：改回原值会成环，返回 `null` 而不是死循环。 */
+export function resolveAddress(routes: RenameRoute[], start: string): string | null {
+  const edge = new Map<string, string>();
+  for (const r of routes) if (r && typeof r.from === "string" && !edge.has(r.from)) edge.set(r.from, r.to);
+  const seen = new Set([start]);
+  let at = start;
+  while (edge.has(at)) {
+    at = edge.get(at)!;
+    if (seen.has(at)) return null;
+    seen.add(at);
+  }
+  return at;
+}
+
+export type HistoryVerdict =
+  | { ok: true; why: string }
+  | { ok: false; url: string; wouldRedirectTo: string };
+
+/**
+ * 这个产品能不能用这个地址。
+ *
+ * @param candidate  想要的新地址（`modelUrl()` 的结果）
+ * @param ownCurrent 这个产品**此刻**的地址；新建时传 `null`
+ *
+ * 🔴 ⛔ **不是"台账里出现过的 from 一律拒"** —— 那会挡掉一次**合法**操作：
+ *    改回原值（AK16→AK16A 之后又改回 AK16）。那份台账自己写着"改回原值也照实记"，
+ *    官网 `build-redirects` 会丢弃解析出的自指规则，`check-dist` 也专门留了
+ *    `renameLiveAgain` 这一支 —— 也就是说**两边都认为它合法**。
+ *    后台在这里硬拒，就成了全链路上唯一一个不认它的环节。
+ * ⇒ 判据是「这个历史地址**最终指向谁**」：
+ *    · 指回**这个产品自己现在的地址** ⇒ 它是**自己回自己的老家**，放行；
+ *    · 指向**别人** ⇒ 拒 —— 那才是"回收了别人的旧地址"。
+ */
+export function checkHistoricalUrl(
+  routes: RenameRoute[],
+  candidate: string,
+  ownCurrent: string | null,
+): HistoryVerdict {
+  const dest = resolveAddress(routes, candidate);
+  if (dest === candidate) return { ok: true, why: "这个地址不在重命名台账里" };
+  // 解析成环 = 这个地址被改走又改回来过。终点判不出来 ⇒ 只有"它就是自己现在的地址"才放行。
+  if (dest === null) {
+    return ownCurrent && ownCurrent === candidate
+      ? { ok: true, why: "台账里成环（改走又改回），而它本来就是这个产品自己的地址" }
+      : { ok: false, url: candidate, wouldRedirectTo: "（台账里成环，终点判不出来）" };
+  }
+  if (ownCurrent && dest === ownCurrent) {
+    return { ok: true, why: "这是同一个产品改回自己用过的型号 —— 台账与官网两侧都认它" };
+  }
+  return { ok: false, url: candidate, wouldRedirectTo: dest };
+}
+
 /** 找出 `"routes": [` 那个数组的 `[` 与配对 `]` 的下标。带字符串/转义感知，⛔ 不用正则数括号。 */
 function locateRoutes(text: string): { open: number; close: number } {
   const key = text.indexOf('"routes"');
