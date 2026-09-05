@@ -4215,13 +4215,44 @@ $("#deleteBtn").onclick = async () => {
       state.slug = null; cache.delete(slug); state.selected.delete(slug); resetPending();
       state.cacheBust = b.commitSha;
       await loadList();
-      alert(`已删除。commit ${(String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)")}\n${b.note || ""}`);
+      // ⛔ 不再用原生 alert（Joe 的零弹窗规矩；而且 prompt/alert 会被浏览器抑制 ——
+      //    同一条删除流程里刚实测过 `prompt` 那颗雷，⛔ 不留半条旧病）。
+      // 🔴 结果落在**列表页**的 #listResult：这一刻界面已经切回列表了，
+      //    落在详情页的 #preview 上等于跟着详情页一起消失，他不知道到底删没删。
+      const lr = $("#listResult");
+      if (lr) {
+        lr.innerHTML = "";
+        const sha7 = String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)";
+        const ok = el("div", "notice notice-ok");
+        // ⚠️ commit sha 用 <code> 元素，⛔ 不写反引号 —— `appendMd` 只认 `**粗体**`，
+        //    反引号会**原样印在屏幕上**（实测印出来了）。同一族今天已经踩过两次。
+        const line = el("div");
+        appendMd(line, `✅ **已删除** ${slug} —— commit `);
+        line.append(el("code", null, sha7));
+        ok.append(line);
+        // ⚠️ 服务端可能带一句"图片没删干净"之类的话 —— 有就照原样放出来，⛔ 不吞掉。
+        if (b.note) appendMd(ok.appendChild(el("div")), String(b.note));
+        if (b.warning) appendMd(ok.appendChild(el("div")), `⚠️ ${b.warning}`);
+        lr.append(ok);
+      }
     } else {
-      alert(`未删除：${b?.detail || b?.error || r.status}`);
+      // ⚠️ 失败时**人还停在详情页** ⇒ 结果落 #preview（与保存失败同一处，⛔ 不另开一个位置）。
+      const box = $("#preview");
+      box.hidden = false; box.innerHTML = "";
+      box.append(mkNotice("bad", `**未删除**（没有产生 commit）：${b?.detail || b?.error || r.status}`));
     }
   } catch (e) {
-    if (wroteOk) { alert(wroteButRenderFailed(commitSha, e).replace(/\*\*/g, "")); await loadList().catch(() => {}); }
-    else alert("删除请求失败：" + e.message);
+    // 🔴🔴 分岔就在这里：删**已经发生**了，炸的是后面的渲染/刷新 ——
+    //    ⛔ 绝不说"删除请求失败"，那句话会让他再删一次（而那一次会打到别的东西上）。
+    if (wroteOk) {
+      await loadList().catch(() => {});
+      const lr = $("#listResult");
+      if (lr) { lr.innerHTML = ""; lr.append(mkNotice("warn", wroteButRenderFailed(commitSha, e))); }
+    } else {
+      const box = $("#preview");
+      box.hidden = false; box.innerHTML = "";
+      box.append(mkNotice("bad", "删除请求失败：" + e.message));
+    }
   } finally {
     btn.disabled = false; btn.textContent = "删除这个产品…";
   }
