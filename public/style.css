@@ -1049,10 +1049,12 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
   background: var(--bg-app); padding: 0; overflow: hidden; cursor: grab; user-select: none;
 }
 .icard:active { cursor: grabbing; }
-/* 🔴 内框照 `.featthumb` 的写法（`aspect-ratio: 1/1`）——
-   ⛔ 同一个仓里已有现成的正确写法，不发明第二种。
+/* 🔴 内框用 `aspect-ratio: 1/1`，⛔ 不用固定高度。
    原来是 `height: 82px`：这是全文件**唯一一个不方的** thumb 覆盖
-   （基类 110×110、.thumb-sm 44、.featthumb 1/1 全是方的；.gcard/.mcard 已删）。 */
+   （基类 110×110、`.thumb-sm` 44 都是方的）。
+   ⚠️ 这段原本写着"照 `.featthumb` 的写法"——那个类 2026-09-05 已随精选卡改版删掉，
+      注释里那个指路牌于是指向了不存在的东西。⛔ 不留指着已删类的注释。
+      现在同族里同样是 1:1 的是 `.featph`（照官网 `.pcard .ph`）。 */
 /* 🔴 内框撑满整张卡（不再是卡内留白的一块）。圆角交给 `.icard` 的 overflow:hidden 去切，
    ⛔ 这里不再各写一个圆角 —— 两个圆角各改各的，迟早对不上。 */
 .icard .thumb { width: 100%; height: 100%; border-radius: 0; border: 0; }
@@ -1356,15 +1358,23 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
    而真正挡住点击的是里面 input 的 disabled（视觉与行为**两处都要**，⛔ 不能只做一处）。 */
 .btn-secondary.is-busy { opacity: .5; pointer-events: none; }
 
-/* 卡内的两个输入框（一句话 / chips）。⚠️ 卡片是 draggable 的 ⇒ 输入框要能正常选字：
-   拖拽的拦截在 JS 的 dragstart 里（见 app.js），这里只管长相。 */
-.featfields { display: flex; flex-direction: column; gap: var(--space-4); }
-.featfields input { font-size: 12px; padding: var(--space-4) var(--space-6); border-radius: 6px; }
+/* ══════ 精选卡：照官网首页那张产品卡（Joe 2026-09-05）══════
+   🔴 真源是**官网仓的实现**，不是设计稿也不是截图：
+      `airsonde-web/src/styles/home-v4.css:158-169`（`.pcard / .ph / .tx / .model / h3 / .chips`）
+      变量真值：`--mint:#e9f2ee` · `--green:#0c7a6b` · `--r-lg:20px` · `--ink:#0f1c18`
+   ⚠️ 下面这些色值/尺寸是**从那份文件里读出来的**，⛔ 不是照 SPEC 里的字面数字抄的 ——
+      实测 SPEC 把一句话写成 17px，而真源是 19px。
 
+   ⚠️ **字形没照搬，这是有意的**：官网 `.model` 用 `--disp: 'Sora','Inter',sans-serif`，
+      而**本后台没有加载 Sora**（没有 @font-face、没有字体链接）。写 `'Sora',…` 会静默
+      回落成别的字体 —— 那是让一条 CSS 规则说一句它做不到的话。
+      ⇒ 字号 / 字重 / 字距 / 颜色照搬，字形用后台自己的。要真一致得给后台加一次字体加载
+        （多一个网络依赖），那是 Joe 的决定，⛔ 我不替他做。 */
 .featcard {
-  position: relative; display: flex; flex-direction: column; gap: var(--space-6);
-  padding: var(--space-8); cursor: grab; min-width: 0;
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+  position: relative; display: flex; flex-direction: column; cursor: grab; min-width: 0; overflow: hidden;
+  /* 照官网 .pcard：白底、20 圆角、同一条阴影 */
+  background: #fff; border: 1px solid #fff; border-radius: 20px;
+  box-shadow: 0 2px 10px -6px rgba(11, 31, 26, .1);
 }
 .featcard.is-dragging { opacity: .4; }
 .featcard.is-over { border-color: var(--border-accent); box-shadow: 0 0 0 2px var(--ring-accent-soft); }
@@ -1373,24 +1383,48 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
       而首页会安静地少一张（官网构建只打印警告、不失败）。 */
 .featcard.is-bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 
-/* 缩略图正方 —— 与官网首页那个 1:1 框一致 */
-.featthumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 6px; }
+/* 图区 —— 照官网 `.pcard .ph`：纯白底、1:1、图 cover 撑满 */
+.featph { position: relative; background: #fff; aspect-ratio: 1 / 1; overflow: hidden; }
+.featph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 文字区 —— 照官网 `.pcard .tx`：mint 底，撑满剩余高度让一排卡等高 */
+.feattx { background: #e9f2ee; padding: 16px 18px 18px; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* 型号 —— 照官网 `.model`（字形除外，见上面那段说明） */
+.featmodel { font-size: 14px; font-weight: 700; letter-spacing: .06em; color: #0c7a6b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 🔴 序号与删除按钮落在**图区**上，⛔ 不进文字区 ——
+   文字区是官网那三行的地盘；而且上一单刚栽过"绝对定位的按钮压住输入框"。
+   ⚠️ 图区里没有任何可点内容 ⇒ 它们压在那儿不会挡住任何操作。 */
 .featcard .featno {
-  position: absolute; top: 6px; left: 6px; z-index: 2;
+  position: absolute; top: 8px; left: 8px; z-index: 2;
   min-width: 18px; padding: 0 var(--space-4); border-radius: 999px; text-align: center;
   background: var(--scrim); color: var(--on-accent); font-family: var(--mono); font-size: 12px; line-height: 1.7;
 }
-.featbody { min-width: 0; }
-/* 型号**醒目**（Joe 点名要的），取自真源 model 字段 */
-.featmodel { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-primary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 标题次要权重：两行封顶，不让它把卡撑得高矮不齐 */
-.feattitle { font-size: 12px; color: var(--text-secondary); line-height: 1.35;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: 2.7em; }
-.featbad { align-self: flex-start; font-size: 12px; padding: var(--space-1) var(--space-6); border-radius: 999px;
+.featbad { align-self: flex-start; margin-top: var(--space-6); font-size: 12px; padding: var(--space-1) var(--space-6); border-radius: 999px;
   background: var(--bg-critical); color: var(--on-accent); font-family: var(--mono); cursor: help; }
 /* ⚠️ 只有坏卡显示 slug —— 这时它是**唯一**能指认"坏的是谁"的东西 */
 .featslug { font-family: var(--mono); font-size: 12px; color: var(--text-critical); word-break: break-all; }
+
+/* ── 一句话：查看态就是官网那行 h3（19px 墨色），编辑态才是输入框 ──
+   🔴 **同一个 `<input>`**：只读皮 `#siteForm.ro input` 已经把边框/底色洗掉、padding-left 归零，
+      所以这里只要把字号字色写成官网 h3 的样子，两态自然各自成立。⛔ 不写两份 markup。
+   ⚠️ 官网 `h3 { font-size: 19px; margin: 5px 0 12px }`，⇒ 这里用同样的 19 与同样的上下间距。 */
+.feattagin { font-size: 19px; line-height: 1.35; color: #0f1c18; margin: 5px 0 12px;
+  background: none; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; width: 100%; }
+#siteForm:not(.ro) .feattagin { background: #fff; border-color: #cfe0da; }
+.feattagin::placeholder { color: #8aa19a; font-size: 14px; }
+
+/* ── chips 的两种呈现，**由这两条保证永不同时可见** ──
+   查看态：官网那样的白底绿字药丸（照 `.pcard .chips span`：12/600、绿字白底、圆角 7、4/10）
+   编辑态：一个用「、」分隔的输入框
+   🔴 它们不是两个真源：药丸每次渲染都从 `item.chips` 现算；而回到查看态必经一次重画
+      （取消 / 保存 / 切视图三条路都走 renderSite 或 loadSite）⇒ 露面之前一定已重算。 */
+.featchips { display: flex; flex-wrap: wrap; gap: 7px; }
+.featchips span { font-size: 12px; font-weight: 600; color: #0c7a6b; background: #fff; border-radius: 7px; padding: 4px 10px; }
+#siteForm:not(.ro) .featchips { display: none; }
+#siteForm.ro .featchipsin { display: none; }
+.featchipsin { font-size: 12px; padding: var(--space-4) var(--space-6); border-radius: 6px; width: 100%; }
+/* ⚠️ 只读态下这两个输入框**不参与**全局 `.ro` 的"动作全部不出现"那条（那条只管 button）；
+   它们的只读长相由上面的 `.feattagin` 与这一条互斥规则决定。 */
 /* ── 移除按钮：**hover 才出现**（Joe 2026-08-27）──
    🔴 用 `opacity` + `pointer-events`，⛔ 不用 `visibility: hidden`：
       `visibility: hidden` 会让按钮**不可聚焦** ⇒ 键盘就再也到不了它了。
@@ -1425,32 +1459,43 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 .featadd { margin-top: var(--space-16); }
 .featadd-head { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: var(--space-8); }
 
-/* 🔴 与 `.card-featured .featgrid` **同一套断点**：后台看到的排列 == 首页看到的排列。
-   ⛔ 别为选择器另立一套列数 —— 那会让同一批产品在两处排得不一样。 */
+/* 🔴 2026-09-05 Joe：选择器改成**一行 6 个**，卡片相应缩小。
+   ⚠️ 于是它与 `.featgrid`（3 列）**有意不再是同一套列数** —— 上面那句"同一套断点"已经
+      不再适用于这里，所以那句话我从这里删掉了：⛔ 留着一句不再成立的判据比没有更糟。
+      两者的关系现在是：**精选区照官网排（3 列 × 2 行 = 6 张），选择器是个挑东西的清单（6 列）**。
+      它们本来就是两种东西 —— 一个在预览"首页会长什么样"，一个在翻库存。 */
 .featpickgrid {
-  /* ⚠️ 跟着 featgrid 一起从 4 列改成 3 列（2026-09-05）——上面那句「同一套断点」是**判据**，
-     不是描述：改了一边不改另一边，那句话当场变成假话，而两处排列不同没有任何报错。 */
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8);
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-8);
   /* 🔴 产品变多时**纵向滚动**，⛔ 绝不横向 ——
      这次改动的直接目的就是消灭那条被超长产品名拉出来的横滚。 */
   max-height: 320px; overflow-y: auto; overflow-x: hidden;
   padding: var(--space-4); margin: 0 calc(-1 * var(--space-4));
 }
-@media (max-width: 820px)  { .featpickgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px)  { .featpickgrid { grid-template-columns: minmax(0, 1fr); } }
+/* 6 列在窄窗逐级降 —— ⛔ 不让它在窄处挤成一条缝（那时每格不到 60px，图和型号都读不出来） */
+@media (max-width: 1180px) { .featpickgrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .featpickgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 820px)  { .featpickgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 620px)  { .featpickgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px)  { .featpickgrid { grid-template-columns: minmax(0, 1fr); } }
 
 /* 每一项是原生 `<button>` ⇒ 天然可聚焦、Enter/空格可激活。
-   ⛔ 不用 div + tabindex 自己发明一套键盘处理。 */
+   ⛔ 不用 div + tabindex 自己发明一套键盘处理。
+   ⚠️ 一行 6 个 ⇒ 每格约 165px：卡片跟着缩小（图 1:1 + 型号 + 产品名两行封顶）。 */
 .featpick {
-  display: flex; flex-direction: column; gap: var(--space-6);
-  padding: var(--space-8); min-width: 0; text-align: left; font: inherit;
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; flex-direction: column; min-width: 0; text-align: left; font: inherit;
+  padding: 0; overflow: hidden;
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
   cursor: pointer;
 }
-.featpick:hover { border-color: var(--border-accent); background: var(--bg-selected); }
+.featpick:hover { border-color: var(--border-accent); }
 /* 键盘走到它时必须看得出来 —— ⛔ 别只靠 hover，那是鼠标才有的 */
 .featpick:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.featpick .featmodel { color: var(--text-accent); }
+.featpicktx { padding: var(--space-6) var(--space-8) var(--space-8); min-width: 0; background: #e9f2ee; flex: 1; }
+.featpick .featmodel { font-size: 13px; }
+/* 产品名在**选择器里**是必要的：型号相近时它是唯一的分辨依据（精选卡上则不显示，官网卡没有它）。
+   两行封顶，⛔ 不让超长名把一格撑得比别格高。 */
+.featpickname { font-size: 11px; line-height: 1.35; color: var(--text-secondary); margin-top: 2px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 /* ⛔ 这里原来有一份 `.featadd` + `.featadd select`，**而且一模一样的两份**（931 与 1005 行）。
    `<select>` 已被可视化选择器替掉 ⇒ 那两条选择器规则成了死代码，一并删。
    📌 本仓前例：`.topbar` 那条死规则躺了很久，一加顶栏当场复活并覆盖了 padding。**用不上就删。** */

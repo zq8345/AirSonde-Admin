@@ -3319,37 +3319,50 @@ function renderFeatured(form) {
     // 🔴 坏条目**没有图也没有型号** ⇒ 必须有一个明确的"坏卡"样子，
     //    ⛔ 绝不因为取不到图就静默跳过它 —— 那样他永远不知道列表里有坏的。
     // 型号**醒目**（Joe 点名要的），取自真源 model 字段 —— ⛔ 不是从标题里截的
-    const v = featVisual(st, slug, { bad });
-    cardEl.append(v.thumb);
-    cardEl.append(el("span", "featno", String(i + 1)));
-    cardEl.append(v.body);
+    // ── 图区：照官网 `.pcard .ph`（白底 1:1，图 cover）──
+    const ph = featPh(st, slug);
+    // 🔴 后台专属件（序号 / 删除）浮在**图区**上，⛔ 不放进文字区 ——
+    //    文字区是官网那三行（型号 / 一句话 / chips）的地盘，放进去就不"和官网一致"了。
+    //    ⚠️ 而且上一单刚栽过：绝对定位的删钮压住了输入框，点一下不是放光标是删卡。
+    //       ⇒ 这次它们落在图区（那里没有可点的内容），并且下面会实测重叠为 0。
+    ph.append(el("span", "featno", String(i + 1)));
+    const rm = el("button", "featdel", "×"); rm.type = "button";
+    rm.title = "从首页精选里移除（不删产品）";
+    rm.onclick = () => {
+      setFeatList(state.siteDraft, list.filter((_, k) => k !== i));
+      renderSite(true);
+    };
+    ph.append(rm);
+    cardEl.append(ph);
 
-    if (bad) {
-      // 🔴 分得清是哪一种：「不存在」与「已下架」的修法完全不同
-      // ⚠️ `st?.` 不是防御性写法凑数：`bad` 现在在 `st` 为 undefined 时也为 true，
-      //    写成 `st.exists` 会当场抛错（原来它靠 `bad` 恒假才没炸）。
-      const tag = el("span", "featbad", st?.exists ? `已下架` : "产品不存在");
-      tag.title = st?.exists
-        ? "它现在没有官网页面 —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
-        : "真源里找不到这个产品 —— 多半是被删了或改过 slug。";
-      cardEl.append(tag);
-      cardEl.append(el("div", "featslug", slug));   // ⚠️ 坏卡才显示 slug：这时它是**唯一**能指认是谁的东西
-    }
+    // ── 文字区：照官网 `.pcard .tx`（mint 底）→ 型号 / 一句话 / chips ──
+    // ⚠️ **不显示产品长名**（Joe 点名）：官网那张卡上没有它。
+    //    坏条目除外 —— 那时候名字/slug 是**唯一**能指认"这是谁"的东西。
+    const tx = el("div", "feattx");
+    tx.append(el("span", "featmodel", st?.model || (bad ? "—" : "（无型号）")));
 
-    // ── 首页 v4 新增的两个字段：一句话 + chips ──
-    //
-    // 🔴 它们**必须能在这里编辑**，否则这次迁移是把首页改坏：新加一张卡会写出
-    //    `{slug, tagline:"", chips:[]}` ⇒ 首页上那张卡没有说明文字、没有标签，
-    //    而它渲染得出来 —— 又是一个"看起来正常、其实缺了东西"的形状。
+    // ── 一句话 + chips：官网真读的两个字段，必须能在这里改 ──
     // ⚠️ 输入直接写回草稿对象、**不重画**：重画会让每敲一个字就丢一次焦点。
     if (typeof it === "string") list[i] = { slug, tagline: "", chips: [] };   // 顺手升形状，⛔ 旧形状不再写回仓
     const item = list[i];
 
+    // 一句话用 `<input>`：只读皮（`#siteForm.ro input`）会把它洗成透明无边框的纯文字，
+    // ⇒ **同一份 markup** 在查看态长得就是官网那行 h3，编辑态才是输入框。⛔ 不写两份。
     const tag = el("input", "feattagin");
     tag.value = String(item.tagline || "");
-    tag.placeholder = "一句话说明（首页卡上那行小字）";
-    tag.title = "首页那张卡上产品名下面的一行小字。留空的话卡上就少一行。";
+    tag.placeholder = "一句话说明（首页卡上那行）";
+    tag.title = "首页那张卡上型号下面的一行字。留空的话卡上就少一行。";
     tag.oninput = () => { item.tagline = tag.value; updateSiteDirty(); };
+    tx.append(tag);
+
+    // chips 有**两种呈现**：查看态是官网那样的白底绿字药丸，编辑态是一个用「、」分隔的输入框。
+    // 🔴 它们不是两个真源：药丸每次渲染都从 `item.chips` 现算，而且
+    //    **两者由 CSS 互斥（`#siteForm.ro` 显示药丸、非只读显示输入框），永不同时可见**。
+    //    ⚠️ 编辑期间药丸会变陈 —— 但它那时是隐藏的，而回到查看态必经 renderSite()／loadSite()
+    //       （取消、保存、切视图三条路都会重画）⇒ 露面之前一定已经重算过。
+    const pills = el("div", "featchips");
+    (Array.isArray(item.chips) ? item.chips : []).forEach((c) => pills.append(el("span", null, c)));
+    tx.append(pills);
 
     const chips = el("input", "featchipsin");
     chips.value = (Array.isArray(item.chips) ? item.chips : []).join("、");
@@ -3362,17 +3375,20 @@ function renderFeatured(form) {
       item.chips = chips.value.split(/[、,]/).map((s) => s.trim()).filter(Boolean);
       updateSiteDirty();
     };
-    const fields = el("div", "featfields");
-    fields.append(tag, chips);
-    cardEl.append(fields);
+    tx.append(chips);
 
-    const rm = el("button", "featdel", "×"); rm.type = "button";
-    rm.title = "从首页精选里移除（不删产品）";
-    rm.onclick = () => {
-      setFeatList(state.siteDraft, list.filter((_, k) => k !== i));
-      renderSite(true);
-    };
-    cardEl.append(rm);
+    if (bad) {
+      // 🔴 分得清是哪一种：「不存在」与「已下架」的修法完全不同
+      // ⚠️ `st?.` 不是防御性写法凑数：`bad` 在 `st` 为 undefined 时也为 true，
+      //    写成 `st.exists` 会当场抛错。
+      const btag = el("span", "featbad", st?.exists ? `已下架` : "产品不存在");
+      btag.title = st?.exists
+        ? "它现在没有官网页面 —— 首页那张卡会渲染不出来（官网构建只打印警告、不失败，所以站上只是安静地少一张）。"
+        : "真源里找不到这个产品 —— 多半是被删了或改过 slug。";
+      tx.append(btag);
+      tx.append(el("div", "featslug", slug));   // ⚠️ 坏卡才显示 slug：这时它是**唯一**能指认是谁的东西
+    }
+    cardEl.append(tx);
 
     // 拖拽换序 —— 与图片列表同一套
     cardEl.addEventListener("dragstart", (e) => {
@@ -3401,14 +3417,16 @@ function renderFeatured(form) {
   //      加进去就是同一个产品在首页出现两次，而校验器要到保存那一刻才拦得住）。
   const inList = new Set(list.map((x) => (typeof x === "string" ? x : x?.slug)));
   const pool = (f?.["选得到的"] || []).filter((p) => !inList.has(p.slug));
-  // ── 「加一个产品」：与上面那排卡**同一套视觉**（Joe 2026-08-28）──
+  // ── 「加一个产品」：一行 6 个的挑选清单（Joe 2026-09-05 改）──
   //
   // ⚠️ 原来是原生 `<select>`，只显示得了纯文本，而最长那条产品名是：
   //    `AK34 · AK34-18 in 1 Air Quality Monitor Indoor,15D & 24H History, 7" TFT CO2 …`
-  //    —— 一行拉得比屏幕还宽。⇒ 改成缩略图 + 型号 + 标题。
+  //    —— 一行拉得比屏幕还宽。⇒ 改成图 + 型号 + 名字。
   //
   // 🔴 复用两样东西，⛔ 都不另起炉灶：
-  //    ① 渲染走 `featVisual()` —— 与精选卡**同一处代码**
+  //    ① 图区走 `featPh()` —— 与精选卡**同一处代码**
+  //       （⚠️ 原来这里写的是"渲染走 featVisual()"，那个函数 2026-09-05 已拆掉：
+  //         文字区两边有意不同了，理由写在 featPh 头部。⛔ 不留指着已删函数的注释。）
   //    ② 查找走上面那张 `byStatus` —— **同一张表**（它已经同时盖住"已保存的"和"可选的"两种来源）
   //
   // 🔴 每一项是 `<button>`，不是 div：原生按钮**天然可聚焦、Enter/空格可激活** ——
@@ -3422,8 +3440,12 @@ function renderFeatured(form) {
     pool.forEach((p) => {
       const st = byStatus.get(p.slug);          // 🔴 同一张表
       const b = el("button", "featpick"); b.type = "button";
-      const v = featVisual(st, p.slug);         // 🔴 同一处渲染
-      b.append(v.thumb); b.append(v.body);
+      b.append(featPh(st, p.slug));             // 🔴 图区与精选卡同一处渲染
+      // 选择器的文字区：型号 + 产品名（见 featPh 头部说明，⛔ 与精选卡有意不同）
+      const bx = el("div", "featpicktx");
+      bx.append(el("div", "featmodel", st?.model || "（无型号）"));
+      bx.append(el("div", "featpickname", st?.name || p.slug));
+      b.append(bx);
       b.title = `加入首页精选：${st?.name || p.slug}`;
       b.onclick = () => {
         // 新形状：加进来的是一个对象。tagline/chips 先留空，卡片上就能直接填。
@@ -3441,20 +3463,18 @@ function renderFeatured(form) {
 }
 
 /**
- * 缩略图 + 型号 + 标题 —— **精选卡与「加一个产品」选择器共用这一处**。
+ * 卡片的**图区** —— 精选卡与「加一个产品」选择器共用这一处（照官网 `.pcard .ph`：白底 1:1，cover）。
  *
- * 🔴 ⛔ 别在选择器里再抄一遍这三行：抄一份，就一定会有一天两边长得不一样
- *    （A14 整单就是在收这种"同一个东西两种写法"）。
- * ⚠️ `bad` 只影响型号那一格的占位符：坏条目显示「—」，正常但缺型号显示「（无型号）」——
- *    这两种缺失不是一回事，⛔ 不许混成同一个样子。
+ * 🔴 共用的只剩图区，**文字区两边有意不同**（2026-09-05 Joe 定）：
+ *    · 精选卡 = 官网卡的内容：型号 / 一句话 / chips，**没有产品长名**（官网卡上就没有）。
+ *    · 选择器 = 选东西用的：型号 + **产品名**（截断）——
+ *      在这里名字不是装饰，是"这两个型号相近的到底哪个是我要的"唯一的分辨依据。
+ * ⇒ 强行让两边共用一个文字区，就得让其中一边显示它不该显示的东西。⛔ 不做那种"统一"。
  */
-function featVisual(st, slug, opts = {}) {
-  const thumb = el("div", "thumb featthumb");
-  setThumb(thumb, st?.image ? rawUrl(st.image) : null, st?.name || slug);
-  const body = el("div", "featbody");
-  body.append(el("div", "featmodel", st?.model || (opts.bad ? "—" : "（无型号）")));
-  body.append(el("div", "feattitle", st?.name || slug));
-  return { thumb, body };
+function featPh(st, slug) {
+  const ph = el("div", "featph");
+  setThumb(ph, st?.image ? rawUrl(st.image) : null, st?.name || slug);
+  return ph;
 }
 
 // ═══════════════ 证书（About 页四张认证卡）═══════════════
