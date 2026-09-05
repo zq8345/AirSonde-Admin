@@ -3136,9 +3136,11 @@ function renderSite(keepDraft = false) {
     siteField(h, "home.hero.eyebrow", "小标", null, { meta: "eyebrow" });
     siteField(h, "home.hero.headline", "大标题", "首页的 H1，搜索引擎最看重的一行。", { meta: "H1" });
     siteField(h, "home.hero.body", "副文案", null, { multiline: true, rows: 2 });
-    const rc = el("div", "row2"); h.append(rc);
-    siteField(rc, "home.hero.primaryCtaLabel", "主按钮文字", "只能改文字。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
-    siteField(rc, "home.hero.secondaryCtaLabel", "次按钮文字");
+    // Joe 2026-09-05（看过上线效果后）：次按钮**移到主按钮正下方**，不再左右两栏。
+    // ⛔ 做法不是把 `.row2` 用 CSS 压成一列 —— 那会留下一个名叫「两栏」却渲染成一栏的类，
+    //    下一个人照类名去理解布局就会被骗。⇒ 直接不要那个容器。
+    siteField(h, "home.hero.primaryCtaLabel", "主按钮文字", "只能改文字。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
+    siteField(h, "home.hero.secondaryCtaLabel", "次按钮文字");
     form.append(h);
 
     // 卖点卡（§6 mockup）：每张 = row2（标题 | 正文），右上「删掉这张」红字；卡底「+ 加一张」描边小按钮
@@ -3154,9 +3156,9 @@ function renderSite(keepDraft = false) {
         renderSite(true);
       };
       row.append(del);
-      const r = el("div", "row2"); row.append(r);
-      siteField(r, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
-      siteField(r, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+      // Joe 2026-09-05：正文**移到标题正下方**，标题/正文不再左右分栏（同上，⛔ 不压 `.row2`）。
+      siteField(row, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
+      siteField(row, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
       v.append(row);
     });
     const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
