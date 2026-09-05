@@ -1402,7 +1402,10 @@ app.put("/api/site-content", async (c) => {
     }
 
     const fields = changedFields(existing, merged);
-    const label = body.section === "contact" ? "联系方式" : body.section === "home" ? "首页" : body.section === "seo" ? "SEO" : "站点内容";
+    const SECTION_LABEL: Record<string, string> = {
+      contact: "联系方式", home: "首页", seo: "SEO", pages: "页面文案",
+    };
+    const label = SECTION_LABEL[String(body.section)] ?? "站点内容";
     const r = await commitFiles(c.env, {
       message:
         `admin: site ${label} (${operator})\n\n` +

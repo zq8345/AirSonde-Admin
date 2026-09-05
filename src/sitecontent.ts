@@ -50,6 +50,12 @@ const SHAPE = {
   homeV4: { hero: "map", why: { cards: "list" }, products: { featured: "list" } },
   // 证书槽（About 页认证板块）。后台整块拥有它 —— 值是 public/ 下的 URL 路径或 null。
   certificates: "map",
+  // 子页 hero（2026-09-05）：后台**只写 `hero` 这一处**，两个块里其余内容由官网仓维护、原样穿过。
+  // ⚠️ 它们进这张表的唯一作用是"允许后台改动它们" —— 顶层那条「动了才判」的规则
+  //    会因为它们**不在**表里而把后台的改动判成 unknown_section。
+  aboutV1: { hero: "map" },
+  contactV1: { hero: "map" },
+  productsV1: { hero: "map" },
 } as const;
 
 /**

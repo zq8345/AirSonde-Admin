@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=153">
+<link rel="stylesheet" href="/style.css?v=157">
 </head>
 <body>
 
@@ -78,6 +78,9 @@
     <div class="nav-sec">站点</div>
     <button class="nav-item" data-nav="home" title="首页文案：hero、卖点卡、联系区块"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>首页</button>
     <button class="nav-item" data-nav="contact" title="联系方式：邮箱/电话/微信/地址（链接由它们派生）"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>联系方式</button>
+    <!-- 子页 hero 文案（About / Contact）。⚠️ Solutions / Guides 的大标题与首页是**同一个值** ⇒
+         那两页在「首页」里改，这一页只写明去哪儿改，⛔ 不摆第二个控件。 -->
+    <button class="nav-item" data-nav="pages" title="各子页 hero 的小标与大标题"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="14 4 14 10 20 10"/><line x1="6" y1="14" x2="14" y2="14"/></svg></span>页面文案</button>
     <button class="nav-item" data-nav="seo" title="站级 SEO：各页 title / description"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>SEO</button>
     <!-- 证书：About 页那四张认证卡指向的文件（Joe：「放一个能传证书的地方，我自己传证书进去」）。
          ⚠️ 单独成页而不是塞进「联系方式」：证书不是联系方式，塞进去他不会到那儿去找；
@@ -566,7 +569,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=153"></script>
+<script src="/app.js?v=157"></script>
 </body>
 </html>
 

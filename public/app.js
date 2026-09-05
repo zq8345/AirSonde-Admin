@@ -2831,6 +2831,11 @@ const SITE_SECTIONS = {
   home: { title: "首页", keys: ["home", "homeV4"], sub: "官网首页文案 · 保存后约 1 分钟上线" },
   contact: { title: "联系方式", keys: ["contact"], sub: "站上的邮箱 / 电话 / 地图链接都由它们派生" },
   seo: { title: "SEO", keys: ["seo"], sub: "站级默认 + 逐页 title / description" },
+  // 子页 hero 文案（SPEC admin-site-customization 第 2 项）。
+  // 🔴 复用站点表单**整套现成机制**（读取 / 两态 / 乐观锁 / 保存 / 改动识别），⛔ 不新造管道 ——
+  //    它编的就是同一个 site-content.json，只是换了两个顶层键。
+  //    这也正是上一单把 `key` 改成 `keys`（复数）之后**顺手就成立**的事。
+  pages: { title: "页面文案", keys: ["productsV1", "aboutV1", "contactV1"], sub: "各子页 hero 的小标与大标题" },
 };
 
 /**
@@ -3170,11 +3175,10 @@ function homeV4Sections(form) {
     return c;
   };
 
-  // ⛔ **顶部标签带（marquee）不给编辑口**（Joe 2026-09-05 裁决）：
-  //    首页那条 chips 要改成与 Products 筛选行**同一条派生规则** —— 构建时取后台的传感器表，
-  //    在用数为 0 的不渲染。⇒ `homeV4.marquee` 即将没有读者。
-  //    ⚠️ 现在给它做编辑卡，等官网侧派生一上线，那张卡就变成一个**改了没反应**的开关。
-  //    ⛔ 宁可暂时没有入口，也不摆一个即将说假话的控件。
+  // 📌 顶部标签带（marquee）**已经不需要编辑口了**：Joe 2026-09-05 裁决把首页那条 chips
+  //    改成与 Products 筛选行同一条**派生规则**（构建时取后台的传感器表，在用数为 0 的不渲染），
+  //    官网侧已上线并**把 `homeV4.marquee` 从 JSON 里删了**（实测 origin/main ff95d35）。
+  //    ⇒ 它的"编辑口"现在是**分类页的传感器表**。⛔ 别再在这里为它加卡。
 
   // ── ① 产品区的抬头（那六张卡本身由下面「首页精选产品」管）──
   textCard("产品区 · 抬头", "官网首页产品那一段的标题", [
@@ -3208,10 +3212,8 @@ function homeV4Sections(form) {
   ]);
 
   // ── ④ 工厂区 ──
-  // ⚠️ `statLabels`（六个数字的标签）**有意不在这里**：它此刻与 `about.ts` 里的六个**值**
-  //    按下标配对（about.ts 自己的注释：keep the ORDER stable, or the labels go wrong）。
-  //    总工已批准官网侧合成 `homeV4.factory.stats = [{value,label}]×6` 把这层配对消掉 ⇒
-  //    **等那支合了再一次性给一张卡**。现在做 = 造一个马上要搬家、搬完还会编一个没人读的键的控件。
+  // 📌 `statLabels` 那条旧说明已作废：官网侧已于 2026-09-05 合成 `factory.stats = [{value,label}]×6`
+  //    并**删掉了 `statLabels`**（实测 origin/main ff95d35）。六数的卡见下面。
   textCard("工厂区 · 文案", "首页那一段工厂介绍", [
     ["homeV4.factory.kicker", "小标"],
     ["homeV4.factory.heading", "大标题"],
@@ -3226,6 +3228,22 @@ function homeV4Sections(form) {
     ["homeV4.factory.floor.warehouse", "仓库"],
     ["homeV4.factory.floor.shipping", "发货"],
   ]);
+  // 🔴🔴 公司六数 —— **全站唯一口径**（SPEC admin-site-customization 第 1 项，Joe 最会改的一组）。
+  //
+  // 改这里 = **首页工厂区 + About 页数据舱同时变**：两处都读同一个 `homeV4.factory.stats`
+  //   （实测 origin/main ff95d35：`index.astro:71` 与 `about.astro:65` 都是 `factory.stats`）。
+  // ⚠️ 这一版之前，值在 `about.ts`（TS 文件，后台永远不写）而标签在 `statLabels`，
+  //    **两个数组按下标配对** —— 官网侧已把它们合成一个数组，那层配对消失了。
+  // ⚠️ **只改字、不给增删**：官网那一排是按六个排版的（首页工厂区 + About 数据舱都是）。
+  //    要增减走设计单，⛔ 不在这里开一个能把两处版式同时改坏的口子。
+  // ⚠️ 卡放在「工厂区」这一组里，⛔ 没有另起一个"公司数据"页：那样会变成**两个页面写同一个
+  //    `homeV4` 块**，一个页面拿着旧快照保存就会把另一个刚写的盖掉（乐观锁能拦住，但那是拦故障，
+  //    不是没有故障）。名字里写清"首页 + About 共用"，找得到就够了。
+  listCard("公司六数（首页工厂区 + About 数据舱共用）", V.factory?.stats, "homeV4.factory.stats", (i) => [
+    [`value`, `第 ${i + 1} 个 · 数字`, "如 2015 / 120+ / 5,000m²。**首页和 About 两处同时显示这一个值。**"],
+    [`label`, `第 ${i + 1} 个 · 说明`, "数字下面那行小字（如 staff / patents）。"],
+  ]);
+
   // QC 五步：⚠️ **只改字、不给增删** —— 官网那一排是按五步排版的，
   //    增删会让那一行的宽度对不上（不是数据错，是版式错）。要增删走设计单。
   listCard("工厂区 · 品控五步", V.factory?.qc, "homeV4.factory.qc", (i) => [
@@ -3428,6 +3446,53 @@ function renderSite(keepDraft = false) {
     // ⚠️ 「为什么选我们」那几张卡与「首页精选产品」也搬进去了 ——
     //    它们本来就是首页的两个板块，留在外面会让顺序对不上。
     homeV4Sections(form);
+  } else if (sec === "pages") {
+    // ══════ 子页 hero 文案 ══════
+    //
+    // 🔴 这一页只放**后台真能写、而且官网真在读**的那些。清单是逐个查过官网源码的：
+    //    · About   `aboutV1.hero.{kicker,heading}`   ← `about.astro` 的 `V.hero.*`
+    //    · Contact `contactV1.hero.{kicker,heading}` ← `contact.astro` 的 `V.hero.*`
+    //      ⚠️ `CONTACT_V1` 在 site.ts 里是 `{...content.contactV1, replyNote, mapEmbed}` ——
+    //         展开自 JSON，所以这两个键确实是后台写得到的；后面那两个是**代码派生的**，不在这里。
+    // ⚠️ 卡序照**官网导航的顺序**（Products → Solutions → Guides → About → Contact），
+    //    与首页那一页同一条原则：后台看到的顺序 == 站上看到的顺序。
+    //    没有控件的 Solutions / Guides 那张说明卡排在最后（它不是一个可编辑项）。
+    // Products：官网侧已于 2026-09-05 把大标题从 `site.ts` 的 `PRODUCTS_PAGE.heroHeading`
+    // 搬进 `productsV1.hero`（实测 origin/main ff95d35：`productsV1.hero = {kicker, heading}`）⇒ 现在编得了。
+    const pr = siteCard("Products 页 · hero", "官网 /products/ 第一屏");
+    pr.classList.add("card-inline");
+    siteField(pr, "productsV1.hero.kicker", "小标");
+    siteField(pr, "productsV1.hero.heading", "大标题", "⚠️ 受「一行」铁律约束：太长**只改文案、不改字号**（字号锁在模板里）。");
+    form.append(pr);
+
+    const a = siteCard("About 页 · hero", "官网 /about/ 第一屏");
+    a.classList.add("card-inline");
+    siteField(a, "aboutV1.hero.kicker", "小标");
+    siteField(a, "aboutV1.hero.heading", "大标题",
+      "⚠️ 同样受「一行」铁律约束：太长只改文案、不改字号。" +
+      // 🔴 实测（2026-09-05）：它此刻的文字与首页「工厂区 · 大标题」**一模一样**，
+      //    但那是**两个不同的键**（`aboutV1.hero.heading` vs `homeV4.factory.heading`）。
+      //    ⇒ 改这里不会带动首页。不说这一句，「我改了怎么首页没变」是必然会问的问题。
+      "　⚠️ 它现在的文字与首页「工厂区」的大标题恰好相同，但**是两个独立的字段** —— 改这里不会带动首页那一处。");
+    form.append(a);
+
+    const ct = siteCard("Contact 页 · hero", "官网 /contact/ 第一屏");
+    ct.classList.add("card-inline");
+    siteField(ct, "contactV1.hero.kicker", "小标");
+    siteField(ct, "contactV1.hero.heading", "大标题", "⚠️ 同上，太长只改文案不改字号。");
+    form.append(ct);
+
+    // ── 另外两页：**不在这里摆控件**，只说清去哪儿改 ──
+    // 🔴 Solutions / Guides 的大标题**与首页那两段是同一个值**
+    //    （官网源码注释：`same words as the homepage section, one source`）
+    //    ⇒ 全站只给**一个**控件。在这里再摆一个，就是同一个值两个入口 —— 迟早对不上。
+    const n = siteCard("Solutions / Guides 两页", "这里没有控件 —— 原因写在下面");
+    const ul = el("div", "pagenote");
+    const line = (t) => ul.append(appendMd(el("p"), t));
+    line("**Solutions**：它的小标与大标题**就是首页「场景区」那两个值**（官网只有一个真源）⇒ 去「首页」页的「场景区 · 抬头」改，⛔ 这里不摆第二个控件。");
+    line("**Guides**：同上，去「首页」页的「Guides 区 · 抬头」改。");
+    n.append(ul);
+    form.append(n);
   } else {
     // ══════════ 站级 SEO（Joe 2026-08-26 重做排版）══════════
     //

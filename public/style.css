@@ -317,8 +317,14 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
       而里面的 `.row2` 被内容盒收窄，两者不再重叠。 */
 .card-inline .vprop { padding-right: 68px; }
 /* `.nodel` = 这一行**没有删除按钮**（固定条数的列表：QC 五步、流程三步）
-   ⇒ 不留那 68px。⛔ 别为了"整齐"给它留一条永远空着的白边。 */
+   ⇒ 不留那 68px。⛔ 别为了「整齐」给它留一条永远空着的白边。 */
 .card-inline .vprop.nodel { padding-right: 0; }
+
+/* 「页面文案」页里那张**没有控件**的说明卡：它存在的意义就是说清"为什么这里没有控件"
+   （Solutions/Guides 与首页同一个值 · Products 还写死在官网代码里）。
+   ⛔ 不做成灰掉的假输入框 —— 那是另一种会骗人的开关。 */
+.pagenote p { margin: 0 0 var(--space-8); font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+.pagenote p:last-child { margin-bottom: 0; }
 /* 行距统一（Joe 2026-09-05 第二轮）：四张卡之间原本是 **25px**（12 margin + 1 border + 12 padding），
    而卡内字段之间是 16 ⇒ 一屏里两种行距。
    🔴 ⛔ 修法不是把那条分隔线删掉：四张卡挨在一起共 16 行，没有那条线就分不出"第几张"从哪开始。
