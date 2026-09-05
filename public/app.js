@@ -3521,13 +3521,16 @@ function renderSite(keepDraft = false) {
     //    没有控件的 Solutions / Guides 那张说明卡排在最后（它不是一个可编辑项）。
     // Products：官网侧已于 2026-09-05 把大标题从 `site.ts` 的 `PRODUCTS_PAGE.heroHeading`
     // 搬进 `productsV1.hero`（实测 origin/main ff95d35：`productsV1.hero = {kicker, heading}`）⇒ 现在编得了。
-    const pr = siteCard("Products 页 · hero", "官网 /products/ 第一屏");
+    // ⚠️ 卡头**只留页名**（Joe 2026-09-05）：原来的「· hero」后缀与「官网 /products/ 第一屏」
+    //    那行灰字都去掉了。⛔ 不是把说明搬到别处 —— 是这一页每张卡都长一个样，
+    //    后缀和灰字对**每张卡都一样**，重复三遍就不再传达信息，只是噪音。
+    const pr = siteCard("Products 页");
     pr.classList.add("card-inline");
     siteField(pr, "productsV1.hero.kicker", "小标");
     siteField(pr, "productsV1.hero.heading", "大标题", "⚠️ 受「一行」铁律约束：太长**只改文案、不改字号**（字号锁在模板里）。");
     form.append(pr);
 
-    const a = siteCard("About 页 · hero", "官网 /about/ 第一屏");
+    const a = siteCard("About 页");
     a.classList.add("card-inline");
     siteField(a, "aboutV1.hero.kicker", "小标");
     siteField(a, "aboutV1.hero.heading", "大标题",
@@ -3538,7 +3541,7 @@ function renderSite(keepDraft = false) {
       "　⚠️ 它现在的文字与首页「工厂区」的大标题恰好相同，但**是两个独立的字段** —— 改这里不会带动首页那一处。");
     form.append(a);
 
-    const ct = siteCard("Contact 页 · hero", "官网 /contact/ 第一屏");
+    const ct = siteCard("Contact 页");
     ct.classList.add("card-inline");
     siteField(ct, "contactV1.hero.kicker", "小标");
     siteField(ct, "contactV1.hero.heading", "大标题", "⚠️ 同上，太长只改文案不改字号。");

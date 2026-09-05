@@ -28,6 +28,13 @@ export const SEO_PAGES: Record<string, string> = {
   // ⚠️ 进这张表的**顺序不能反**：表里有、而 JSON 里还没有 ⇒ `required` 硬错误。
   //    所以是"官网仓先落键、后台再进表"，这一条已写在下面那段未知页判据里。
   about: "/about/",
+  // 2026-09-05 第二批：`/solutions/` 与 `/guides/` 两个**列表页**的 meta 也搬进了 JSON
+  // （官网 origin/main 76f0c2f，原来在 `solutions.ts SOLUTIONS_HUB.meta` / `guides.ts GUIDES_HUB.meta`）。
+  // ⚠️ 只是**列表页**：场景详情页与每篇 guide 各自的 meta 仍在各自的数据文件里，不在这张表。
+  // 📌 复核过 Web 那一步做干净了：`SOLUTIONS_HUB.meta` / `GUIDES_HUB.meta` 的消费方**都是 0**
+  //    ⇒ 没有留下"数据搬了新家而页面还读旧家"的死开关（今天早些时候 `home.*` 就是那个病）。
+  solutions: "/solutions/",
+  guides: "/guides/",
   notFound: "404",
 };
 

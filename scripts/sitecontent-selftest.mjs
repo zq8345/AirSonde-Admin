@@ -14,6 +14,21 @@ let pass = 0, fail = 0; const out = [];
 const ck = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}`); } else { fail++; out.push(`🔴 ${n}\n     ${d}`); } };
 const codes = (r) => r.errors.map((e) => e.code);
 const has = (r, code) => r.errors.some((e) => e.code === code);
+/**
+ * 和 `has` 的区别：**还要求这条错落在哪个字段上**。
+ * 🔴 2026-09-05 补的，因为踩了一次：只问"有没有 required"时，
+ *    另一个字段报出来的 required 会让断言**因为错误的理由通过** ——
+ *    变异测试里把键名拼错，被测的那两条照样绿，红的是不相干的 23 条。
+ * ⚠️ 字段名是 `field`（`err(field, code, message)`），⛔ 不是 `path` ——
+ *    写错的话每条断言都读到 `undefined`，于是**基线红、变异也红**，两边同形、什么都证不出来。
+ * ⚠️ 前缀必须**带边界**（`===` 或后面跟一个点）：
+ *    ⛔ 裸 `startsWith` 下 `seo.pages.solutionsz` 会命中 `seo.pages.solutions` ——
+ *    而"键名被拼错成 solutionsz"**恰好就是**这条断言要抓的那种缺陷，
+ *    于是它在自己该报红的那一刀下照样绿（实测过，同一个下午第三次栽在"前缀没边界"上）。
+ */
+const hasAt = (r, code, field) =>
+  r.errors.some((e) => e.code === code &&
+    (String(e.field) === field || String(e.field).startsWith(field + ".")));
 
 /** 一份**合法**的内容 —— 直接照官网仓真实文件的形状写，不是我编的。 */
 const GOOD = () => ({
@@ -31,6 +46,12 @@ const GOOD = () => ({
       // 📌 这正是那条顺序规矩的另一面：表里有、数据里没有 ⇒ 硬错误。
       about: { title: "About — The Manufacturing Group Behind AirSonde | AirSonde",
                description: "AirSonde is the indoor air quality product line of an established Shenzhen manufacturing group." },
+      // 2026-09-05 第二批：`/solutions/` 与 `/guides/` 两个**列表页**的 meta 也搬进了 JSON
+      // （官网 origin/main 76f0c2f）⇒ 同一条规矩，样板数据也得跟着加。
+      solutions: { title: "Solutions — IAQ Monitors by Environment | AirSonde",
+                   description: "Where AirSonde monitors get deployed." },
+      guides: { title: "Guides — Indoor Air Quality for Buyers | AirSonde",
+                description: "Practical guides for brands and importers." },
       notFound: { title: "Page not found — AirSonde", description: "That page does not exist." },
     },
   },
@@ -216,6 +237,19 @@ const GOOD = () => ({
   const base = GOOD(); const c = GOOD(); delete c.seo.pages.contact;
   ck("⑥c 已知页面在 JSON 里缺失 ⇒ 仍拒（搜索结果里会是一行空白）",
     has(validateSiteContent(c, base), "required"));
+}
+{
+  // 🔴 2026-09-05 第二批：**证明这两页真的进表了**，而不只是"传了不报错"。
+  //    把它们加进 GOOD() 之后，那 80 条全都只证明了后者 —— 键名打错一个字母，
+  //    结果是它变成"未知页面"、被"动了才判"那条放行，**80 条一条都不会红**。
+  //    ⇒ 判据必须是**删掉它 ⇒ 必须报 required**：只有真在 SEO_PAGES 里才报得出来。
+  for (const p of ["solutions", "guides"]) {
+    const base = GOOD(); const c = GOOD(); delete c.seo.pages[p];
+    // ⚠️ 必须用 `hasAt`：`has(…,"required")` 会被**别的字段**报出的 required 满足 ——
+    //    实测过，键名拼错时这两条照样绿（红的是不相干的 23 条）。判据要钉在这一页上。
+    ck(`⑥c 🔴 ${p} 确实在 SEO_PAGES 里（删掉它 ⇒ 这一页 required，未知页面报不出这个）`,
+      hasAt(validateSiteContent(c, base), "required", `seo.pages.${p}`));
+  }
 }
 
 // ══════ ⑦ 合并：「我没收到」≠「用户要清空」 ══════
