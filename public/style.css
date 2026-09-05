@@ -210,27 +210,11 @@ body {
 .who { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); text-align: right; }
 .who b { color: var(--text-primary); font-weight: 600; }
 
-.layout {
-  display: grid; grid-template-columns: minmax(240px, 320px) 1fr;
-  gap: var(--space-16); padding: var(--space-16); align-items: start;
-}
-@media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
 
 .pane { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); }
-.pane-list { position: sticky; top: 56px; max-height: calc(100vh - 76px); display: flex; flex-direction: column; }
-@media (max-width: 880px) { .pane-list { position: static; max-height: none; } }
-.pane-detail { padding: var(--space-20); min-width: 0; }
 
-.pane-head { display: flex; justify-content: space-between; align-items: baseline; padding: var(--space-12) var(--space-16) var(--space-8); }
-.pane-head h2 { margin: 0; font-size: 14px; }
 .count { font-size: 12px; color: var(--text-secondary); font-family: var(--mono); }
 
-.filters { display: flex; gap: var(--btn-gap); padding: 0 var(--space-16) var(--space-12); border-bottom: 1px solid var(--border); }
-.filters input, .filters select {
-  flex: 1 1 auto; min-width: 0; padding: var(--space-6) var(--space-8); font: inherit; font-size: 13px;
-  background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
-}
-.filters select { flex: 0 0 auto; }
 
 .list { list-style: none; margin: 0; padding: var(--space-6); overflow-y: auto; flex: 1 1 auto; }
 .list li { margin: 0; }
@@ -251,7 +235,6 @@ body {
 
 .placeholder { padding: var(--space-40) var(--space-12); text-align: center; color: var(--text-primary); }
 .placeholder p { margin: var(--space-6) 0; }
-.muted { color: var(--text-secondary); }
 .link { background: none; border: 0; padding: 0; color: var(--text-link); cursor: pointer; font: inherit; text-decoration: underline; }
 
 .detail-head { display: flex; justify-content: space-between; gap: var(--space-16); align-items: flex-start; flex-wrap: wrap; }
@@ -274,9 +257,7 @@ body {
 
 /* ── 详情视图 ── */
 /* ⛔ .kvtable 已删（D 批）：唯一消费者 renderView 的内部信息区已撤。 */
-.taglist { display: flex; flex-wrap: wrap; gap: var(--space-4); }
 .tag { background: var(--bg-app); border: 1px solid var(--border); border-radius: 4px; padding: var(--space-1) var(--space-8); font-family: var(--mono); font-size: 12px; }
-.internal-row td, .internal-row th { background: var(--bg-critical-soft); }
 
 /* ── 表单 ── */
 form { margin-top: var(--space-16); }
@@ -298,7 +279,6 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
 .vprop:first-of-type .vprop-del { top: -4px; }
 .vprop-del:hover { background: var(--tint-red); }
 .req { color: var(--text-critical); font-size: 12px; font-weight: 600; margin-left: var(--space-4); }
-.internal { color: var(--text-critical); background: var(--bg-critical-soft); font-size: 12px; padding: var(--space-1) var(--space-6); border-radius: 999px; margin-left: var(--space-4); }
 /* 输入框照 mockup .inp：白底 · --border-strong 描边 · 圆角 8 · 14px（C 批 §6，全站一次换） */
 input, select, textarea {
   width: 100%; padding: var(--space-8) var(--space-12); font: inherit; font-size: 14px;
@@ -334,7 +314,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--border-focu
 input.bad, select.bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 .hint { margin: var(--space-4) 0 0; font-size: 12px; color: var(--text-secondary); }
 .hint code, code { font-family: var(--mono); font-size: 12px; background: var(--bg-app); padding: 0 var(--space-4); border-radius: 3px; }
-.field-internal { border-left: 3px solid var(--border-critical); padding-left: var(--space-12); }
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-6); }
 /* ══ G 批 §1：SPEC §4 要的是「可点 chip」，不是「带方框的复选框」 ══
@@ -633,8 +612,6 @@ th.filt { position: relative; overflow: visible; }
 .linkish:hover { text-decoration: underline; }
 
 /* ── 图片 ── */
-.imgrow { display: flex; gap: var(--space-12); align-items: flex-start; }
-.imgrow-side { flex: 1 1 auto; min-width: 0; }
 .thumb {
   flex: 0 0 auto; width: 110px; height: 110px; border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg-app); display: flex; align-items: center; justify-content: center; overflow: hidden;
@@ -663,9 +640,6 @@ th.filt { position: relative; overflow: visible; }
 :root { --li-thumb: calc(2 * 1.4 * 13px + 4px + 20px); }   /* = 60.4，见上推导 */
 .thumb-sm { width: var(--li-thumb); height: var(--li-thumb); border-radius: 6px; background: var(--bg); }
 .thumb-empty { color: var(--text-secondary); font-size: 12px; }
-.filebtn { display: inline-block; padding: var(--space-4) var(--space-12); font-size: 13px; font-weight: 600; cursor: pointer;
-  background: var(--bg-app); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); margin: 0 0 var(--space-6); }
-.filebtn:hover { border-color: var(--border-accent); color: var(--text-accent); }
 .gallery { display: flex; flex-wrap: wrap; gap: var(--space-8); }
 /* ⛔ .gcard 全族已删（E 批反扫）：app.js/HTML 零引用 —— A10-R1 图片列表之前的老 gallery 遗骸。 */
 /* 🔴 `:not(.linkish)` 与上面 `.batchbar button:not(.linkish)` **同一个病、同一个解**（⛔ 不发明第二种）：
@@ -1290,18 +1264,9 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 .senmore { flex: 0 0 auto; font-size: 12px; color: var(--text-secondary); font-family: var(--mono); cursor: help; }
 
 /* ══ 首页精选产品 ══ */
-.card-featured .featlist { display: flex; flex-direction: column; gap: var(--space-6); margin: var(--space-8) 0 0; }
-.featrow {
-  display: flex; align-items: center; gap: var(--space-12); padding: var(--space-8) var(--space-12); cursor: grab;
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 7px;
-}
-.featrow.is-dragging { opacity: .4; }
-.featrow.is-over { border-color: var(--border-accent); box-shadow: 0 0 0 2px var(--ring-accent-soft); }
 /* 🔴 坏条目要**看得见**：静默过滤掉的话，Joe 永远不知道列表里有坏的，
    而首页会安静地少一张卡。 */
-.featrow.is-bad { border-color: var(--border-critical); background: var(--bg-critical-soft); }
 .featno { flex: 0 0 20px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
-.feattext { flex: 1 1 auto; min-width: 0; }
 
 /* ══ 首页精选产品：卡片网格（Joe 2026-08-27「像官网一样可视化」）══
    🔴 **4 列不是随便挑的**：官网首页就是 4 列 ⇒ 后台看到的排列 == 首页看到的排列，
@@ -1424,7 +1389,6 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 .micard .iname { font-family: var(--mono); font-size: 12px; color: var(--text-primary); word-break: break-all; margin-top: 8px; }
 .micard .iuse { color: var(--muted); margin-top: 3px; }
 .micard .iuse.is-warn { color: var(--amber); font-weight: 600; }
-.micard .imeta2 { color: var(--hint); margin-top: 4px; }
 /* 新建文件夹 / 上传 的内联面板 */
 .mpanel { padding: 14px 16px; }
 .mrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
