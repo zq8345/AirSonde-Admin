@@ -1975,6 +1975,42 @@ app.put("/api/taxonomy", async (c) => {
 //      ② 成本随响应返回，由调用方（产线）落进它自己的溯源表。
 //    📌 等产线真的把文章提交进官网仓那天，成本应当写进**那次 commit 的 message** ——
 //      那才是它进审计日志的正确方式，也与"改动本身就是记录"这条一致。
+/**
+ * 一步验通道：**Joe 在浏览器里点开这个地址就行**（他在 Access 会话里，点开即触发）。
+ *
+ * 🔴 为什么需要它：生成端点是 POST，而**链接只能发 GET** —— 没有这一条，
+ *    "验一下通道通没通"这件事就只能靠有 Access 令牌的自动化，而**没有任何窗持有那种令牌**
+ *    （持有它 = 持有整个后台的钥匙，比一把 API key 风险大一级）。
+ * ⚠️ 它是**诊断端点**，与 `/api/_whoami` 同类：固定提示词、固定 20 tokens、无入参。
+ *    ⛔ 不接受任何请求参数 —— 一个能从 URL 传提示词的 GET，就是一个能被链接触发的生成器。
+ */
+app.get("/api/ai/selftest", async (c) => {
+  const operator = operatorOf(c);
+  try {
+    const r = await aiChat(c.env, [{ role: "user", content: "Reply with exactly: CHANNEL OK" }],
+      { label: "channel_selftest", maxTokens: 20, temperature: 0, operator });
+    return c.json({
+      ok: true,
+      通道: "通了",
+      模型: r.model,
+      模型回了什么: r.content,
+      tokens: r.tokens,
+      // ⚠️ null 就是 null —— OpenRouter 没给成本时**照实说不知道**，⛔ 不填 0。
+      本次成本美元: r.costUsd,
+      耗时毫秒: r.ms,
+      说明: "这条只证明通道通、密钥有效、模型可用。⛔ 它不证明文章质量，也不产生任何提交。",
+    });
+  } catch (e) {
+    if (e instanceof AiError) {
+      console.error(JSON.stringify({ evt: "ai_failed", kind: e.kind, status: e.status ?? null, operator, label: "channel_selftest" }));
+      return c.json({ ok: false, 通道: "没通", 原因类别: e.kind, 说明: e.message, 怎么办: e.detail ?? null },
+        e.kind === "missing_key" ? 501 : 502);
+    }
+    console.error(JSON.stringify({ evt: "ai_failed", kind: "unknown", msg: String(e) }));
+    return c.json({ ok: false, 通道: "没通", 原因类别: "unknown", 说明: String(e) }, 502);
+  }
+});
+
 app.post("/api/ai/generate", async (c) => {
   const operator = operatorOf(c);
   if (!operator) return c.json({ error: "拿不到操作人身份，拒绝调用" }, 403);
