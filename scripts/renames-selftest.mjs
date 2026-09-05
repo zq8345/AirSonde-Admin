@@ -9,7 +9,8 @@ const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝�
 //    要求「已有条目一个字节都不动」。整份重新序列化会把每条 route 从一行拆成五行 ——
 //    那违反这份文件的第一条规矩（⛔ 只追加，不修改已有条目），而且 diff 会淹掉真正的改动。
 
-const { modelUrl, decideRename, appendRoute, RENAMES_PATH, LedgerError } = await import(SRC + "renames.ts");
+const { modelUrl, decideRename, appendRoute, resolveAddress, checkHistoricalUrl, RENAMES_PATH, LedgerError } =
+  await import(SRC + "renames.ts");
 
 let pass = 0, fail = 0; const out = [];
 const ck = (n, c, d = "") => { if (c) { pass++; out.push(`✅ ${n}`); } else { fail++; out.push(`🔴 ${n}\n     ${d}`); } };
@@ -172,6 +173,68 @@ const PUB = (m) => ({ model: m, status: "published" });
   const doc = JSON.parse(out2);
   ck("⑥ 🔴 $comment 里出现 routes / 括号也不影响定位", doc.routes.length === 2 && doc.routes[1].to === "/products/d/", out2);
   ck("⑥ 说明文字原样", doc.$comment[0].includes("追加"));
+}
+
+// ══════ ⑧ 型号回收：撞上历史地址就拒（总工 2026-09-05 裁定）══════
+{
+  const R = JSON.parse(REAL).routes;   // 四条真实台账记录
+  ck("⑧ 材料有效性：台账里确实有 /products/ak16/ 这条历史地址",
+    R.some((r) => r.from === "/products/ak16/"), JSON.stringify(R));
+
+  // ── 正对照：别的产品想拿 AK16 ⇒ 拒，并说得出它会跳到哪儿 ──
+  const v = checkHistoricalUrl(R, modelUrl("AK16"), null);
+  ck("⑧ 🔴 新建 model=AK16（台账里的旧地址）⇒ 拒", v.ok === false);
+  ck("⑧ 拒的时候说得出「它现在 301 到哪儿」", v.ok === false && v.wouldRedirectTo === "/products/ak16a/", JSON.stringify(v));
+
+  // ── 反向自证一：没用过的型号照常放行 ──
+  ck("⑧ 反向：AK99 没在台账里 ⇒ 放行", checkHistoricalUrl(R, modelUrl("AK99"), null).ok === true);
+  ck("⑧ 反向：改名的**终点**地址本身不在 from 里 ⇒ 放行",
+    checkHistoricalUrl(R, "/products/ak16a/", null).ok === true);
+
+  // ── 反向自证二：台账清空时**一条都不拒** ──
+  // 🔴 这条防的是"闸装反了"：一个什么都拒的闸，在上面那几条正对照下也全绿。
+  for (const m of ["AK16", "AK23", "AK16D", "AK34-1", "AK99"]) {
+    ck(`⑧ 🔴 反向自证：台账为空时 ${m} 不被误拒`, checkHistoricalUrl([], modelUrl(m), null).ok === true);
+  }
+
+  // ── 🔴 反向自证三：**改回原值必须放行** ──
+  // 这一条是我加的，⛔ 派单原文「台账里的 from 一律硬拒」会挡掉它：
+  // 那份台账自己写着"改回原值也照实记"，官网 build-redirects 丢弃自指规则、
+  // check-dist 专门留了 renameLiveAgain 一支 ⇒ **两边都认为它合法**。
+  // 后台硬拒的话，就成了全链路上唯一一个不认它的环节。
+  {
+    const back = checkHistoricalUrl(R, "/products/ak16/", "/products/ak16a/");
+    ck("⑧ 🔴 同一个产品从 AK16A 改回 AK16 ⇒ **放行**（它是自己回自己的老家）", back.ok === true, JSON.stringify(back));
+  }
+  {
+    // 而**别的**产品拿同一个地址，判据一样、结论相反 —— 这才叫判别式。
+    const other = checkHistoricalUrl(R, "/products/ak16/", "/products/ak77/");
+    ck("⑧ 🔴 换成别的产品拿同一个地址 ⇒ 拒（同一判据、相反结论）", other.ok === false, JSON.stringify(other));
+  }
+
+  // ── 链式：A→B→C，拿 A 的地址会被指到 C ──
+  {
+    const chain = [
+      { from: "/products/a/", to: "/products/b/", at: "2026-01-01" },
+      { from: "/products/b/", to: "/products/c/", at: "2026-02-01" },
+    ];
+    ck("⑧ 链式：A 解析到终点 C", resolveAddress(chain, "/products/a/") === "/products/c/");
+    ck("⑧ 链式：别人拿 A ⇒ 拒，且说得出终点是 C",
+      checkHistoricalUrl(chain, "/products/a/", null).wouldRedirectTo === "/products/c/");
+    ck("⑧ 链式：C 自己（终点）想改回 A ⇒ 放行",
+      checkHistoricalUrl(chain, "/products/a/", "/products/c/").ok === true);
+  }
+
+  // ── 成环（改走又改回）不许死循环 ──
+  {
+    const cyc = [
+      { from: "/products/a/", to: "/products/b/", at: "2026-01-01" },
+      { from: "/products/b/", to: "/products/a/", at: "2026-02-01" },
+    ];
+    ck("⑧ 成环 ⇒ resolveAddress 返回 null，⛔ 不死循环", resolveAddress(cyc, "/products/a/") === null);
+    ck("⑧ 成环时，地址本来就是自己的 ⇒ 放行", checkHistoricalUrl(cyc, "/products/a/", "/products/a/").ok === true);
+    ck("⑧ 成环时，别人来拿 ⇒ 拒", checkHistoricalUrl(cyc, "/products/a/", "/products/zz/").ok === false);
+  }
 }
 
 // ══════ ⑦ 常量 ══════

@@ -27,7 +27,7 @@ import {
 } from "./taxonomy";
 import { summarizeDiff } from "./diff";
 import { verifyAccessJwt, AccessDenied } from "./access";
-import { decideRename, appendRoute, RENAMES_PATH } from "./renames";
+import { decideRename, appendRoute, modelUrl, checkHistoricalUrl, RENAMES_PATH } from "./renames";
 
 /**
  * 台账里的 `at` 用的日期。
@@ -1176,6 +1176,39 @@ app.put("/api/products/:slug", async (c) => {
             + `换一个型号，或先去改那个产品的型号。`,
           conflictWith: { slug: clash.slug, name: clash.name, model: clash.model },
         }, 409);
+      }
+    }
+
+    // ── 🔴 型号**回收**：撞上台账里的历史地址也要拒（总工 2026-09-05 裁定）──
+    //
+    // 上面那一关只比**当前在架产品** ⇒ 一个已经被改名腾出来的型号，它看不见。
+    // 而那个旧地址在 Google 里还存着链接、在 `_redirects` 里还有一条 301 ——
+    // 复用它 = 旧链接落到一个**不相干的产品**上，同时官网 `check-dist` 会报红、整站发不出去。
+    //
+    // ⚠️ 只在**地址真的会变**时才去读台账：普通保存（型号没动）不多这一次跨仓请求。
+    //    ⛔ 不无条件读 —— Workers 的子请求有上限，而这条路上已经有 `listExpanded` 那一批了。
+    const toUrl = modelUrl((merged as any).model);
+    const fromUrl = existing ? modelUrl((existing as any).model) : null;
+    if (toUrl && toUrl !== fromUrl) {
+      const led = await readRepoFile(c.env, RENAMES_PATH);
+      // ⚠️ 读不到台账 ⇒ **放行**，⛔ 不当成"台账是空的"也⛔ 不硬拒。
+      //    这一关防的是一个概率性的将来问题；因为读不到就把所有改名/新建全堵死，代价更大。
+      //    （读得到但内容坏 ⇒ 下面 JSON.parse 抛，落到外层 500 —— 那是真该停的情形。）
+      if (led.exists && led.text) {
+        const routes = (JSON.parse(led.text)?.routes ?? []) as any[];
+        const verdict = checkHistoricalUrl(routes, toUrl, fromUrl);
+        if (!verdict.ok) {
+          return c.json({
+            wrote: false, error: "这个型号是别人用过的旧型号",
+            // ⛔ 不许说"违反台账约束"这种话 —— 要说清**为什么不能用**、以及**怎么办**。
+            detail: `${JSON.stringify(String((merged as any).model))} 曾经是另一个产品的型号，`
+              + `它的旧网址 ${verdict.url} 现在有一条 301 指向 ${verdict.wouldRedirectTo}，`
+              + `Google 和别人站上的旧链接还存着它。`
+              + `拿它当新型号，那些旧链接会落到这个**不相干的产品**上，官网也会因此构建失败、整站发不出去。`
+              + `⇒ 请换一个没用过的型号（例如在后面加一个字母：${String((merged as any).model)}B）。`,
+            conflictWith: { historicalUrl: verdict.url, redirectsTo: verdict.wouldRedirectTo },
+          }, 409);
+        }
       }
     }
 
