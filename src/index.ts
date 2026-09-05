@@ -27,6 +27,14 @@ import {
 } from "./taxonomy";
 import { summarizeDiff } from "./diff";
 import { verifyAccessJwt, AccessDenied } from "./access";
+import { decideRename, appendRoute, RENAMES_PATH } from "./renames";
+
+/**
+ * 台账里的 `at` 用的日期。
+ * ⚠️ 一律 **UTC**：Workers 的时区不确定，而这条要跟官网仓的 commit 时间、跟别的窗的记录对得上。
+ *    跨窗对时全用 UTC —— 本地时区会让 09-05 23:00 记成 09-06。
+ */
+const todayUtc = (): string => new Date().toISOString().slice(0, 10);
 
 // ⚠️ Variables.operator：身份由鉴权中间件从**验过签的令牌**里取出来放进这里。
 //    下游一律读它，⛔ 不要再去读 `cf-access-authenticated-user-email` 那个明文头 ——
@@ -1187,12 +1195,53 @@ app.put("/api/products/:slug", async (c) => {
       else files.push({ path: op.path, remove: true });
     }
 
+    // ══ 🔴 型号改了 ⇒ 同一个 commit 里追加重命名台账 ══
+    //
+    // 型号就是网址 ⇒ 改型号 = 换网址，而**旧地址是什么，只有此刻知道**：
+    // 改完之后当前产品数据里再没有旧型号，这份历史**重建不出来**（`renames.ts` 开头有全部理由）。
+    // ⛔ 必须与产品 JSON 在**同一个 commit**：分两次的话，中间那个状态是
+    //    "地址已经换了、台账还没记" —— CF Pages 正好拿它构建，旧地址当场 404 且没人知道。
+    // ⚠️ 台账写失败 ⇒ **整次保存失败**，⛔ 不"产品写了、台账没写"：
+    //    那正是今天在修的这个 bug 的形状（改名成功、账没记、几天后 GSC 才发现）。
+    const rename = decideRename(existing, merged as any, todayUtc());
+    let renameNote: string | null = null;
+    if (rename.record) {
+      const led = await readRepoFile(c.env, RENAMES_PATH);
+      if (!led.exists || led.text == null) {
+        return c.json({
+          wrote: false, error: "改名被拒：找不到重命名台账",
+          detail: `${RENAMES_PATH} 在数据仓里不存在。改型号 = 换网址，而旧地址只有现在记得下来 ——`
+            + `⇒ 拒绝在记不了账的情况下改名，本次**没有产生任何 commit**。`,
+        }, 422);
+      }
+      try {
+        const nextLedger = appendRoute(led.text, rename.entry);
+        if (nextLedger !== led.text) {
+          // ⭐ `expectBaseSha`：台账是**多个写入方共用的追加型文件**，而它这一路上没有乐观锁。
+          //    不带这个的话，两次改名撞在一起时后一次会**静默盖掉**前一次那条 —— 不报错、不坏构建。
+          files.push({ path: RENAMES_PATH, text: nextLedger, expectBaseSha: led.sha ?? undefined });
+        }
+      } catch (e) {
+        return c.json({
+          wrote: false, error: "改名被拒：重命名台账写不进去",
+          detail: `${String((e as Error).message)}　⇒ 本次**没有产生任何 commit**。`,
+        }, 422);
+      }
+    } else if (rename.note) {
+      renameNote = rename.note;
+    }
+
     const imgSummary = plan.ops.length ? `，图片 ${plan.ops.length} 项` : "";
     const fields = [...touched, ...cleared.map((k) => `-${k}`)];
+    // ⚠️ 改名要在 commit message 里**说出来**：这是唯一一次"旧地址是什么"还写得下来的机会，
+    //    而 `admin: update <slug>` 这种标题看不出网址换了 —— 今天查那三条改名就是被它绊住的。
+    const renameLine = rename.record
+      ? `\n🔴 型号改名：${rename.entry.from} → ${rename.entry.to}（已追加进 ${RENAMES_PATH}，旧地址会 301 到新地址）`
+      : "";
     const result = await commitFiles(c.env, {
       message:
         `admin: ${f.exists ? "update" : "create"} ${slug} (${operator})\n\n` +
-        `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}${imgSummary}\n` +
+        `字段：${fields.length ? fields.join(", ") : "(无字段变化)"}${imgSummary}${renameLine}\n` +
         `来源：admin.airsonde.com`,
       files,
       // ⛔ 旧的 expectedHeadSha（分支 HEAD）已删：粒度错、且客户端从来不发 ⇒ 空转。锁在上面按文件 sha 判。
@@ -1206,6 +1255,10 @@ app.put("/api/products/:slug", async (c) => {
       change: { touched, cleared, added: diff.added, removed: diff.removed },
       imageOps: plan.ops.map((o) => ({ op: o.op, path: o.path, why: o.why })),
       validation,
+      // 改名是**换网址**，是这次保存里影响最大的一件事 ⇒ 单独一个字段说出来，
+      // ⛔ 不埋在 `change.touched` 的字段名列表里（那里它只是一个叫 model 的普通字段）。
+      rename: rename.record ? { ...rename.entry, ledger: RENAMES_PATH } : null,
+      renameNote,
       note: "已提交到数据仓（JSON 与图片在同一个 commit）。CF Pages 会自动重建 —— 线上生效有延迟，不是没写成功。",
     });
   } catch (e) {
