@@ -610,6 +610,12 @@ th.filt { position: relative; overflow: visible; }
 .ptable .col-model { width: 1%; white-space: nowrap; font-size: 12px; }
 .ptable .col-cat { width: 1%; white-space: nowrap; font-size: 12px; color: var(--text-secondary); }
 .ptable tbody .col-model, .ptable tbody .col-cat { font-family: var(--mono); }
+
+/* ⭐ 产品列表**表头**全部居中（Joe 2026-09-05：「把这个列表的表头都居中对齐」）。
+   🔴 一条规则管六格，⛔ 不逐列写 —— 逐列写的话下次加一列就会漏，而漏了没有症状。
+   ⛔ **只动表头，不动数据行**：他说的是表头；数据行的对齐（型号左、状态居中…）不在这一条里。
+   ⚠️ 机型那格带筛选漏斗图标，它在按钮里跟文字一起居中 —— ⛔ 别把它挤丢（实测核过）。 */
+#listView .ptable thead th { text-align: center; }
 .ptable .col-act { width: 110px; text-align: right; white-space: nowrap; }
 .ptable input[type=checkbox] { width: auto; margin: 0; }
 .row-bad { background: var(--bg-critical-soft); }
@@ -672,34 +678,31 @@ th.filt { position: relative; overflow: visible; }
    ⚠️ `margin-left:auto` 一并让出：它是给实心块按钮靠右用的，
       套在行内链接上会把「删除」推到格子最右边，与「改名」离得莫名其妙地远。
    ⛔ 不改 `.linkish` 去迁就它：`#deleteBtn` 那个真·实心红块按钮**要保持原样**。 */
-/* ══ 删除确认对话框（Joe 2026-09-05）══
-   原生 `<dialog>`：Esc / 遮罩 / 焦点陷阱由浏览器负责，这里只管长相。
-   ⚠️ 宽度用 min()：窄屏时它得跟着缩，⛔ 不写死一个在 990 分屏下会出血的宽度。 */
-.cdlg { width: min(460px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--border);
-  border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
+/* ══ 删除确认对话框（Joe 2026-09-05，简洁版）══
+   原生 `<dialog>`：遮罩 / 焦点陷阱由浏览器负责，这里只管长相。
+   ⚠️ 宽度用 min()：窄屏时它得跟着缩，⛔ 不写死一个在 990 分屏下会出血的宽度。
+   ⚠️ 按宪法：1px 边框 / radius 12 / padding 24。
+   ⛔ `.cdlg-what` / `.cdlg-li` / `.cdlg-lab` / `.cdlg-slug` 全族已删 ——
+      它们服务的是上一版那堆解释性文字（数据文件名、commit 机制），
+      那一版被 Joe 判"字太多"整段撤了。**元素与样式一起删**，⛔ 不留孤儿类。 */
+.cdlg { width: min(400px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--border);
+  border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
 .cdlg::backdrop { background: rgba(16, 20, 24, .45); }
-.cdlg form { padding: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
+.cdlg form { padding: var(--space-24); display: flex; flex-direction: column; gap: var(--space-12); }
 .cdlg h3 { margin: 0; font-size: 15px; font-weight: 700; }
-/* 删的是**哪一个** —— 型号 + 标题放最显眼处，⛔ 不让人靠"我记得我点的是哪个"去确认。 */
-.cdlg-what { font-size: 13px; font-weight: 600; padding: var(--space-8);
-  background: var(--bg-critical-soft); border-radius: 6px; color: var(--text-critical); word-break: break-word; }
-.cdlg-body { font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
-.cdlg-li { line-height: 1.5; }
-.cdlg-feat { margin-top: var(--space-6); padding: var(--space-8); border-radius: 6px;
-  background: var(--bg-caution-soft); color: var(--text-caution); line-height: 1.5; white-space: pre-wrap; }
-.cdlg-lab { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-top: var(--space-6); }
-.cdlg-slug { font-family: var(--mono); font-size: 12px; padding: var(--space-6) var(--space-8);
-  background: var(--bg-app); border: 1px solid var(--border); border-radius: 5px; word-break: break-all; user-select: all; }
-.cdlg-foot { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-8); }
+.cdlg-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+/* 首页精选提醒：⚠️ 只在真命中/真不确定时出现（JS 控 hidden），⛔ 平时不占位置。 */
+.cdlg-feat { margin: 0; font-size: 12px; line-height: 1.5; padding: var(--space-8);
+  border-radius: 6px; background: var(--bg-caution-soft); color: var(--text-caution); }
+.cdlg input { font-size: 13px; }
+.cdlg-foot { display: flex; gap: var(--space-8); margin-top: var(--space-4); }
 /* ⚠️ 这里原来写着 `.cdlg-foot .danger { margin-left: 0 }`，想让两个键靠右并排 ——
-   **那条规则从来没赢过**：`button.danger:not(.linkish)`（0,2,1）压过 `.cdlg-foot .danger`（0,2,0），
+   **那条规则从来没赢过**：`button.danger:not(.linkish)`（0,2,1）压过它（0,2,0），
    它的 `margin-left:auto` 仍然生效（实测 computed = 314px）。
-   ⇒ 实际长相是**取消在左、删除在右、中间隔开**。
-
-   🔴 那个长相**对破坏性操作反而更好**（两个键离得远，误点的代价小）⇒ 保留它，
-     ⛔ 但把那条死规则删掉：一条什么都没做、而注释说它做了某事的规则，
-     比没有这条规则更坏 —— 下一个人会照着注释去理解布局。
-   ⚠️ 今天第三次撞上 `button.danger:not(.linkish)` 的特异性（分类页行高、这里）。 */
+   ⇒ 实际长相是"取消在左、删除在右、中间隔开"。
+   🔴 那个长相**对破坏性操作反而更好**（两个键离得远，误点代价小）⇒ 保留它，
+     ⛔ 但那条死规则已删：一条什么都没做、而注释说它做了某事的规则，比没有它更坏。
+   ⚠️ 今天第三次撞上 `button.danger:not(.linkish)` 的特异性。 */
 
 button.danger:not(.linkish) { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
   padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; margin-left: auto; }
@@ -997,16 +1000,29 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
 .imglist { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin-bottom: var(--space-12); }
 @media (max-width: 1300px) { .imglist { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .imglist:empty { margin-bottom: 0; }
+/* ⭐ 图片**撑满整格**（Joe 2026-09-05：「图片把容器撑满」）。
+   ⚠️ `width/height: var(--tile)` 这两条与 `.iadd` 上那两条同病 —— `--tile` 从未定义、
+      声明一直无效、退回 auto（grid 给列宽、内容给高）。⇒ 一起删掉，⛔ 不留死声明。
+   ⇒ `padding: 0` + `aspect-ratio: 1/1`：格子自己是方的，图铺满它。
+   ⚠️ 「封面」标与右上 × 是 `position:absolute` 挂在这张卡上的 ⇒ padding 归零不影响它们
+      （实测核过它们仍在且可点）。 */
 .icard {
-  position: relative; width: var(--tile); height: var(--tile); border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg-app); padding: var(--space-6); cursor: grab; user-select: none;
+  position: relative; aspect-ratio: 1 / 1; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-app); padding: 0; overflow: hidden; cursor: grab; user-select: none;
 }
 .icard:active { cursor: grabbing; }
 /* 🔴 内框照 `.featthumb` 的写法（`aspect-ratio: 1/1`）——
    ⛔ 同一个仓里已有现成的正确写法，不发明第二种。
    原来是 `height: 82px`：这是全文件**唯一一个不方的** thumb 覆盖
    （基类 110×110、.thumb-sm 44、.featthumb 1/1 全是方的；.gcard/.mcard 已删）。 */
-.icard .thumb { width: 100%; aspect-ratio: 1 / 1; height: auto; border-radius: 5px; }
+/* 🔴 内框撑满整张卡（不再是卡内留白的一块）。圆角交给 `.icard` 的 overflow:hidden 去切，
+   ⛔ 这里不再各写一个圆角 —— 两个圆角各改各的，迟早对不上。 */
+.icard .thumb { width: 100%; height: 100%; border-radius: 0; border: 0; }
+/* 🔴 `cover` 只作用在**产品图片区**，⛔ 不动全局 `.thumb img`（图片页/列表缩略图仍是 contain）。
+   ⚠️ 实测过库里的图：247 张里 **37 张不是 1:1**（最极端 424×1115，比 0.38）——
+      `cover` 会把它们裁掉。这是 Joe 明确要的"撑满"换来的代价，已上报数量；
+      ⛔ **图片文件本身一个字节没动**，裁的只是后台缩略图的显示。 */
+.icard .thumb img { object-fit: cover; }
 .icard.is-new { border-color: var(--border-success); background: var(--bg-success-soft); }
 .icard.is-dragging { opacity: .4; }
 /* 拖到谁身上，谁左边亮一条 —— 只是一个 class，不重绘（wanew 那边在 dragover 里整块重绘） */
@@ -1125,7 +1141,16 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
       滚动容器就是 .main 本身 ⇒ 0 指的是这个容器的顶边，**不依赖"上面没有别的东西"**。
       （旧写法的病是 `top: 40px` 假设横幅永远一行。） */
 .detail-bar {
-  position: sticky; top: 0; z-index: 15;
+  /* 🔴 `top` **必须与出血用的负边距同源**（Joe 2026-09-05：顶栏上方漏一条缝，
+     内容从缝里滚过去）。真凶是**两个参照系**：
+       · 出血的负边距 `-16px` 参照的是 `.main` 的 **border 盒**（把条子拉到容器边）
+       · 而 `position:sticky` 的 `top` 参照的是**滚动视口的 padding 盒**
+     ⇒ `top:0` 让它停在 padding 盒顶部 = 容器边**下方 16px**，
+       上面那条 16px 的带就没人遮 —— 实测滚到 400 时那条带里命中的是 `IMG`（产品图）。
+     ⇒ `top: calc(-1 * var(--main-pad-y))` 把这 16px 抵掉，两个参照系对齐。
+     ⛔ 不垫一块白补丁盖住：补丁在顶栏变高/padding 变化时会重新漏，而且没有症状。
+     ⚠️ 它属于下面那个**耦合组** —— 与 `.main` 的 padding 一起动，⛔ 别单独改一个。 */
+  position: sticky; top: calc(-1 * var(--main-pad-y)); z-index: 15;
   display: flex; align-items: center; gap: var(--space-16); flex-wrap: wrap;
   /* 🔴 **耦合组**：这三个数与 `.main` 的 padding **必须一起动**。
      负边距是"出血"——靠 `-20/-24` 正好抵消 `.main` 的 `padding: 20px 24px` 才能顶到容器边。
@@ -1143,7 +1168,13 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
 /* 🔴 权重拉开（附录 C.7 危险动作）：主动作实心，删除 = **红字无底无框**，hover 才出浅红底。 */
 .detail-actions .danger { background: none; border: 0; color: var(--red); padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; }
 .detail-actions .danger:hover { background: var(--tint-red); }
-.detail-bar h2 { margin: 0; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ⭐ 顶栏那一格现在放的是**型号**（AK35），不是长标题（Joe 2026-09-05）。
+   ⚠️ `flex: 0 0 auto` —— 型号很短，⛔ 不让它像原来的长标题那样撑开挤别人。
+   ⚠️ 省略号那套保留：万一哪天型号变长，它也不该把这一行顶出去。 */
+.detail-bar h2 { margin: 0; flex: 0 0 auto; font-size: 17px; min-width: 0; max-width: 260px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 还没填型号时（新建页）显示「新建产品」—— 它是**占位说明不是产品名**，压一档灰。 */
+.detail-bar h2.is-placeholder { color: var(--text-secondary); font-weight: 600; }
 /* 字段级提示：贴在它所属的输入框正下方，而不是堆在顶部 */
 .field-issue { color: var(--text-caution); margin-top: var(--space-4); }
 
@@ -1196,10 +1227,23 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
 .cnt-over  { color: var(--text-caution); font-weight: 600; }
 
 /* 🔴 placeholder 是**最容易漏的一处**：它不是文字节点，按元素扫文本的那套查不到它，
-   而且浏览器给的默认色（实测 #757575 on #f6f7f9 = **4.3:1**）根本不到 7。
-   ⇒ 显式指定。用 --muted（7.57:1 on --bg）——
-   ⚠️ 它与真值仍然分得开：真值走 --text，约 17:1，比 placeholder 明显重。 */
-input::placeholder, textarea::placeholder { color: var(--text-secondary); opacity: 1; }
+   所以必须显式指定，⛔ 不能靠浏览器默认。
+
+   ⚠️ 这里原来用 --text-secondary（实测 **7.35:1** on 白）—— 那个理由是"占位符也是文字，要 ≥7"。
+   🔴 **它 2026-09-05 真的骗到了人**：Joe 看着新建页的「产品标题 / 型号」两个框里的
+      `16-in-1 Desktop Air Quality Monitor` 和 `AK101`，以为**已经填好了**，
+      于是不理解顶上为什么还写着「还缺：产品标题、型号…」。
+      （实测：两个框的 `value` 都是空串，那是 placeholder。缺项行本身是实时的、说的是实话。）
+   ⇒ 一个"读起来就是内容"的占位符，比一个偏淡的占位符坏得多：
+     前者让人看错**自己填没填**，后者只是看着轻一点。
+
+   ⇒ 改用 --hint（#8a94a0）—— **那个变量自己的注释写着"第三级：计数、占位、(?)"**，
+     占位符本来就该走它，⛔ 不新造第四个灰。
+   ⚠️ 代价如实记：对比度从 7.35 降到约 3.1，**低于 4.5 这条正文门槛**。
+     这是**有意的取舍**（总工 2026-09-05 裁定 3:1~4.5:1）：占位符是提示不是内容，
+     它与真值（--text，约 18.5:1）必须一眼分得开。⛔ 别哪天以"对比度不够"为由改回去
+     而不知道改回去会重新制造上面那个事故。 */
+input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 
 /* ⛔ 卖点每行字数（.repeat-row / .rowcnt）已随逐条输入框一起撤（A17，Joe 2026-09-03）。 */
 

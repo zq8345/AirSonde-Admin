@@ -790,7 +790,7 @@ async function select(slug, opts = {}) {
   $("#deleteBtn").hidden = !state.write?.enabled;
   $("#listView").hidden = true; $("#detailView").hidden = false;
   $("#preview").hidden = true;
-  $("#dTitle").textContent = slug;
+  setBarModel(null);            // 读取中：⛔ 不先摆一个可能不对的名字
   // 🔴 数据到达前把表单藏起来（D 批）：双态撤了之后编辑面板常显，不藏的话加载中会露出
   //    **上一个产品的残留值**（dev 下长达数秒）——人在那期间打的字会被 fillForm 覆盖。
   $("#editPane").hidden = true; $("#previewBtn").hidden = true;
@@ -811,7 +811,7 @@ async function select(slug, opts = {}) {
   cache.set(slug, p);
   // D 批：编辑即详情 —— 标题就是产品名（纯文字，17/700 省略）。
   // ⛔ v3：「看官网页 ↗」整组已删（元素 + 这里的三行绑定），Joe 点名。
-  $("#dTitle").textContent = p.name || slug;
+  setBarModel(p.model);         // ⭐ 顶栏显示**型号**（Joe：「我们都是用型号来区分产品的」）
   state.filePath = body.path;
 
   const v = body.validation || { ok: true, errors: [], warnings: [] };
@@ -905,7 +905,7 @@ function startNew() {
   $("#deleteBtn").hidden = true;        // 还不存在的东西没有"删除"可言
   // ⛔ v3：#dSiteLink / #recordCard 两行绑定随元素一起删（看官网页、记录卡都撤了）。
   $("#listView").hidden = true; $("#detailView").hidden = false; $("#preview").hidden = true;
-  $("#dTitle").textContent = "新建产品";
+  setBarModel(null);            // 新建：型号还没填 ⇒ 显示「新建产品」
   state.filePath = "（保存后会是 " + (state.listMeta?.dir || "…") + "/<slug>.json）";
   renderIssues(null);
   state.draft = { sensors: [], images: {}, status: "draft" };
@@ -1222,9 +1222,13 @@ function renderImages() {
           + `不满意的话，请先自行压缩、或换一张更小的再传。`
         : `按 ${Math.round(it.quality * 100)}% 导出，未触发降质。`;
       card.append(q);
-    } else {
-      card.append(el("span", "itag", it.path.split("/").pop()));
     }
+    // ⛔ 已存在图片下面那行**文件名已删**（Joe 2026-09-05：「这里不用显示图片的名字」）。
+    //    ⚠️ 删的只有**产品图片区**这一处：图片页（媒体库）的文件名是他另一条需求要的，
+    //       那边一个字没动。
+    //    ⚠️ 待上传那一支（上面的 if）**保留** —— 它说的不是文件名，是"这张图被动过什么"
+    //       （大小 / 尺寸 / 画质 / 缩过没有），那是他按下保存前要知道的事。
+    //    🔴 文件名本身没有消失：它在卡片的 `title` 上（hover 可查，见上面 setThumb 一段）。
 
     // ── 拖拽换位 ──
     card.addEventListener("dragstart", (e) => {
@@ -1374,6 +1378,22 @@ function kvRow(container, k, v) {
   // ⚠️ 删行是**程序改 DOM**，不触发 input/change ⇒ 委托监听接不到 ⇒ 这里显式补两件事。
   d.onclick = () => { r.remove(); paintSpecsDivider(); markDirty(); };
   r.append(ik, iv, d); container.append(r);
+}
+
+/**
+ * 顶栏那一格显示什么（Joe 2026-09-05：「顶栏可以干掉标题；返回列表后面显示型号就可以了」）。
+ *
+ * ⚠️ 顶栏**不再显示产品长标题** —— 那串英文名占满一行、还得省略号，
+ *    而他认产品靠的是型号。标题输入框在「基本信息」里，⛔ 一个字没动。
+ * 🔴 新建页型号还没填时显示「新建产品」，**一填就跟上**（下面 oninput 实时驱动，
+ *    ⛔ 不是保存后才变 —— 那种"要保存才知道自己在编谁"正是这次要去掉的东西）。
+ */
+function setBarModel(model) {
+  const el0 = $("#dTitle");
+  if (!el0) return;
+  const m = String(model || "").trim();
+  el0.textContent = m || "新建产品";
+  el0.classList.toggle("is-placeholder", !m);
 }
 
 function fillForm(p) {
@@ -4082,31 +4102,42 @@ function confirmDelete(slug) {
     const typed = prompt(`删除 ${slug}？确认请输入它的 slug：\n${slug}`);
     return Promise.resolve(typed === slug);
   }
+  // 🔴 **简洁版**（Joe 2026-09-05：「搞那么多文字干嘛」）。
+  //    上一版每句都是真话，但**把机器的账本也说给他了** —— 数据文件名、"同一个 commit"
+  //    是我们的实现细节，不是他做这个决定需要的东西。**真话 ≠ 全部的话。**
+  //    ⇒ 只留三件他要的：删的是哪个（型号）· 会少什么（图片张数）· 多久生效 + 不可撤销。
   const p = state.loaded?.product || {};
-  const model = p.model || "(没有型号)";
-  const name = p.name || slug;
+  const model = (p.model || "").trim();
   const imgs = [p.images?.main, ...(p.images?.gallery || [])].filter(Boolean);
+  // ⚠️ 确认输入改成**型号**（Joe 用型号认产品；slug 又长又难打）。
+  //    没有型号的产品（理论上不该存在，契约必填）回落到 slug —— ⛔ 不因此变成"点一下就删"。
+  const key = model || slug;
 
-  $("#delDlgWhat").textContent = `${model} — ${name}`;
-  const body = $("#delDlgBody"); body.innerHTML = "";
-  // ⚠️ 走 appendMd，⛔ 不用 el(…, text)：`**粗体**` 靠 appendMd 变 <b>，
-  //    直接塞 textContent 会把星号**原样印在屏幕上**。
-  //    ⚠️ 同一个坑今天已经踩过一次（分类页那条悬空引用提示）—— 记在这里。
-  const li = (t) => appendMd(body.appendChild(el("div", "cdlg-li")), t);
-  li(`· 数据文件 ${slug}.json`);
-  // ⚠️ 图片张数**现算**，⛔ 不写"和它的图片"这种含糊话 —— 他要知道会少几张。
-  li(imgs.length ? `· 它引用的 ${imgs.length} 张图片（主图 + gallery）` : "· 它没有引用任何图片");
-  li("· 以上在**同一个 commit** 里删掉，官网随后自动重建，约 1 分钟后生效");
-  li("· **不可撤销** —— 要找回只能去 git 历史里翻");
-  const feat = featuredWarning([slug], "删除");
-  if (feat.trim()) appendMd(body.appendChild(el("div", "cdlg-feat")), feat.trim());
+  $("#delDlgTitle").textContent = `删除 ${key}？`;
+  // ⚠️ 图片张数**现算**；0 张时不说图片，⛔ 不写"和它的 0 张图片"。
+  appendMd($("#delDlgBody"), imgs.length
+    ? `**${key}** 和它的 ${imgs.length} 张图片将从官网移除，约 1 分钟生效。此操作**不可撤销**。`
+    : `**${key}** 将从官网移除，约 1 分钟生效。此操作**不可撤销**。`);
 
-  $("#delDlgSlug").textContent = slug;
+  // 首页精选：⚠️ **只在真不确定/真命中时出现**，压成一行。⛔ 平时不占位置。
+  const featEl = $("#delDlgFeat");
+  const feat = featuredWarning([slug], "删除").trim();
+  featEl.hidden = !feat;
+  featEl.textContent = "";
+  if (feat) {
+    const f = featuredAmong([slug]);
+    featEl.textContent = !f.known
+      ? "⚠️ 还没读过站点内容，无法确认它在不在首页精选里。"
+      : `⚠️ 它正挂在首页精选上，删除后首页会少 ${f.hit.length} 张卡。`;
+  }
+
   const inp = $("#delDlgType"); inp.value = "";
+  inp.placeholder = `输入 ${key} 确认`;
   const yes = $("#delDlgYes"); yes.disabled = true;
   const no = $("#delDlgNo");
-  // 🔴 只有逐字相同才解锁 —— 与原来那个 prompt 同一个门槛，⛔ 没有放松。
-  inp.oninput = () => { yes.disabled = inp.value.trim() !== slug; };
+  // 🔴 只有逐字相同才解锁（型号**大小写不敏感** —— Joe 打字不该被大小写卡住）。
+  const match = (v) => v.trim().toLowerCase() === key.toLowerCase();
+  inp.oninput = () => { yes.disabled = !match(inp.value); };
 
   // 🔴🔴 **不等 `close` 事件** —— 实测（in-app 预览浏览器）：点「取消」之后
   //    `dlg.open` 变 false、`dlg.returnValue` 也更新了，**但 `close` 事件一次都没触发**
@@ -4133,7 +4164,7 @@ function confirmDelete(slug) {
     no.onclick = () => finish(false);
     // 🔴 删除键上**再判一次** slug：按钮的 disabled 是可以被绕过的（改 DOM / 脚本），
     //    而这是不可逆操作 ⇒ 判据落在**值本身**，⛔ 不落在按钮的状态上。
-    yes.onclick = () => finish(inp.value.trim() === slug);
+    yes.onclick = () => finish(match(inp.value));
     // 点遮罩 = 取消（落在 dialog 元素本身上的点击只可能是遮罩，内容都在 <form> 里）
     dlg.onclick = (e) => { if (e.target === dlg) finish(false); };
     // Esc = 取消。⚠️ 自己接 keydown，⛔ 不依赖 `cancel`/`close` 事件（见上）。
@@ -4142,6 +4173,16 @@ function confirmDelete(slug) {
     dlg.showModal();
   });
 }
+
+// ⭐ 型号一边打字、顶栏一边跟上（Joe 2026-09-05）。
+// ⚠️ 绑在 `input` 上，⛔ 不绑 `change` —— change 要失焦才发，
+//    那会变成"打完还得点一下别处才更新"，看起来像没生效。
+(() => {
+  const m = $("#f_model");
+  if (!m) return;
+  // ⚠️ 这里**追加**监听，⛔ 不覆盖已有的 oninput（表单别处可能也挂了东西）。
+  m.addEventListener("input", () => setBarModel(m.value));
+})();
 
 $("#deleteBtn").onclick = async () => {
   const slug = state.slug;
