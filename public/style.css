@@ -1023,6 +1023,11 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
       `cover` 会把它们裁掉。这是 Joe 明确要的"撑满"换来的代价，已上报数量；
       ⛔ **图片文件本身一个字节没动**，裁的只是后台缩略图的显示。 */
 .icard .thumb img { object-fit: cover; }
+/* 🔴 非 1:1 的图改成完整显示（总工 2026-09-05 裁定）：`cover` 会把 424×1115 那种裁掉一大半，
+   而**认得出是哪个产品**比**铺得满**更接近 Joe 说"撑满"时的意思（他的前提是"我的图都是 1:1"，
+   实测 247 张里有 37 张不满足）。`data-fit` 由 `fitByAspect()` 按图自身宽高比现算，
+   ⛔ 不是给某几张图写名单。 */
+.icard .thumb img[data-fit="contain"] { object-fit: contain; }
 .icard.is-new { border-color: var(--border-success); background: var(--bg-success-soft); }
 .icard.is-dragging { opacity: .4; }
 /* 拖到谁身上，谁左边亮一条 —— 只是一个 class，不重绘（wanew 那边在 dragover 里整块重绘） */

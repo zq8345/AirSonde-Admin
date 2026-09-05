@@ -1089,6 +1089,32 @@ function setThumb(node, src, alt) {
   node.append(img);
 }
 
+/**
+ * 缩略图铺满还是完整显示 —— **由图自身的宽高比决定**（总工 2026-09-05 裁定）。
+ *
+ * Joe 要"图片把容器撑满"，前提是"我的图都是 1:1"。⚠️ **实测那个前提不成立**：
+ * 库里 247 张有 **37 张不是 1:1**，最极端 424×1115（比 0.38）——
+ * 对这些图，`cover` 会裁掉一大半，**他就认不出那是哪个产品了**。
+ * ⇒ `aspect ≈ 1 ⇒ cover（撑满，无裁切）`；`否则 ⇒ contain（完整显示）`。
+ * 🔴 **一条按属性判的规则**，⛔ 不是给某几张图写名单 —— 明天上传一张 4:3 的它也照样对。
+ * ⛔ 图片文件一个字节不动，变的只是后台缩略图怎么摆。
+ *
+ * ⚠️ 判"图多大"只能用 `naturalWidth/Height`，⛔ 不能用渲染盒（`object-fit` 下元素盒恒等于格子）。
+ * ⚠️ 而且**不能只挂 load**：缓存命中时 load 可能已经错过 ⇒ 先当场量一次，量不到再等 load。
+ *    （`img.complete` 在这个仓里被证过不可靠，判据一律落 `naturalWidth > 0`。）
+ */
+function fitByAspect(thumbNode) {
+  const img = thumbNode.querySelector("img");
+  if (!img) return;
+  const apply = () => {
+    if (!img.naturalWidth || !img.naturalHeight) return false;
+    const r = img.naturalWidth / img.naturalHeight;
+    img.dataset.fit = Math.abs(r - 1) < 0.01 ? "cover" : "contain";
+    return true;
+  };
+  if (!apply()) img.addEventListener("load", apply, { once: true });
+}
+
 /** 把当前草稿 + 待上传的图渲染成缩略图。 */
 // ═══ A10-R1：单一图片列表，**第一张就是主图** ═══
 //
@@ -1179,6 +1205,7 @@ function renderImages() {
 
     const t = el("div", "thumb");
     setThumb(t, it.kind === "have" ? rawUrl(it.path) : it.url, it.kind === "have" ? it.path : "待上传");
+    fitByAspect(t);
     card.append(t);
 
     // i===0 就是主图 —— 角标不是装饰，它是这条规则**唯一**的可见处
