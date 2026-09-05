@@ -3122,6 +3122,225 @@ function siteAssetSlot(parent, key, label, hint) {
   };
 }
 
+/**
+ * 首页各板块的文案编辑口（2026-09-05 补齐，SPEC `admin-site-customization` 第 3 项）。
+ *
+ * 🔴 每一张卡都对应官网首页**真在渲染**的一段（`index.astro` 里逐个数过），
+ *    ⛔ 没有一张是"看着该有"就摆上去的。
+ *
+ * ⚠️ 三处**有意不暴露**，理由各不相同，⛔ 别当成漏了：
+ *  ① `homeV4.footer.*`（8 个键）—— **官网 0 读者**。这不是我推的：Web 自己在 `site.ts` 里写着
+ *     「has no reader since v4 … the Admin window decides when its form drops those fields」。
+ *     ⇒ 它已经是死数据，而后台从来没暴露过它 ⇒ 今天不存在会骗人的开关，**保持不暴露**。
+ *  ② `homeV4.factory.statLabels`（6 个标签）—— 它此刻与 `about.ts` 的六个**值**按下标配对
+ *     （`about.ts` 自己的注释：keep the ORDER stable, or the labels go wrong）。
+ *     总工已批准官网侧合成 `homeV4.factory.stats = [{value,label}]×6` 把这层配对消掉。
+ *     ⇒ **等那支合了再一次性给一张卡**。现在暴露 = 造一个马上要搬家的控件，
+ *       而且搬完之后它会安静地编一个已经没人读的键。
+ *  ③ 各种 `href` / 图标位置 / 裁切参数 —— 按 DESIGN.md §9，那些锁在模板里，不是文案。
+ */
+function homeV4Sections(form) {
+  const d = state.siteDraft;
+  const V = (d.homeV4 ??= {});
+
+  // 一组"纯文字字段"的卡：省掉重复的样板，⛔ 不为此发明一套配置格式
+  const textCard = (title, sub, rows) => {
+    const c = siteCard(title, sub);
+    c.classList.add("card-inline");
+    for (const [path, label, hint, opts] of rows) siteField(c, path, label, hint, opts || {});
+    form.append(c);
+    return c;
+  };
+
+  // 一组"固定条数的对象列表"：**只改字、不给增删**。
+  // ⚠️ 官网那几段是按固定条数排版的（QC 五步、流程三步）——增删不是数据错，是**版式错**：
+  //    那一行会对不上。要增删走设计单，⛔ 不在这里悄悄开一个能把版式改坏的口子。
+  const listCard = (title, arr, basePath, rowsFor) => {
+    const list = Array.isArray(arr) ? arr : [];
+    const c = siteCard(title, `${list.length} 条 · 只改文字（条数由官网版式定）`);
+    c.classList.add("card-inline");
+    list.forEach((_, i) => {
+      const row = el("div", "vprop nodel");   // nodel = 这一行没有删除按钮 ⇒ 不留那 68px
+      for (const [key, label, hint, opts] of rowsFor(i)) {
+        siteField(row, `${basePath}.${i}.${key}`, label, hint, opts || {});
+      }
+      c.append(row);
+    });
+    form.append(c);
+    return c;
+  };
+
+  // ⛔ **顶部标签带（marquee）不给编辑口**（Joe 2026-09-05 裁决）：
+  //    首页那条 chips 要改成与 Products 筛选行**同一条派生规则** —— 构建时取后台的传感器表，
+  //    在用数为 0 的不渲染。⇒ `homeV4.marquee` 即将没有读者。
+  //    ⚠️ 现在给它做编辑卡，等官网侧派生一上线，那张卡就变成一个**改了没反应**的开关。
+  //    ⛔ 宁可暂时没有入口，也不摆一个即将说假话的控件。
+
+  // ── ① 产品区的抬头（那六张卡本身由下面「首页精选产品」管）──
+  textCard("产品区 · 抬头", "官网首页产品那一段的标题", [
+    ["homeV4.products.kicker", "小标"],
+    ["homeV4.products.heading", "大标题"],
+    ["homeV4.products.allLabel", "「全部产品」按钮文字"],
+  ]);
+
+  // ── ② 首页精选产品（那六张卡）──
+  //
+  // 真源是 `homeV4.products.featured`，**数组顺序 = 首页展示顺序**。
+  // ⚠️ 只能选**已上架**的：选一个未上架的等于指向官网上不存在的页面，那张卡渲染不出来，
+  //    而官网构建只打印警告、**不失败**（真源 index.astro:38 的 `console.warn(... card skipped)`）。
+  // ⚠️ 还有一个硬上限：首页只取前 6 张有效卡（index.astro:44）—— 见 renderFeatured 里那道提示。
+  renderFeatured(form);
+
+  // ── ③ 场景区（官网首页那条手风琴，也是 /solutions/ 的抬头）──
+  // 🔴 `kicker`/`heading` **同时**是 /solutions/ 那一页的 hero 文案
+  //    （官网源码注释：`same words as the homepage section, one source`）
+  //    ⇒ 全站只有这**一个**控件，⛔ 不在「页面文案」里再摆一个。
+  textCard("场景区 · 抬头", "首页那条场景手风琴 · 同时是 /solutions/ 页的大标题", [
+    ["homeV4.solutions.kicker", "小标"],
+    ["homeV4.solutions.heading", "大标题"],
+    ["homeV4.solutions.readMore", "「了解更多」按钮文字"],
+  ]);
+  textCard("场景区 · 四句话", "每个场景面板上的那一句", [
+    ["homeV4.solutions.lines.home", "家庭"],
+    ["homeV4.solutions.lines.office", "办公"],
+    ["homeV4.solutions.lines.school", "学校"],
+    ["homeV4.solutions.lines.industrial", "工业"],
+  ]);
+
+  // ── ④ 工厂区 ──
+  // ⚠️ `statLabels`（六个数字的标签）**有意不在这里**：它此刻与 `about.ts` 里的六个**值**
+  //    按下标配对（about.ts 自己的注释：keep the ORDER stable, or the labels go wrong）。
+  //    总工已批准官网侧合成 `homeV4.factory.stats = [{value,label}]×6` 把这层配对消掉 ⇒
+  //    **等那支合了再一次性给一张卡**。现在做 = 造一个马上要搬家、搬完还会编一个没人读的键的控件。
+  textCard("工厂区 · 文案", "首页那一段工厂介绍", [
+    ["homeV4.factory.kicker", "小标"],
+    ["homeV4.factory.heading", "大标题"],
+    ["homeV4.factory.place", "地点行"],
+    ["homeV4.factory.caption", "图注", null, { multiline: true, rows: 2 }],
+    ["homeV4.factory.aboutCta", "「了解工厂」按钮文字"],
+  ]);
+  textCard("工厂区 · 车间标签", "工厂照片上那五个标签", [
+    ["homeV4.factory.floor.assembly", "组装"],
+    ["homeV4.factory.floor.cnc", "机加工"],
+    ["homeV4.factory.floor.qc", "品控与测试"],
+    ["homeV4.factory.floor.warehouse", "仓库"],
+    ["homeV4.factory.floor.shipping", "发货"],
+  ]);
+  // QC 五步：⚠️ **只改字、不给增删** —— 官网那一排是按五步排版的，
+  //    增删会让那一行的宽度对不上（不是数据错，是版式错）。要增删走设计单。
+  listCard("工厂区 · 品控五步", V.factory?.qc, "homeV4.factory.qc", (i) => [
+    [`title`, `第 ${i + 1} 步 · 标题`],
+    [`body`, `第 ${i + 1} 步 · 说明`, null, { multiline: true, rows: 2 }],
+  ]);
+
+  // ── ⑤ 「为什么选我们」──
+  textCard("为什么选我们 · 抬头", "官网首页那一段的标题", [
+    ["homeV4.why.kicker", "小标"],
+    ["homeV4.why.heading", "大标题"],
+  ]);
+  // ══ 「为什么选我们」四张卡 —— 原来叫「卖点卡」，2026-09-05 一并改绑 ══
+  //
+  // 🔴 与 Hero 同一个病：旧的 `home.valueProps` 经 `VALUE_PROPS` 导出，而**消费方 0 处**。
+  //    官网 v4 首页渲染的是 `V.why.cards`（`index.astro` 的 ⑤ WHY 段）。
+  // ⚠️ 字段也多了两个，⛔ 不是换个路径：旧 `{title, body}` → 新 `{icon, fig, title, body}`。
+  //    · `icon` 的取值**写死在官网代码里**（`ICONS` 那个表），而且是
+  //      `ICONS[c.icon] ?? ICONS.doc` —— 填错**静默变成 doc** ⇒ 这里给闭集下拉。
+  //    · `fig` 是卡片顶部那个大字（"Since 2015" / "< 48 h" / "100%" / "0"）。
+  // ⚠️ 官网 `.feat-row` 是 `repeat(4, 1fr)`，而渲染是 `.map()` **不截断** ⇒
+  //    第 5 张会自己掉到第二行独占一格（不是丢失，只是难看）——所以下面只提示、不阻断。
+  const whyCards = () => {
+    const w = ((state.siteDraft.homeV4 ??= {}).why ??= {});
+    if (!Array.isArray(w.cards)) w.cards = [];
+    return w.cards;
+  };
+  const cards = whyCards();
+  const v = siteCard("首页「为什么选我们」卡", `官网首页那一排 · ${cards.length} 张 · 官网一行排 4 张`);
+  v.classList.add("card-inline");
+  if (cards.length > 4) {
+    v.append(mkNotice("warn", `现在有 **${cards.length} 张**，而官网那一排是 4 列 ⇒ ` +
+      `**第 5 张起会掉到第二行**（不会丢，只是那一行不满）。不影响保存。`));
+  }
+  cards.forEach((_, i) => {
+    const row = el("div", "vprop");
+    const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
+    del.onclick = () => {
+      // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
+      const cs = whyCards();
+      cs.splice(i, 1);
+      if (!cs.length) {
+        // ⚠️ 全删会让官网那一段只剩标题、下面空一片 ⇒ 拦住并说清原因
+        //    ⛔ 这里仍是 `alert`（本文件最后一个，已挂账给总工），本单不改它。
+        alert("至少要留一张 —— 全删掉的话官网那一段只剩标题，下面空一片。");
+        cs.push({ icon: "doc", fig: "", title: "", body: "" });
+      }
+      renderSite(true);
+    };
+    row.append(del);
+    siteField(row, `homeV4.why.cards.${i}.icon`, `第 ${i + 1} 张 · 图标`,
+      "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc 那个图标。",
+      { options: WHY_ICONS });
+    siteField(row, `homeV4.why.cards.${i}.fig`, `第 ${i + 1} 张 · 大字`,
+      "卡片顶部那个醒目的短字（如 Since 2015 / < 48 h / 100% / 0）。");
+    siteField(row, `homeV4.why.cards.${i}.title`, `第 ${i + 1} 张 · 标题`);
+    siteField(row, `homeV4.why.cards.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+    v.append(row);
+  });
+  const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
+  add.onclick = () => { whyCards().push({ icon: "doc", fig: "", title: "", body: "" }); renderSite(true); };
+  v.append(add);
+  form.append(v);
+
+  // ── ⑥ 流程 ──
+  textCard("流程区 · 文案", "官网首页「一个项目怎么跑」那一段", [
+    ["homeV4.programme.kicker", "小标"],
+    ["homeV4.programme.heading", "大标题"],
+    ["homeV4.programme.cta", "按钮文字"],
+    ["homeV4.programme.noteSuffix", "按钮下面那句小字"],
+  ]);
+  // 三步：⚠️ 同样**只改字、不给增删**（官网按三步排版），图标走闭集下拉。
+  listCard("流程区 · 三步", V.programme?.steps, "homeV4.programme.steps", (i) => [
+    [`icon`, `第 ${i + 1} 步 · 图标`, "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc。", { options: WHY_ICONS }],
+    [`when`, `第 ${i + 1} 步 · 时间`, "如 Day 0 / ≤ 2 business days。"],
+    [`title`, `第 ${i + 1} 步 · 标题`],
+    [`body`, `第 ${i + 1} 步 · 说明`, null, { multiline: true, rows: 2 }],
+  ]);
+
+  // ── ⑦ Guides 区（也是 /guides/ 的抬头，同上：全站一个控件）──
+  textCard("Guides 区 · 抬头", "首页那一段 · 同时是 /guides/ 页的大标题", [
+    ["homeV4.guides.kicker", "小标"],
+    ["homeV4.guides.heading", "大标题"],
+    ["homeV4.guides.read", "「阅读」按钮文字"],
+  ]);
+
+  // ── ⑧ 收尾 CTA（About 页底部那条带也复用它）──
+  textCard("收尾 CTA · 文案", "首页最后那条带 · About 页底部也用它", [
+    ["homeV4.cta.kicker", "小标"],
+    ["homeV4.cta.heading", "大标题"],
+    ["homeV4.cta.primary", "按钮文字"],
+    ["homeV4.cta.sendTitle", "「发给我们什么」小标题"],
+  ]);
+  // 「发给我们什么」下面那几条：纯字符串列表，增删安全（官网就是 map 出来的一列）
+  {
+    const items = Array.isArray(V.cta?.items) ? V.cta.items : ((V.cta ??= {}).items = []);
+    const c = siteCard("收尾 CTA · 清单", `那几条「发给我们什么」 · ${items.length} 条`);
+    c.classList.add("card-inline");
+    items.forEach((_, i) => {
+      const row = el("div", "vprop");
+      const del = el("button", "vprop-del", "删掉这条"); del.type = "button";
+      del.onclick = () => { V.cta.items.splice(i, 1); renderSite(true); };
+      row.append(del);
+      siteField(row, `homeV4.cta.items.${i}`, `第 ${i + 1} 条`);
+      c.append(row);
+    });
+    const add = el("button", "btn-secondary btn-mini", "+ 加一条"); add.type = "button";
+    add.onclick = () => { V.cta.items.push(""); renderSite(true); };
+    c.append(add);
+    form.append(c);
+  }
+
+  return V;
+}
+
 function siteCard(title, sub) {
   const s = el("section", "card");
   const h = el("h3", null, title);
@@ -3202,74 +3421,13 @@ function renderSite(keepDraft = false) {
     siteField(h, "homeV4.hero.secondaryCta", "次按钮文字", "同上，它固定指向 /products/。");
     form.append(h);
 
-    // ══ 「为什么选我们」四张卡 —— 原来叫「卖点卡」，2026-09-05 一并改绑 ══
+    // ══════ 以下按**官网首页的板块顺序**排 ══════
     //
-    // 🔴 与 Hero 同一个病：旧的 `home.valueProps` 经 `VALUE_PROPS` 导出，而**消费方 0 处**。
-    //    官网 v4 首页渲染的是 `V.why.cards`（`index.astro` 的 ⑤ WHY 段）。
-    // ⚠️ 字段也多了两个，⛔ 不是换个路径：旧 `{title, body}` → 新 `{icon, fig, title, body}`。
-    //    · `icon` 的取值**写死在官网代码里**（`ICONS` 那个表），而且是
-    //      `ICONS[c.icon] ?? ICONS.doc` —— 填错**静默变成 doc** ⇒ 这里给闭集下拉。
-    //    · `fig` 是卡片顶部那个大字（"Since 2015" / "< 48 h" / "100%" / "0"）。
-    // ⚠️ 官网 `.feat-row` 是 `repeat(4, 1fr)`，而渲染是 `.map()` **不截断** ⇒
-    //    第 5 张会自己掉到第二行独占一格（不是丢失，只是难看）——所以下面只提示、不阻断。
-    const whyCards = () => {
-      const w = ((state.siteDraft.homeV4 ??= {}).why ??= {});
-      if (!Array.isArray(w.cards)) w.cards = [];
-      return w.cards;
-    };
-    const cards = whyCards();
-    const v = siteCard("首页「为什么选我们」卡", `官网首页那一排 · ${cards.length} 张 · 官网一行排 4 张`);
-    v.classList.add("card-inline");
-    if (cards.length > 4) {
-      v.append(mkNotice("warn", `现在有 **${cards.length} 张**，而官网那一排是 4 列 ⇒ ` +
-        `**第 5 张起会掉到第二行**（不会丢，只是那一行不满）。不影响保存。`));
-    }
-    cards.forEach((_, i) => {
-      const row = el("div", "vprop");
-      const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
-      del.onclick = () => {
-        // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
-        const cs = whyCards();
-        cs.splice(i, 1);
-        if (!cs.length) {
-          // ⚠️ 全删会让官网那一段只剩标题、下面空一片 ⇒ 拦住并说清原因
-          //    ⛔ 这里仍是 `alert`（本文件最后一个，已挂账给总工），本单不改它。
-          alert("至少要留一张 —— 全删掉的话官网那一段只剩标题，下面空一片。");
-          cs.push({ icon: "doc", fig: "", title: "", body: "" });
-        }
-        renderSite(true);
-      };
-      row.append(del);
-      siteField(row, `homeV4.why.cards.${i}.icon`, `第 ${i + 1} 张 · 图标`,
-        "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc 那个图标。",
-        { options: WHY_ICONS });
-      siteField(row, `homeV4.why.cards.${i}.fig`, `第 ${i + 1} 张 · 大字`,
-        "卡片顶部那个醒目的短字（如 Since 2015 / < 48 h / 100% / 0）。");
-      siteField(row, `homeV4.why.cards.${i}.title`, `第 ${i + 1} 张 · 标题`);
-      siteField(row, `homeV4.why.cards.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
-      v.append(row);
-    });
-    const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
-    add.onclick = () => { whyCards().push({ icon: "doc", fig: "", title: "", body: "" }); renderSite(true); };
-    v.append(add);
-    form.append(v);
-
-    // ══ 首页精选产品（Joe 2026-08-27）══
-    //
-    // 真源是 site-content.json 的 `homeV4.products.featured`，**数组顺序 = 首页展示顺序**。
-    // 🔴 2026-09-05 从 `home.featuredSlugs` 迁过来：首页 v4 已合 main，**旧字段官网不读了**。
-    //    旧字段仍留在文件里（本轮不清理），但后台一个字也不写它。
-    // ⚠️ 只能选**已上架**的：选一个未上架的等于指向一个官网上不存在的页面，
-    //    首页那张卡会渲染不出来 —— 而官网构建只打印警告、**不失败**，人不会知道
-    //    （真源 index.astro:38 就是 `console.warn(... card skipped)`）。
-    // ⚠️ 还有一个硬上限：首页只取前 6 张有效卡（index.astro:44）—— 见 renderFeatured 里那道提示。
-    renderFeatured(form);
-
-    const o = siteCard("其它段落");
-    siteField(o, "home.sections.capabilitiesIntro", "能力段小字");
-    siteField(o, "home.contactBlock.title", "首页联系区块 · 标题");
-    siteField(o, "home.contactBlock.body", "首页联系区块 · 正文", null, { multiline: true, rows: 2 });
-    form.append(o);
+    // 🔴 顺序不是随便定的：与精选卡那条同一个理由 ——
+    //    **后台看到的顺序 == 官网看到的顺序**，改文案时不用在脑子里做一次转换。
+    // ⚠️ 「为什么选我们」那几张卡与「首页精选产品」也搬进去了 ——
+    //    它们本来就是首页的两个板块，留在外面会让顺序对不上。
+    homeV4Sections(form);
   } else {
     // ══════════ 站级 SEO（Joe 2026-08-26 重做排版）══════════
     //

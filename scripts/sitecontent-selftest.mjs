@@ -323,6 +323,36 @@ const V4HW = (hero, cards) => { const c = GOOD(); c.homeV4 = { hero, why: { card
     validateSiteContent(c, c).ok && !!c.home.hero && !!c.home.valueProps);
 }
 
+// ══════ ⑭ 这一批新暴露的 homeV4 键 —— 只对**会静默失效**的两处加了闸 ══════
+{
+  const c = GOOD(); c.homeV4 = { programme: { steps: [{ icon: "send", when: "Day 0", title: "t", body: "b" }] } };
+  ck("⑭ 正对照：programme.steps 图标在闭集里 ⇒ 放行", validateSiteContent(c, c).ok,
+    JSON.stringify(validateSiteContent(c, c).errors));
+}
+{
+  const c = GOOD(); c.homeV4 = { programme: { steps: [{ icon: "rocket", when: "x", title: "t", body: "b" }] } };
+  ck("⑭ 🔴 programme.steps 的图标不在闭集 ⇒ 拒（官网会静默变 doc）",
+    has(validateSiteContent(c, c), "unknown_icon"));
+}
+{
+  const c = GOOD(); c.homeV4 = { cta: { items: ["Your market", ""] } };
+  ck("⑭ cta.items 有空条目 ⇒ 拒（官网会渲染出一行空白）", has(validateSiteContent(c, c), "empty"));
+}
+{
+  const c = GOOD(); c.homeV4 = { cta: { items: ["a", "b"] } };
+  ck("⑭ 正对照：cta.items 都非空 ⇒ 放行", validateSiteContent(c, c).ok);
+}
+{
+  // 🔴 反向自证：这一批**纯文字**字段有意不加校验 —— 随便填也不该被拦。
+  //    ⛔ 少了这条，"顺手给每个文本框加个必填"会悄悄溜进来并在 Web 调结构时挡住保存。
+  const c = GOOD();
+  c.homeV4 = { solutions: { kicker: "", heading: "x", lines: { home: "" } },
+               factory: { kicker: "", floor: { assembly: "" } },
+               guides: { read: "" } };
+  ck("⑭ 🔴 反向自证：新暴露的纯文字字段不加校验（空着也放行）", validateSiteContent(c, c).ok,
+    JSON.stringify(validateSiteContent(c, c).errors));
+}
+
 // ══════ ⑫ certificates —— About 页四张认证卡指向的文件 ══════
 const CT = (certs) => { const c = GOOD(); c.certificates = certs; return c; };
 const FULL = { ce: "/certificates/ce.pdf", fcc: null, rohs: null, "un38-3": null };

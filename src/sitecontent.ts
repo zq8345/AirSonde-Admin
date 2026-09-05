@@ -276,6 +276,41 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
     }
   }
 
+  // ── homeV4.programme.steps[].icon：与 why.cards 同一个坑 ──
+  //
+  // 🔴 官网那三步也是 `ICONS[s.icon] ?? ICONS.doc`（`index.astro` 同一张表）——
+  //    填错**不报错、静默变 doc**。⇒ 与 why 那条同样拦下来。
+  // ⚠️ 这一批新暴露的其余字段（各段 kicker/heading/按钮文字/车间标签/场景四句…）**有意不加校验**：
+  //    它们填错的后果是"页面上那行字不好看"，看得见、改得回；而下面这两条填错是**看不见的**。
+  //    ⛔ 不给每个文本框都镀一层校验 —— 那只会在 Web 调整结构时把保存挡住，
+  //      而它挡下来的东西本来就没有危害。（供应商痕迹那一遍已经扫过所有字符串。）
+  const steps = c.homeV4?.programme?.steps;
+  if (Array.isArray(steps)) {
+    steps.forEach((it: any, i: number) => {
+      if (!it || typeof it !== "object") return;
+      if (typeof it.icon !== "string" || !WHY_ICON_KEYS.includes(it.icon)) {
+        errors.push(err(`homeV4.programme.steps[${i}].icon`, "unknown_icon",
+          `「${it.icon}」不是官网认识的图标。只有 ${WHY_ICON_KEYS.join(" / ")} —— ` +
+          `官网碰到不认识的**不会报错，会静默显示成 doc**。`));
+      }
+    });
+  }
+
+  // ── homeV4.cta.items：收尾那条带下面的清单 ──
+  // ⚠️ 空条目会渲染成一个空的项目符号 —— 页面上是一行看不出内容的空白，⛔ 不静默放行。
+  const ctaItems = c.homeV4?.cta?.items;
+  if (ctaItems !== undefined) {
+    if (!Array.isArray(ctaItems)) {
+      errors.push(err("homeV4.cta.items", "type", "必须是一组文字。"));
+    } else {
+      ctaItems.forEach((x: any, i: number) => {
+        if (typeof x !== "string" || !x.trim()) {
+          errors.push(err(`homeV4.cta.items[${i}]`, "empty", `第 ${i + 1} 条是空的 —— 官网会渲染出一行空白。`));
+        }
+      });
+    }
+  }
+
   // ── homeV4.products.featured：首页 v4 那六张产品卡（**现在的真源**）──
   //
   // 🔴 上面那个 `home.featuredSlugs` 已经是死字段：首页 v4 不读它了（2026-09-05 合 main）。

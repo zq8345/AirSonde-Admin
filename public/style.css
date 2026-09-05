@@ -316,6 +316,9 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
    ⚠️ `.vprop-del` 是 `right:0` 绝对定位，参照的是 padding 盒 ⇒ 它仍贴右边缘，
       而里面的 `.row2` 被内容盒收窄，两者不再重叠。 */
 .card-inline .vprop { padding-right: 68px; }
+/* `.nodel` = 这一行**没有删除按钮**（固定条数的列表：QC 五步、流程三步）
+   ⇒ 不留那 68px。⛔ 别为了"整齐"给它留一条永远空着的白边。 */
+.card-inline .vprop.nodel { padding-right: 0; }
 /* 行距统一（Joe 2026-09-05 第二轮）：四张卡之间原本是 **25px**（12 margin + 1 border + 12 padding），
    而卡内字段之间是 16 ⇒ 一屏里两种行距。
    🔴 ⛔ 修法不是把那条分隔线删掉：四张卡挨在一起共 16 行，没有那条线就分不出"第几张"从哪开始。
