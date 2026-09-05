@@ -26,6 +26,11 @@ const GOOD = () => ({
       home: { title: "AirSonde — OEM / ODM Indoor Air Quality Monitors", description: "" },
       products: { title: "Products | AirSonde", description: "Desktop and portable monitors." },
       contact: { title: "Contact | AirSonde", description: "Start an OEM programme." },
+      // 2026-09-05：官网侧把 About 页 meta 搬进了 JSON ⇒ `SEO_PAGES` 里有了 about
+      // ⇒ **样板数据必须跟着加**，否则每条用 GOOD() 的测试都会因 `required` 变红。
+      // 📌 这正是那条顺序规矩的另一面：表里有、数据里没有 ⇒ 硬错误。
+      about: { title: "About — The Manufacturing Group Behind AirSonde | AirSonde",
+               description: "AirSonde is the indoor air quality product line of an established Shenzhen manufacturing group." },
       notFound: { title: "Page not found — AirSonde", description: "That page does not exist." },
     },
   },
@@ -126,12 +131,12 @@ const GOOD = () => ({
   //    而规则已换成「后台动了才判」⇒ 不传基线（GET 那种"只是显示一份体检报告"的用法）不下结论。
   //    ⛔ 留着旧断言就是留一条测已废行为的检查 —— 它会在下一次改动时把人指向错的方向。
   //    真正的判据搬到 ⑥c 那一组（新增/改动 ⇒ 拒；原样带过 ⇒ 放行）。
-  const c = GOOD(); c.seo.pages.about = { title: "About", description: "x" };
+  const c = GOOD(); c.seo.pages.blog = { title: "About", description: "x" };
   ck("⑥ 不传基线（GET 的用法）⇒ 不报 unknown_page", !has(validateSiteContent(c), "unknown_page"));
 }
 {
   // 但**说明必须仍然到位**：后台真去新增一页时，错误里要说清"改了不会有效果"
-  const base = GOOD(); const c = GOOD(); c.seo.pages.about = { title: "About", description: "x" };
+  const base = GOOD(); const c = GOOD(); c.seo.pages.blog = { title: "About", description: "x" };
   const r = validateSiteContent(c, base);
   ck("⑥ 后台新增未知页面时，理由要说清后台不会渲染它",
     r.errors.some((e) => e.code === "unknown_page" && /不会渲染|不该悄悄/.test(e.message)),
@@ -183,25 +188,25 @@ const GOOD = () => ({
 //    官网仓往 seo.pages 加一页（about）⇒ 后台每一次保存都被 unknown_page 拦掉。
 //    ⚠️ "把外层放宽了" ≠ "里面每一道都放宽了" —— 每一道白名单都要单独过一遍。
 {
-  const base = GOOD(); base.seo.pages.about = { title: "About | AirSonde", description: "d" };
+  const base = GOOD(); base.seo.pages.blog = { title: "About | AirSonde", description: "d" };
   const same = JSON.parse(JSON.stringify(base));
   const r = validateSiteContent(same, base);
   ck("⑥c 🔴 官网仓加的页面**原样带过** ⇒ 放行（否则后台一次都存不了）", r.ok, JSON.stringify(r.errors));
 }
 {
   const base = GOOD();
-  const c = GOOD(); c.seo.pages.about = { title: "后台自己加的", description: "d" };
+  const c = GOOD(); c.seo.pages.blog = { title: "后台自己加的", description: "d" };
   ck("⑥c 反向：后台**新增**一个它不认识的页面 ⇒ 拒", has(validateSiteContent(c, base), "unknown_page"));
 }
 {
-  const base = GOOD(); base.seo.pages.about = { title: "原值", description: "d" };
-  const c = JSON.parse(JSON.stringify(base)); c.seo.pages.about.title = "被后台改了";
+  const base = GOOD(); base.seo.pages.blog = { title: "原值", description: "d" };
+  const c = JSON.parse(JSON.stringify(base)); c.seo.pages.blog.title = "被后台改了";
   ck("⑥c 反向：后台**改动**它不认识的页面 ⇒ 拒", has(validateSiteContent(c, base), "unknown_page"));
 }
 {
   // 🔴 反向自证：放宽的只有"未知页面"这一条 —— **已知四页照旧严校验**
   //    ⛔ 少了这条，"传了基线就一路放行"这种改坏法会全绿。
-  const base = GOOD(); base.seo.pages.about = { title: "x", description: "d" };
+  const base = GOOD(); base.seo.pages.blog = { title: "x", description: "d" };
   const c = JSON.parse(JSON.stringify(base)); c.seo.pages.home.title = "   ";
   ck("⑥c 🔴 反向自证：已知页面的空 title 仍被拒", has(validateSiteContent(c, base), "required"));
 }
@@ -398,6 +403,60 @@ const V4HW = (hero, cards) => { const c = GOOD(); c.homeV4 = { hero, why: { card
                guides: { read: "" } };
   ck("⑭ 🔴 反向自证：新暴露的纯文字字段不加校验（空着也放行）", validateSiteContent(c, c).ok,
     JSON.stringify(validateSiteContent(c, c).errors));
+}
+
+// ══════ ⑮ 公司六数「漂移」软校验（2026-09-05）══════
+//
+// 🔴 防的是：About 页搜索描述里**手写着两个数**，而六数真源在 homeV4.factory.stats。
+//    改了数据舱，那句 meta 不跟着变 —— 页面正常、构建正常，只有 Google 上那句是旧的。
+// ⚠️ 判据用**基线**（只在真的改了那一次响），⛔ 不用"标签出现就要求数字出现"的启发式：
+//    后者会在 "shipped to countries worldwide" 这种正常句子上误报，而会误报的警告没人看。
+const STATS = (v) => ({ hero: { eyebrow: "e", headline: "h", headlineEm: "m", primaryCta: "p", secondaryCta: "s" },
+                        factory: { stats: [{ value: v, label: "staff" }] } });
+const WITHDESC = (d) => { const c = GOOD(); c.seo.pages.home.description = d; return c; };
+{
+  const base = WITHDESC("An established Shenzhen group — 120+ staff, in-house tooling and QC.");
+  base.homeV4 = STATS("120+");
+  const c = JSON.parse(JSON.stringify(base)); c.homeV4.factory.stats[0].value = "150+";   // 只改了数，文案没跟
+  const r = validateSiteContent(c, base);
+  ck("⑮ 🔴 改了六数而文案里还写着旧值 ⇒ **警告**（不是错误，保存照常）",
+    r.ok && r.warnings.some((w) => w.code === "stat_drift"),
+    `ok=${r.ok} warns=${JSON.stringify(r.warnings.map((w) => w.code))}`);
+  ck("⑮ 警告里要**同时说得出新旧两个值**（不然人不知道该改成什么）",
+    r.warnings.some((w) => /120\+/.test(w.message) && /150\+/.test(w.message)),
+    JSON.stringify(r.warnings.map((w) => w.message)));
+}
+{
+  // 🔴 反向自证一：文案跟着改了 ⇒ **不许再报**（否则它变成一个改不掉的常驻噪音）
+  const base = WITHDESC("An established Shenzhen group — 120+ staff, in-house tooling and QC.");
+  base.homeV4 = STATS("120+");
+  const c = JSON.parse(JSON.stringify(base));
+  c.homeV4.factory.stats[0].value = "150+";
+  c.seo.pages.home.description = "An established Shenzhen group — 150+ staff, in-house tooling and QC.";
+  ck("⑮ 🔴 反向：文案已跟着改 ⇒ 不报", !validateSiteContent(c, base).warnings.some((w) => w.code === "stat_drift"));
+}
+{
+  // 🔴 反向自证二：**没改数**就不该响 —— ⛔ 否则每次保存都在喊
+  const base = WITHDESC("An established Shenzhen group — 120+ staff, in-house tooling and QC.");
+  base.homeV4 = STATS("120+");
+  const c = JSON.parse(JSON.stringify(base)); c.contact.hours = "Mon–Sat 9:00–18:00";
+  ck("⑮ 🔴 反向：这次没动六数 ⇒ 不报（⛔ 不做常驻噪音）",
+    !validateSiteContent(c, base).warnings.some((w) => w.code === "stat_drift"));
+}
+{
+  // 🔴 反向自证三：**没人引用旧值**就不该响（零误报是这条判据的全部价值）
+  const base = WITHDESC("An established Shenzhen manufacturing group shipping to many countries.");
+  base.homeV4 = STATS("120+");
+  const c = JSON.parse(JSON.stringify(base)); c.homeV4.factory.stats[0].value = "150+";
+  ck("⑮ 🔴 反向：文案里根本没提那个数 ⇒ 不报（⛔ 不靠「标签出现」猜）",
+    !validateSiteContent(c, base).warnings.some((w) => w.code === "stat_drift"));
+}
+{
+  // ⚠️ 它是**警告**：保存必须照常放行
+  const base = WITHDESC("group — 120+ staff.");
+  base.homeV4 = STATS("120+");
+  const c = JSON.parse(JSON.stringify(base)); c.homeV4.factory.stats[0].value = "150+";
+  ck("⑮ 漂移时 ok 仍为 true（警告不阻断保存）", validateSiteContent(c, base).ok);
 }
 
 // ══════ ⑫ certificates —— About 页四张认证卡指向的文件 ══════

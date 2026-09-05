@@ -23,6 +23,11 @@ export const SEO_PAGES: Record<string, string> = {
   home: "/",
   products: "/products/",
   contact: "/contact/",
+  // 2026-09-05：官网侧把 About 页的 meta 从 `about.ts` 搬进了 `seo.pages.about`
+  // （origin/main cb6ac9b）⇒ 后台现在管得到它。
+  // ⚠️ 进这张表的**顺序不能反**：表里有、而 JSON 里还没有 ⇒ `required` 硬错误。
+  //    所以是"官网仓先落键、后台再进表"，这一条已写在下面那段未知页判据里。
+  about: "/about/",
   notFound: "404",
 };
 
@@ -425,6 +430,40 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
         }
       }
     }
+  }
+
+  // ── 公司六数「漂移」软校验（2026-09-05，总工预批）──
+  //
+  // 🔴 要防的那件事：About 页的搜索描述里**手写着两个数**
+  //    （"founded in **2015**, **120+** staff …"），而六数的真源是 `homeV4.factory.stats`。
+  //    Joe 在后台把 staff 从 120+ 改成 150+ ⇒ 数据舱变了，**而那句 meta 还写着 120+**。
+  //    ⚠️ 这种错**没有任何症状**：页面正常、构建正常，只是 Google 上显示的那句话是旧的。
+  //
+  // 🔴 判据用**基线**，⛔ 不用"标签出现就要求数字出现"那种启发式 ——
+  //    后者会在 "shipped to countries worldwide" 这种正常句子上误报，
+  //    而一个会误报的警告，几次之后就没人看了。
+  // ⇒ 只在**这一次保存真的改了某个数**时，去看 seo 里还有没有人写着**旧值**。
+  //    这样零误报，而且报出来的时候两边的值都说得出。
+  // ⚠️ 已知局限，⛔ 不假装它更强：它只在**改动发生的那一次**响。
+  //    人若无视警告照样保存，之后不会再提醒（这是**警告不是错误**的代价，总工定的）。
+  //    ⇒ 所以后台那个字段旁还挂着一句常驻提示，两条一起才够。
+  if (baseline) {
+    const cur = (c.homeV4?.factory?.stats || []) as any[];
+    const old = ((baseline as any).homeV4?.factory?.stats || []) as any[];
+    const seoStrings: { path: string; text: string }[] = [];
+    walkStrings(c.seo, "seo", (s, p) => { if (s.length > 20) seoStrings.push({ path: p, text: s }); });
+    cur.forEach((st: any, i: number) => {
+      const before = old[i];
+      if (!st || !before || typeof st.value !== "string" || typeof before.value !== "string") return;
+      if (st.value === before.value) return;                       // 这一格没动
+      for (const { path, text } of seoStrings) {
+        if (!text.includes(before.value)) continue;                // 没人引用旧值
+        warnings.push(err(path, "stat_drift",
+          `这次把「${st.label ?? before.label ?? `第 ${i + 1} 个`}」从 **${before.value}** 改成了 **${st.value}**，` +
+          `而这段文案里还写着 **${before.value}** —— 它会跟着上线，出现在搜索结果里。` +
+          `⚠️ 这是**警告不是错误**：保存照常进行，要不要跟着改由你定。`));
+      }
+    });
   }
 
   // ── 供应商痕迹：与产品同一条硬规则。这里**没有** supplierRef 那样的豁免字段。 ──

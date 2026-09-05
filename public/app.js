@@ -2892,6 +2892,10 @@ function setSiteEditing(on) {
 }
 
 async function loadSite(which) {
+  // ⚠️ 换视图 ⇒ 上一次保存带回来的提醒作废：它们说的是**那一次改动**的事。
+  //    ⛔ 让它跨视图残留，人会以为这一页也有问题。
+  //    （同一视图内的 `loadSite`（保存后那次重画）在调用前已经把它存好了。）
+  if (state.siteSection !== which) state.siteSaveWarnings = null;
   state.siteSection = which;
   state.siteEditing = false;               // 每次进视图回到只读态（Joe 定的默认）
   $("#siteEdit").disabled = true;          // 数据没到之前编辑不可点；到了 renderSite 再放开
@@ -3269,8 +3273,15 @@ function homeV4Sections(form) {
   // ⚠️ 卡放在「工厂区」这一组里，⛔ 没有另起一个"公司数据"页：那样会变成**两个页面写同一个
   //    `homeV4` 块**，一个页面拿着旧快照保存就会把另一个刚写的盖掉（乐观锁能拦住，但那是拦故障，
   //    不是没有故障）。名字里写清"首页 + About 共用"，找得到就够了。
+  // ⚠️ 常驻提示（与校验器那条软校验**配套**，两条一起才够）：
+  //    About 页的搜索描述里**手写着其中两个数**（founded in 2015 · 120+ staff）——
+  //    改了这里，那句 meta **不会跟着变**，而它会出现在 Google 上。
+  //    校验器只在"改动发生的那一次"报警告；这句是常驻的，⇒ 无视过警告的人下次也看得见。
   listCard("公司六数（首页工厂区 + About 数据舱共用）", V.factory?.stats, "homeV4.factory.stats", (i) => [
-    [`value`, `第 ${i + 1} 个 · 数字`, "如 2015 / 120+ / 5,000m²。**首页和 About 两处同时显示这一个值。**"],
+    [`value`, `第 ${i + 1} 个 · 数字`,
+      "如 2015 / 120+ / 5,000m²。**首页和 About 两处同时显示这一个值。**" +
+      "　⚠️ 另外：About 页的**搜索描述**里手写着其中两个数（2015 与 120+）—— 那句话**不会自动跟着改**，" +
+      "改完记得去「SEO」页看一眼 About 那张卡。"],
     [`label`, `第 ${i + 1} 个 · 说明`, "数字下面那行小字（如 staff / patents）。"],
   ]);
 
@@ -3413,6 +3424,23 @@ function renderSite(keepDraft = false) {
   // ⚠️ "不能保存"是真警告，保留；⛔ 那条常驻绿横幅（真源 · 保存 ≠ 上线）已撤（C 批 §6）——
   //    结论压进页头副标一句（loadSite 里设），"保存 ≠ 上线"那半句挂在副标的 title 上。
   if (!state.write?.enabled) notes.append(mkNotice("warn", "当前**不能保存**（写入闸或 token 未就绪）——改动不会提交。"));
+
+  // 🔴 校验器的 **warnings 一直没人显示**（2026-09-05 发现）：产品页有 renderIssues 在报，
+  //    而站点内容这条路上，它们被算出来然后**直接扔掉** —— 一个响了没人听见的闸等于没有。
+  //    ⚠️ 这不是新需求：`tagline 空`、`title 超长` 这些警告本来就该看得见，
+  //       而"六数漂移"那条软校验（总工 2026-09-05 预批）**只以警告形式存在** ⇒ 不显示就等于没做。
+  // ⚠️ 两个来源要合并：
+  //    · 读取时的 `state.site.validation.warnings`（GET 那份，没有基线 ⇒ 不含漂移类）
+  //    · **上一次保存**回来的 `state.siteSaveWarnings`（PUT 那份，有基线 ⇒ 漂移在这里）
+  //    ⛔ 只显示前者的话，漂移警告永远不会出现（它算得出来的那一刻就在 PUT 的响应里）。
+  const warns = [...(b.validation?.warnings || []), ...(state.siteSaveWarnings || [])];
+  const seenWarn = new Set();
+  for (const w of warns) {
+    const key = w.code + "|" + w.field + "|" + w.message;
+    if (seenWarn.has(key)) continue;                 // 两个来源可能重合，⛔ 不说两遍
+    seenWarn.add(key);
+    notes.append(mkNotice("warn", `**${w.field}**：${w.message}`));
+  }
 
   const form = $("#siteForm"); form.innerHTML = "";
   // ⚠️ 表单重画 ⇒ 上一批继承框的画笔全部作废。不清的话它们指向已被移除的节点，
@@ -4035,7 +4063,15 @@ $("#siteSave").onclick = async () => {
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {
       wroteOk = true; commitSha = b.commitSha;
-      alert(`已提交。commit ${(String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)")}\n改了：${(b.changedFields || []).join(", ")}\n\n${b.note || ""}`);
+      // 🔴 保存**成功**时回来的 warnings 必须留住：漂移那类警告只有带基线的 PUT 才算得出来，
+      //    而下面这句 `loadSite` 会重画整页 ⇒ 不存起来的话它当场就没了。
+      //    ⚠️ 它们是**警告不是错误**：保存已经发生，这里只是把"顺带发现的事"递到人眼前。
+      state.siteSaveWarnings = b.validation?.warnings || [];
+      const wtxt = state.siteSaveWarnings.length
+        ? `\n\n⚠️ 另外有 ${state.siteSaveWarnings.length} 条提醒（页面上会列出来）：\n`
+          + state.siteSaveWarnings.map((w) => `· ${w.field}：${w.message.replace(/\*\*/g, "")}`).join("\n")
+        : "";
+      alert(`已提交。commit ${(String(b.commitSha ?? "").slice(0, 7) || "(没拿到 sha)")}\n改了：${(b.changedFields || []).join(", ")}\n\n${b.note || ""}${wtxt}`);
       await loadSite(state.siteSection);
     } else if (b?.validation && !b.validation.ok) {
       // 🔴 校验不过 = **零 commit**，要说清楚，别让人以为"存了一半"
