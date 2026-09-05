@@ -1301,6 +1301,18 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 @media (max-width: 820px)  { .card-featured .featgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px)  { .card-featured .featgrid { grid-template-columns: minmax(0, 1fr); } }
 
+/* ══ 证书页：四张卡，每张一行「当前状态 | 动作」══ */
+.certcard + .certcard { margin-top: var(--space-12); }
+.certrow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-16); flex-wrap: wrap; margin-top: var(--space-8); }
+.certstate { min-width: 0; flex: 1 1 260px; }
+.certacts { display: flex; align-items: center; gap: var(--space-8); flex: 0 0 auto; }
+/* 「文件不见了」是**故障**，不是一种普通状态 ⇒ 它要有故障的样子，⛔ 不与"还没传"同色。 */
+.certbad { color: var(--text-critical); font-size: 13px; line-height: 1.5; }
+.certres:not(:empty) { margin-top: var(--space-12); }
+/* 上传中：按钮压成不可点的样子。⚠️ `label` 没有 :disabled，只能靠这个类 ——
+   而真正挡住点击的是里面 input 的 disabled（视觉与行为**两处都要**，⛔ 不能只做一处）。 */
+.btn-secondary.is-busy { opacity: .5; pointer-events: none; }
+
 /* 卡内的两个输入框（一句话 / chips）。⚠️ 卡片是 draggable 的 ⇒ 输入框要能正常选字：
    拖拽的拦截在 JS 的 dragstart 里（见 app.js），这里只管长相。 */
 .featfields { display: flex; flex-direction: column; gap: var(--space-4); }

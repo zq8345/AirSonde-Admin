@@ -7,7 +7,7 @@ const SRC = new URL("../src/", import.meta.url).href;   // ⚠️ 绝不写绝�
 //
 // 🔴 每条规则都成对测：**该拒的拒**（反向自证）+ **该放的放**（正对照）。
 //    只测"坏数据被拒"的话，一个"什么都拒"的校验器也全绿。
-const { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_LIMITS } =
+const { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_LIMITS, CERT_SLOTS } =
   await import(SRC + "sitecontent.ts");
 
 let pass = 0, fail = 0; const out = [];
@@ -263,6 +263,53 @@ const OKITEM = { slug: "ak35", tagline: "18-in-1 desktop", chips: ["CO₂", "PM2
   // ⚠️ 反向：新字段整个不存在也合法 —— 官网仓那份可能还没落 homeV4
   const c = GOOD();
   ck("⑪ 反向：没有 homeV4 也合法（不是必填）", validateSiteContent(c, c).ok);
+}
+
+// ══════ ⑫ certificates —— About 页四张认证卡指向的文件 ══════
+const CT = (certs) => { const c = GOOD(); c.certificates = certs; return c; };
+const FULL = { ce: "/certificates/ce.pdf", fcc: null, rohs: null, "un38-3": null };
+{
+  const c = CT(FULL);
+  ck("⑫ 正对照：一个槽有文件、其余是 null ⇒ 放行", validateSiteContent(c, c).ok,
+    JSON.stringify(validateSiteContent(c, c).errors));
+}
+{
+  const c = CT({ ce: null, fcc: null, rohs: null, "un38-3": null });
+  ck("⑫ 正对照：四个槽全空 ⇒ 放行（官网四条链接都不渲染）", validateSiteContent(c, c).ok);
+}
+{
+  const c = CT({ ...FULL, ce: "certificates/ce.pdf" });   // 少了头斜杠
+  ck("⑫ 🔴 少一个头斜杠 ⇒ 拒（页面上点开是 404，而页面本身看不出异常）",
+    has(validateSiteContent(c, c), "cert_path"));
+}
+{
+  const c = CT({ ...FULL, ce: "/certificates/ce.exe" });
+  ck("⑫ 不许的扩展名 ⇒ 拒", has(validateSiteContent(c, c), "cert_path"));
+}
+{
+  // 🔴 这一条防的是最坏的一种"数据合法、页面正常、内容是错的"：
+  //    CE 那张卡点开是 FCC 的证书。
+  const c = CT({ ...FULL, ce: "/certificates/fcc.pdf" });
+  ck("⑫ 🔴 槽名与文件名对不上 ⇒ 拒（CE 卡点开会是别人的证书）",
+    has(validateSiteContent(c, c), "cert_slot_mismatch"));
+}
+{
+  const c = CT({ ...FULL, iso9001: "/certificates/iso9001.pdf" });
+  ck("⑫ 不存在的槽 ⇒ 拒（官网不读它 ⇒ 传了不会有任何效果）",
+    has(validateSiteContent(c, c), "unknown_field"));
+}
+{
+  const c = CT(["/certificates/ce.pdf"]);
+  ck("⑫ certificates 是数组 ⇒ 拒", has(validateSiteContent(c, c), "type"));
+}
+{
+  // ⚠️ 反向：整个块不存在也合法 —— 官网仓那份现在就还没有它
+  const c = GOOD();
+  ck("⑫ 反向：没有 certificates 块也合法（不是必填）", validateSiteContent(c, c).ok);
+}
+{
+  // 🔴 四个槽名是**唯一定义**，⛔ 别在别处抄第二份 —— 这条把它钉住
+  ck("⑫ 槽名就是这四个（真源 CERT_SLOTS）", CERT_SLOTS.join(",") === "ce,fcc,rohs,un38-3", CERT_SLOTS.join(","));
 }
 
 console.log(out.join("\n"));

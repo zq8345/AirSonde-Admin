@@ -10,7 +10,8 @@ import { listProducts, readProductFile, readRepoFile, hasWriteToken, base64ToByt
 //    契约 v1.4 之后，显示名的真源是 taxonomy.json，而 products.ts 里的 CATEGORY_LABELS
 //    本身就是从 taxonomy 派生的 ⇒ 那条路径变成"解析一个派生值"。
 //    留着它 = 留一份看起来还在用、其实指错方向的代码。
-import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_PAGES, SEO_LIMITS } from "./sitecontent";
+import { validateSiteContent, mergeSiteContent, serializeSiteContent, changedFields, SEO_PAGES, SEO_LIMITS,
+         CERT_SLOTS, CERT_EXTS, type CertSlot } from "./sitecontent";
 import { crossReference, PRODUCT_IMG_PREFIX } from "./media";
 import { classify, mergeCommits } from "./audit";
 import { commitFiles, type CommitFile } from "./gitcommit";
@@ -920,6 +921,25 @@ app.post("/api/products/:slug/preview", async (c) => {
 //    多半仍能显示，于是这个错**不会有任何症状**，直到某天某个工具按扩展名去解析它。
 //    ⇒ 界面负责在 canvas 里转成 webp，服务端只认 webp，并且**按magic bytes 认，不按扩展名**。
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 按**文件头**认类型 —— ⛔ 一律不看扩展名。
+ *
+ * 🔴 认不出来就返回 null，⛔ 不"猜一个最像的"：猜错的那次会产出一个扩展名与内容不符的文件，
+ *    而浏览器多半照样显示 ⇒ **这个错没有任何症状**，能一直活到某个按扩展名解析的工具遇上它。
+ * ⚠️ 这四种就是站上会用到的全部（证书：PDF/JPG/PNG/WebP；产品图：只许 WebP，见 assertWebp）。
+ */
+function sniffFileType(b: Uint8Array): "webp" | "png" | "jpg" | "pdf" | null {
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+      && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+  if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47
+      && b[4] === 0x0D && b[5] === 0x0A && b[6] === 0x1A && b[7] === 0x0A) return "png";
+  if (b.length > 3 && b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return "jpg";
+  // "%PDF-"
+  if (b.length > 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46 && b[4] === 0x2D) return "pdf";
+  return null;
+}
+
 function assertWebp(bytes: Uint8Array, label: string): void {
   if (bytes.length > MAX_IMAGE_BYTES) {
     throw new Error(`${label} 有 ${(bytes.length / 1024 / 1024).toFixed(2)}MB，超过 2MB 上限。`);
@@ -1510,6 +1530,173 @@ app.put("/api/site-asset/:key", async (c) => {
     if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
     console.error(JSON.stringify({ evt: "site_asset_failed", key, operator, msg: String(e) }));
     return c.json({ wrote: false, error: "上传失败", detail: String(e) }, 502);
+  }
+});
+
+// ───────────────── 证书槽（About 页那四张认证卡）─────────────────
+//
+// 🔴 与二维码那个资产位**同一套机制**（按文件头认类型 → commitFiles 带字节校验），
+//    但契约不同，所以是另一张表，⛔ 不是把二维码那张表塞满可选开关：
+//    · 二维码：路径与类型都固定（官网静态 import 死路径），没有"删除"这回事。
+//    · 证书：**扩展名随上传的文件变**，而且要能删；官网靠 site-content 的 `certificates`
+//      块知道"这个槽有没有文件、是什么扩展名"。
+//
+// 🔴 槽位键的真源在 sitecontent.ts（CERT_SLOTS），这里只补显示文案。
+//    下面这个 Record 的类型钉死了"少写一个槽就编译不过" —— ⛔ 不靠人记得两边都改。
+//
+// 🔴 一次操作 = **一个 commit**，里面同时有三件事：
+//    ① 写新文件　② 删掉这个槽的旧文件（扩展名变了的话）　③ 改 site-content 的指针
+//    ⚠️ ② 不能省：Joe 先传 ce.pdf 再换成 ce.png，不删的话 `/certificates/ce.pdf` **还在线上、还能下载** ——
+//       一份已经被替换掉的合规文件继续公开可取，而站上任何地方都看不出它还在。
+const CERT_META: Record<CertSlot, { label: string; what: string }> = {
+  "ce": { label: "CE", what: "欧盟符合性声明" },
+  "fcc": { label: "FCC", what: "美国 FCC 认证" },
+  "rohs": { label: "RoHS", what: "有害物质限制" },
+  "un38-3": { label: "UN38.3", what: "锂电池运输（只适用于带电池的型号）" },
+};
+const CERT_MAX_BYTES = 10 * 1024 * 1024;   // SPEC 定的 10MB：扫描件 PDF 常见就几 MB
+const certRepoPath = (slot: string, ext: string) => `public/certificates/${slot}.${ext}`;
+/** 存进 site-content 的值 = **页面直接能用的 URL 路径**（与 sitecontent.ts 的 certPathRe 对齐）。 */
+const certUrlPath = (slot: string, ext: string) => `/certificates/${slot}.${ext}`;
+
+/** 读 site-content，回 {sha, content}。证书三个端点共用 —— ⛔ 不各读各的。 */
+async function readSiteContent(env: Env): Promise<{ sha: string; text: string; content: any }> {
+  const f = await readRepoFile(env, siteContentPath(env));
+  if (!f.exists) throw new Error(`官网仓里没有 ${siteContentPath(env)}`);
+  return { sha: f.sha!, text: f.text!, content: JSON.parse(f.text!) };
+}
+
+app.get("/api/certificates", async (c) => {
+  try {
+    const { sha, content } = await readSiteContent(c.env);
+    const certs = (content.certificates || {}) as Record<string, string | null>;
+    // 仓内真实文件：⛔ 不只信 JSON —— JSON 说有而文件不在，正是官网点开 404 的那种病，
+    //    界面要能把它单独说出来，而不是显示成"有证书"。
+    const tr = await ghFetch(c.env, `/repos/${c.env.GITHUB_REPO}/git/trees/${c.env.GITHUB_BRANCH}?recursive=1`);
+    let files = new Map<string, number>();
+    let treeOk = false;
+    if (tr.ok) {
+      const tj = (await tr.json()) as any;
+      if (!tj.truncated) {
+        treeOk = true;
+        for (const t of tj.tree || []) {
+          if (t.type === "blob" && String(t.path).startsWith("public/certificates/")) files.set(t.path, t.size ?? 0);
+        }
+      }
+    }
+    return c.json({
+      sha, treeOk,
+      maxBytes: CERT_MAX_BYTES, exts: CERT_EXTS,
+      slots: CERT_SLOTS.map((k) => {
+        const url = certs[k] ?? null;
+        const repoPath = url ? "public" + url : null;
+        return {
+          key: k, ...CERT_META[k], url,
+          size: repoPath ? (files.get(repoPath) ?? 0) : 0,
+          // 🔴 三种状态要分得开：没传 / 传了且文件在 / **JSON 说有但文件不在**（第三种是故障）
+          fileMissing: treeOk && !!repoPath && !files.has(repoPath),
+        };
+      }),
+    });
+  } catch (e) {
+    console.error(JSON.stringify({ evt: "certs_read_failed", msg: String(e) }));
+    return c.json({ error: "读取失败", detail: String(e) }, 502);
+  }
+});
+
+/** 上传 / 替换 / 删除共用的落地动作：拼出**一个** commit 的文件清单并提交。 */
+async function commitCertChange(
+  c: any, slot: CertSlot, next: { ext: string; base64: string } | null, operator: string,
+) {
+  const first = await readSiteContent(c.env);
+  const certs: Record<string, any> = { ...(first.content.certificates || {}) };
+  const prevUrl: string | null = certs[slot] ?? null;
+
+  // 删一个本来就空的槽 ⇒ **什么都不做**。与二维码那处同一条原则：
+  // 空 commit 会让官网白重建一次，而审计日志里会多一条"删过证书"，与事实不符。
+  if (!next && !prevUrl) {
+    return c.json({ wrote: false, reason: `${CERT_META[slot].label} 这个槽本来就没有文件，没有可删的东西（没有产生 commit）。` });
+  }
+
+  certs[slot] = next ? certUrlPath(slot, next.ext) : null;
+  // ⚠️ 缺的槽补成 null，⛔ 不留"键不存在" —— 「没传」和「这个槽被谁删掉了」不能长成同一个样子。
+  for (const k of CERT_SLOTS) if (certs[k] === undefined) certs[k] = null;
+
+  const merged = mergeSiteContent(first.content, { certificates: certs });
+  const v = validateSiteContent(merged, first.content);
+  if (!v.ok) return c.json({ wrote: false, reason: "未通过站点内容校验，**没有产生任何 commit**", validation: v }, 422);
+
+  const files: CommitFile[] = [];
+  if (next) files.push({ path: certRepoPath(slot, next.ext), base64: next.base64 });
+  // 旧文件：只有在**路径真的变了**时才删（同扩展名替换是覆盖，删了再写会把自己删掉）
+  if (prevUrl && prevUrl !== certs[slot]) files.push({ path: "public" + prevUrl, remove: true });
+  files.push({ path: siteContentPath(c.env), text: serializeSiteContent(merged) });
+
+  // 🔴 竞态守卫：这个端点和「站点内容」表单**写同一个文件**。读→合并→提交之间若有人提交过，
+  //    我序列化的这份就是陈的 ⇒ 会把别人刚写的别的段落**静默回滚**。
+  //    ⇒ 提交前再读一次 sha，变了就拒。⚠️ 这不能把窗口缩到零（真正的零要 GitHub 支持
+  //    compare-and-swap，它没有），但能把"沉默地覆盖"变成"明确地拒绝"，而那才是要紧的差别。
+  const again = await readRepoFile(c.env, siteContentPath(c.env));
+  if (again.sha !== first.sha) {
+    return c.json({ wrote: false, error: "并发冲突",
+      detail: "刚才有人改过站点内容（可能是另一个标签页在保存）。**这次什么都没写**，刷新一下再试。" }, 409);
+  }
+
+  const r = await commitFiles(c.env, {
+    message:
+      (next ? `admin: 上传${CERT_META[slot].label}证书` : `admin: 删除${CERT_META[slot].label}证书`) + ` (${operator})\n\n` +
+      files.map((f) => ("remove" in f ? `删除 ${f.path}` : `写入 ${f.path}`)).join("\n") + `\n来源：admin.airsonde.com`,
+    files,
+  });
+  console.log(JSON.stringify({ evt: "cert_ok", slot, action: next ? "put" : "delete", operator, commit: r.commitSha }));
+  return c.json({ wrote: true, ...r, slot, url: certs[slot],
+    note: "已提交。官网由 Cloudflare Pages 重建，约 1 分钟后站上可见 —— **保存成功不等于站上已经变了**。" });
+}
+
+app.put("/api/certificates/:slot", async (c) => {
+  const operator = operatorOf(c);
+  if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
+  const slot = c.req.param("slot") as CertSlot;
+  if (!(CERT_SLOTS as readonly string[]).includes(slot)) return c.json({ wrote: false, error: `没有叫「${slot}」的证书槽。` }, 404);
+
+  let body: { base64?: string };
+  try { body = await c.req.json(); } catch (e) { return c.json({ wrote: false, error: "请求体不合法", detail: String(e) }, 400); }
+  if (!body.base64) return c.json({ wrote: false, error: "没有收到文件内容。未产生任何 commit。" }, 422);
+
+  let bytes: Uint8Array;
+  try { bytes = base64ToBytes(body.base64); }
+  catch (e) { return c.json({ wrote: false, error: "文件内容解不开，未产生任何 commit", detail: String(e) }, 422); }
+  if (bytes.length > CERT_MAX_BYTES) {
+    return c.json({ wrote: false, error: "文件太大，未产生任何 commit",
+      detail: `${(bytes.length / 1024 / 1024).toFixed(2)}MB，超过 ${CERT_MAX_BYTES / 1024 / 1024}MB 上限。` }, 422);
+  }
+  const ext = sniffFileType(bytes);
+  if (!ext) {
+    return c.json({ wrote: false, error: "认不出这是什么文件，未产生任何 commit",
+      detail: `只收 ${CERT_EXTS.join(" / ")}，而且是**按文件头认、不看扩展名**（改个后缀名骗不过去，那样传上去的文件官网也打不开）。` }, 422);
+  }
+
+  try { return await commitCertChange(c, slot, { ext, base64: body.base64 }, operator); }
+  catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "出站被本地策略拒绝", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    if (e instanceof ByteMismatchError) return c.json({ wrote: "unknown", error: "字节校验不一致", detail: String(e.message) }, 500);
+    console.error(JSON.stringify({ evt: "cert_put_failed", slot, operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "上传失败", detail: String(e) }, 502);
+  }
+});
+
+app.delete("/api/certificates/:slot", async (c) => {
+  const operator = operatorOf(c);
+  if (!operator) return c.json({ wrote: false, error: "拿不到操作人身份，拒绝写入" }, 403);
+  const slot = c.req.param("slot") as CertSlot;
+  if (!(CERT_SLOTS as readonly string[]).includes(slot)) return c.json({ wrote: false, error: `没有叫「${slot}」的证书槽。` }, 404);
+  try { return await commitCertChange(c, slot, null, operator); }
+  catch (e) {
+    if (e instanceof EgressDenied) return c.json({ wrote: false, error: "出站被本地策略拒绝", detail: String(e.message) }, 403);
+    if (e instanceof ConflictError) return c.json({ wrote: false, error: "并发冲突", detail: String(e.message) }, 409);
+    console.error(JSON.stringify({ evt: "cert_del_failed", slot, operator, msg: String(e) }));
+    return c.json({ wrote: false, error: "删除失败", detail: String(e) }, 502);
   }
 });
 

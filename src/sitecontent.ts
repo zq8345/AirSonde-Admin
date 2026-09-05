@@ -47,7 +47,21 @@ const SHAPE = {
   // 首页 v4（2026-09-05 上线）。后台**只写 `products.featured` 这一处**；
   // 其余子块（hero/marquee/factory/…）是官网仓维护的，从这里原样穿过去。
   homeV4: { products: { featured: "list" } },
+  // 证书槽（About 页认证板块）。后台整块拥有它 —— 值是 public/ 下的 URL 路径或 null。
+  certificates: "map",
 } as const;
+
+/**
+ * 证书槽的键 —— **全仓唯一定义**（index.ts 从这里 import，只在那边补显示文案）。
+ * ⛔ 别在别处再抄一份同形的字面量：抄一份就有两个真源，而两边不一致时
+ *    "少一个槽"这件事不会有任何报错 —— 那个槽只是安静地不出现。
+ */
+export const CERT_SLOTS = ["ce", "fcc", "rohs", "un38-3"] as const;
+export type CertSlot = (typeof CERT_SLOTS)[number];
+/** 证书文件允许的类型（按文件头认，见 index.ts 的 sniffFileType）。 */
+export const CERT_EXTS = ["pdf", "png", "jpg", "webp"] as const;
+/** 一个槽的值长什么样：`/certificates/<slot>.<ext>`，或 null = 没传。 */
+export const certPathRe = new RegExp(`^/certificates/(${CERT_SLOTS.join("|")})\\.(${CERT_EXTS.join("|")})$`);
 
 /** SEO 长度只给**警告**不给错误：超长不会让构建失败，只是搜索结果里被截断。 */
 export const SEO_LIMITS = { title: 60, description: 160 };
@@ -243,6 +257,42 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
         // 与旧字段同一个理由：重复看起来像"某个产品没排上"，人会去找丢掉的那个。
         errors.push(err("homeV4.products.featured", "duplicate",
           `有重复的产品：${[...dupV].join("、")}。同一个产品会在首页出现两次。`));
+      }
+    }
+  }
+
+  // ── certificates：About 页那四张认证卡指向的文件 ──
+  //
+  // 🔴 值是**给页面直接用的 URL 路径**（带头斜杠），不是仓内路径 ——
+  //    两者只差一个斜杠，而拼错的症状是 404，不是报错。⇒ 用正则钉死形状，⛔ 不"大致像就行"。
+  // ⚠️ `null` 是**合法值**且有确切含义：这个槽没传文件 ⇒ 官网不渲染那条链接。
+  //    ⛔ 不能用"键不存在"表示同一件事：那样"没传"和"这个槽被误删了"长得一模一样。
+  const certs = c.certificates;
+  if (certs !== undefined) {
+    if (!certs || typeof certs !== "object" || Array.isArray(certs)) {
+      errors.push(err("certificates", "type", "certificates 必须是一个对象（四个槽 → 路径或 null）。"));
+    } else {
+      for (const k of Object.keys(certs)) {
+        if (!(CERT_SLOTS as readonly string[]).includes(k)) {
+          errors.push(err(`certificates.${k}`, "unknown_field",
+            `没有叫「${k}」的证书槽。只有 ${CERT_SLOTS.join(" / ")} —— 官网不读别的键，填了不会有任何效果。`));
+        }
+      }
+      for (const k of CERT_SLOTS) {
+        const v = (certs as any)[k];
+        if (v === null || v === undefined) continue;          // 没传，合法
+        if (typeof v !== "string") {
+          errors.push(err(`certificates.${k}`, "type", `必须是路径字符串或 null。`));
+        } else if (!certPathRe.test(v)) {
+          errors.push(err(`certificates.${k}`, "cert_path",
+            `「${v}」不是这个槽的合法路径。应当形如 /certificates/${k}.pdf（允许 ${CERT_EXTS.join(" / ")}）—— ` +
+            `路径错的后果是官网上那个「View certificate」点开是 404，而页面本身看不出异常。`));
+        } else if (!v.startsWith(`/certificates/${k}.`)) {
+          // 🔴 槽名与文件名必须对上：`certificates.ce` 指向 fcc.pdf 会让 CE 那张卡点开是 FCC 证书 ——
+          //    数据"合法"、页面"正常"，而客户拿到的是错的合规文件。
+          errors.push(err(`certificates.${k}`, "cert_slot_mismatch",
+            `${k} 这个槽指向的是「${v}」—— 文件名和槽名对不上。那会让 ${k.toUpperCase()} 那张卡点开是别的证书。`));
+        }
       }
     }
   }

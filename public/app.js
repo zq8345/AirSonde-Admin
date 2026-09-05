@@ -3448,6 +3448,144 @@ function featVisual(st, slug, opts = {}) {
   return { thumb, body };
 }
 
+// ═══════════════ 证书（About 页四张认证卡）═══════════════
+//
+// 🔴 与二维码那个槽**同一套机制**（选文件 → 校验 → 一个 commit），但两处不同，⛔ 别照抄：
+//    ① 证书**不转 WebP**：PDF 转成图就不是那份文件了，而扫描件 PDF 才是客户要的东西。
+//       ⇒ 原样上传，服务端按文件头认 PDF/PNG/JPG/WebP。
+//    ② 证书**可以删**（二维码没有"删掉"这回事：删了官网构建会缺一个 import）。
+// ⚠️ 上限 10MB 且**不压缩** ⇒ 传大文件会慢，界面必须在传的时候说话，⛔ 不给一个静止的按钮。
+async function loadCerts() {
+  $("#certSub").textContent = "读取中…";
+  $("#certNotes").innerHTML = ""; $("#certList").innerHTML = "";
+  try {
+    const { status, body } = await api("/api/certificates");
+    if (status >= 400 || !body?.slots) {
+      $("#certNotes").append(mkNotice("bad", `读不到证书：${body?.detail || body?.error || status}`));
+      $("#certSub").textContent = "";
+      return;
+    }
+    state.certs = body;
+    renderCerts();
+  } catch (e) {
+    $("#certNotes").innerHTML = "";
+    $("#certNotes").append(mkNotice("bad", "读取失败：" + e.message));
+  }
+}
+
+function renderCerts() {
+  const b = state.certs; if (!b) return;
+  const have = b.slots.filter((s) => s.url && !s.fileMissing).length;
+  $("#certSub").textContent = `${have} / ${b.slots.length} 个槽有文件 · 没传的那张卡在官网上不显示「View certificate」`;
+  const notes = $("#certNotes"); notes.innerHTML = "";
+  if (!state.write?.enabled) notes.append(mkNotice("warn", "当前**不能写入**（写入闸或 token 未就绪）—— 传和删都不会生效。"));
+  if (b.treeOk === false) {
+    notes.append(mkNotice("warn", "仓内文件清单这次没读全 ⇒ **下面的「文件不见了」判断这次不可信**（只按登记的路径显示）。"));
+  }
+
+  const list = $("#certList"); list.innerHTML = "";
+  b.slots.forEach((s) => list.append(certCard(s, b)));
+}
+
+function certCard(s, meta) {
+  const card = el("section", "card certcard");
+  const h = el("h3", null, s.label);
+  h.append(el("span", "h3sub", " " + s.what));
+  card.append(h);
+
+  const row = el("div", "certrow");
+  const state0 = el("div", "certstate");
+  // 🔴 三种状态各有各的样子，⛔ 不许混：没传 / 有文件 / **登记了但文件不在**（那是故障）
+  if (s.fileMissing) {
+    state0.append(appendMd(el("div", "certbad"),
+      `**登记的文件不在仓里**（${s.url}）—— 官网上那个「View certificate」点开会是 404。重新传一份，或者删掉这个槽。`));
+  } else if (s.url) {
+    const a = el("a", "lnk mono-link", s.url);
+    a.href = `https://airsonde.com${s.url}`; a.target = "_blank"; a.rel = "noopener";
+    a.title = "在官网上打开这份证书（要等这次改动构建完才生效）";
+    state0.append(a);
+    state0.append(el("div", "hint0", s.size ? `${(s.size / 1024).toFixed(0)} KB` : ""));
+  } else {
+    state0.append(el("div", "hint0", "还没传 —— 官网那张卡不显示「View certificate」链接。"));
+  }
+  row.append(state0);
+
+  const acts = el("div", "certacts");
+  const pick = el("label", "btn-secondary btn-mini");
+  const fi = el("input"); fi.type = "file";
+  fi.accept = ".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"; fi.hidden = true;
+  pick.append(fi, document.createTextNode(s.url ? "换一份…" : "选文件…"));
+  acts.append(pick);
+  const del = el("button", "linkish danger", "删除"); del.type = "button";
+  del.hidden = !s.url;
+  acts.append(del);
+  row.append(acts);
+  card.append(row);
+  const res = el("div", "certres"); card.append(res);
+
+  const busy = (on, what) => {
+    pick.classList.toggle("is-busy", on);
+    fi.disabled = on || !state.write?.enabled;
+    del.disabled = on || !state.write?.enabled;
+    if (on) res.textContent = what;
+  };
+  busy(false);
+
+  fi.onchange = async () => {
+    const f = fi.files && fi.files[0]; fi.value = "";
+    res.innerHTML = "";
+    if (!f) return;
+    if (f.size > meta.maxBytes) {
+      res.append(mkNotice("bad", `这个文件 ${(f.size / 1024 / 1024).toFixed(2)}MB，超过 ${meta.maxBytes / 1024 / 1024}MB 上限。**没有上传任何东西。**`));
+      return;
+    }
+    // ⚠️ 逐字说清要做什么再问 —— ⛔ 不写"确认上传？"。这一下会产生真 commit 并触发官网重建。
+    const verb = s.url ? `把 ${s.label} 证书换成「${f.name}」（旧的那份会在同一次提交里删掉）` : `把「${f.name}」作为 ${s.label} 证书传上去`;
+    if (!confirm(`${verb}？\n\n会产生一次 commit 并触发官网重建，约 1 分钟后站上可见。`)) return;
+    busy(true, "上传中…（大文件会慢一点，别关页面）");
+    try {
+      // 🔴 ⛔ 不转 WebP、⛔ 不压缩：证书就是那份文件本身。原样读成 base64。
+      const base64 = await blobToBase64(f);
+      const { status, body } = await api("/api/certificates/" + s.key, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ base64 }),
+      });
+      await afterCertWrite(res, status, body, "上传");
+    } catch (e) { res.innerHTML = ""; res.append(mkNotice("bad", "上传失败：" + e.message)); }
+    busy(false);
+  };
+
+  del.onclick = async () => {
+    // ⚠️ 删除要说清**删的是哪一个文件**，⛔ 不是一句"确定删除？"
+    if (!confirm(`删除 ${s.label} 证书？\n\n会从官网仓里删掉 ${s.url}，并且 About 页上 ${s.label} 那张卡不再显示「View certificate」链接。\n\n会产生一次 commit 并触发官网重建。`)) return;
+    busy(true, "删除中…");
+    try {
+      const { status, body } = await api("/api/certificates/" + s.key, { method: "DELETE" });
+      await afterCertWrite(res, status, body, "删除");
+    } catch (e) { res.innerHTML = ""; res.append(mkNotice("bad", "删除失败：" + e.message)); }
+    busy(false);
+  };
+
+  return card;
+}
+
+/** 写之后统一收尾：成功就重读（⛔ 不自己在前端猜新状态），失败要说清"什么都没写"。 */
+async function afterCertWrite(res, status, body, what) {
+  res.innerHTML = "";
+  if (body?.wrote === true) {
+    res.append(mkNotice("ok", body.note || "已提交。"));
+    // 🔴 重读而不是本地改一改：仓里到底成了什么样，只有服务端知道。
+    await loadCerts();
+    return;
+  }
+  if (body?.validation && !body.validation.ok) {
+    res.append(mkNotice("bad", `${what}未生效，**没有产生任何 commit**：\n` +
+      body.validation.errors.map((e) => `· ${e.field}：${e.message}`).join("\n")));
+    return;
+  }
+  res.append(mkNotice("bad", `${what}未生效（${status}）：${body?.detail || body?.error || "没拿到原因"}`));
+}
+
 /** 换序。⚠️ 单独一个函数，是为了拖拽之外也调得到（自检、将来的键盘操作）。 */
 function moveFeatured(from, to) {
   const list = featList(state.siteDraft);
@@ -4242,6 +4380,7 @@ function showNav(which) {
   $("#auditView").hidden = which !== "audit";
   $("#catsView").hidden = which !== "cats";
   $("#settingsView").hidden = which !== "settings";
+  $("#certView").hidden = which !== "certs";
   $("#siteView").hidden = !SITE_SECTIONS[which];
   $("#detailView").hidden = true;
   document.querySelectorAll(".nav-item[data-nav]").forEach((b) => {
@@ -4279,6 +4418,9 @@ function showNav(which) {
   // ⚠️ 站点内容每次进都**重新拉**：三个视图共用一个文件，别人（或我自己在另一个视图里）
   //    刚存过的话，拿旧的 sha 去保存会撞乐观锁；更糟的是在旧值上编辑。
   if (SITE_SECTIONS[which]) loadSite(which);
+  // ⚠️ 证书页也**每次重拉**，理由与上面同一条：它写的是同一个 site-content.json，
+  //    而"这个槽现在有没有文件"只有仓里知道 —— 拿上次的快照会显示一个已经不成立的状态。
+  if (which === "certs") loadCerts();
 }
 // ⚠️ 拦截挂在**点击**上，⛔ 不挂在 showNav() 里面：
 //    showNav 还被内部调用（如媒体页点图跳到那个产品），那些不该被拦。
