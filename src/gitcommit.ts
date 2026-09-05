@@ -16,7 +16,20 @@ import { ghFetch, gitBlobSha, gitBlobShaBytes, base64ToBytes, ConflictError, Byt
 
 /** 一次提交里的一个文件动作。 */
 export type CommitFile =
-  | { path: string; text: string }                  // 文本（产品 JSON）
+  /**
+   * 文本（产品 JSON / 台账）。
+   *
+   * ⭐ `expectBaseSha`：**这个文件在基线里必须是这个 blob**，否则抛 `ConflictError`。
+   *    🔴 它挡的是一个别处挡不住的缝：调用方读了某个文件、算出新内容，
+   *       而在那之后、`commitFiles` 读 HEAD 之前，**别人改了同一个文件** ——
+   *       这时新内容是基于旧版算的，写下去会**静默覆盖**对方那次改动。
+   *    ⚠️ 产品 JSON 用不上它（那条路上有按文件 blob sha 的乐观锁）；
+   *       追加型的共享文件（`model-renames.json`）**必须**用：丢一条追加不会报错、
+   *       不会坏构建，只是那个 301 从此不存在 —— 与今天要修的这个 bug 一模一样。
+   *    ⚠️ 判的是 `commitFiles` 自己读到的那棵 base tree，⇒ 与最终 commit 的父提交同源；
+   *       再加上第 7 步 `force:false`，这之后的窗口由 GitHub 那侧关掉。
+   */
+  | { path: string; text: string; expectBaseSha?: string }
   | { path: string; base64: string }                // 二进制（图片）
   | { path: string; fromPath: string }              // 从仓内已有 blob 复制（搬家用）
   | { path: string; remove: true };                 // 删除
@@ -105,6 +118,17 @@ export async function commitFiles(
     }
 
     if ("text" in f) {
+      // ⭐ 基线校验：这个文件在**这次 commit 的父提交**里必须还是调用方读到的那一版。
+      //    ⛔ 不比"内容相同"，比 blob sha —— 前者要把整份读回来，而且相同内容也可能来自别人的改动。
+      if (f.expectBaseSha !== undefined) {
+        const actual = baseShaByPath.get(f.path);
+        if (actual !== f.expectBaseSha) {
+          throw new ConflictError(
+            `${f.path} 在你读取之后被改过（期望基线 blob ${f.expectBaseSha || "(不存在)"}，` +
+            `实际 ${actual || "(不存在)"}）。已中止，未产生 commit —— 重来一次即可。`,
+          );
+        }
+      }
       // ⚠️ 不用 tree 的内联 `content`：内联的话，这个 blob 的 sha 只能靠 tree 响应回读，
       //    而那条路已经被证明不可靠（见下方"读回创建出来的 tree"的注释）。
       //    显式建 blob ⇒ **建的那一刻就能验字节**，与图片走同一条路径、同一种证据。
