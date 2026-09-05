@@ -67,21 +67,11 @@ export type Category = string;
 export type Sensor = string;
 export type Status = (typeof STATUSES)[number];
 
-export interface Product {
-  slug: string;
-  name: string;
-  model: string;
-  category: Category;
-  sensors: Sensor[];
-  highlights?: string[];
-  /** 产品页 <meta name="description"> / og:description。选填；trim 后空 = 未填（字段不写）。 */
-  metaDescription?: string;
-  specs?: Record<string, string>;
-  moq?: number;
-  images: { main: string; gallery?: string[] };
-  supplierRef?: string;
-  status: Status;
-}
+// ⛔ `export interface Product` 已整块删除（2026-09-05 死物清理）：全仓零引用。
+//    ⚠️ 契约的真源是**运行时校验**（`validateProduct` + 下面那些常量），
+//       ⛔ 不是这个从来没人 import 过的类型 —— 它在与不在，都拦不住任何东西。
+//    ⚠️ 判据是 `Product` 全仓零命中，⛔ 不是裸子串（那会把 "products"、"产品" 算进去）；
+//       反向自证：同一把尺子对 Taxonomy/Issue/Axis 分别是 15/19/18 处。
 
 /**
  * 型号 → 判重用的键。**型号现在就是网址**（官网 W29：`/products/<key>/`）。
