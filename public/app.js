@@ -3238,56 +3238,56 @@ function homeV4Sections(form) {
     ["homeV4.why.kicker", "小标"],
     ["homeV4.why.heading", "大标题"],
   ]);
-  // ══ 「为什么选我们」四张卡 —— 原来叫「卖点卡」，2026-09-05 一并改绑 ══
-  //
-  // 🔴 与 Hero 同一个病：旧的 `home.valueProps` 经 `VALUE_PROPS` 导出，而**消费方 0 处**。
-  //    官网 v4 首页渲染的是 `V.why.cards`（`index.astro` 的 ⑤ WHY 段）。
-  // ⚠️ 字段也多了两个，⛔ 不是换个路径：旧 `{title, body}` → 新 `{icon, fig, title, body}`。
-  //    · `icon` 的取值**写死在官网代码里**（`ICONS` 那个表），而且是
-  //      `ICONS[c.icon] ?? ICONS.doc` —— 填错**静默变成 doc** ⇒ 这里给闭集下拉。
-  //    · `fig` 是卡片顶部那个大字（"Since 2015" / "< 48 h" / "100%" / "0"）。
-  // ⚠️ 官网 `.feat-row` 是 `repeat(4, 1fr)`，而渲染是 `.map()` **不截断** ⇒
-  //    第 5 张会自己掉到第二行独占一格（不是丢失，只是难看）——所以下面只提示、不阻断。
-  const whyCards = () => {
-    const w = ((state.siteDraft.homeV4 ??= {}).why ??= {});
-    if (!Array.isArray(w.cards)) w.cards = [];
-    return w.cards;
-  };
-  const cards = whyCards();
-  const v = siteCard("首页「为什么选我们」卡", `官网首页那一排 · ${cards.length} 张 · 官网一行排 4 张`);
-  v.classList.add("card-inline");
-  if (cards.length > 4) {
-    v.append(mkNotice("warn", `现在有 **${cards.length} 张**，而官网那一排是 4 列 ⇒ ` +
-      `**第 5 张起会掉到第二行**（不会丢，只是那一行不满）。不影响保存。`));
-  }
-  cards.forEach((_, i) => {
-    const row = el("div", "vprop");
-    const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
-    del.onclick = () => {
-      // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
-      const cs = whyCards();
-      cs.splice(i, 1);
-      if (!cs.length) {
-        // ⚠️ 全删会让官网那一段只剩标题、下面空一片 ⇒ 拦住并说清原因
-        //    ⛔ 这里仍是 `alert`（本文件最后一个，已挂账给总工），本单不改它。
-        alert("至少要留一张 —— 全删掉的话官网那一段只剩标题，下面空一片。");
-        cs.push({ icon: "doc", fig: "", title: "", body: "" });
-      }
-      renderSite(true);
-    };
-    row.append(del);
-    siteField(row, `homeV4.why.cards.${i}.icon`, `第 ${i + 1} 张 · 图标`,
-      "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc 那个图标。",
-      { options: WHY_ICONS });
-    siteField(row, `homeV4.why.cards.${i}.fig`, `第 ${i + 1} 张 · 大字`,
-      "卡片顶部那个醒目的短字（如 Since 2015 / < 48 h / 100% / 0）。");
-    siteField(row, `homeV4.why.cards.${i}.title`, `第 ${i + 1} 张 · 标题`);
-    siteField(row, `homeV4.why.cards.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
-    v.append(row);
-  });
-  const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
-  add.onclick = () => { whyCards().push({ icon: "doc", fig: "", title: "", body: "" }); renderSite(true); };
-  v.append(add);
+  // ══ 「为什么选我们」四张卡 —— 原来叫「卖点卡」，2026-09-05 一并改绑 ══
+  //
+  // 🔴 与 Hero 同一个病：旧的 `home.valueProps` 经 `VALUE_PROPS` 导出，而**消费方 0 处**。
+  //    官网 v4 首页渲染的是 `V.why.cards`（`index.astro` 的 ⑤ WHY 段）。
+  // ⚠️ 字段也多了两个，⛔ 不是换个路径：旧 `{title, body}` → 新 `{icon, fig, title, body}`。
+  //    · `icon` 的取值**写死在官网代码里**（`ICONS` 那个表），而且是
+  //      `ICONS[c.icon] ?? ICONS.doc` —— 填错**静默变成 doc** ⇒ 这里给闭集下拉。
+  //    · `fig` 是卡片顶部那个大字（"Since 2015" / "< 48 h" / "100%" / "0"）。
+  // ⚠️ 官网 `.feat-row` 是 `repeat(4, 1fr)`，而渲染是 `.map()` **不截断** ⇒
+  //    第 5 张会自己掉到第二行独占一格（不是丢失，只是难看）——所以下面只提示、不阻断。
+  const whyCards = () => {
+    const w = ((state.siteDraft.homeV4 ??= {}).why ??= {});
+    if (!Array.isArray(w.cards)) w.cards = [];
+    return w.cards;
+  };
+  const cards = whyCards();
+  const v = siteCard("首页「为什么选我们」卡", `官网首页那一排 · ${cards.length} 张 · 官网一行排 4 张`);
+  v.classList.add("card-inline");
+  if (cards.length > 4) {
+    v.append(mkNotice("warn", `现在有 **${cards.length} 张**，而官网那一排是 4 列 ⇒ ` +
+      `**第 5 张起会掉到第二行**（不会丢，只是那一行不满）。不影响保存。`));
+  }
+  cards.forEach((_, i) => {
+    const row = el("div", "vprop");
+    const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
+    del.onclick = () => {
+      // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
+      const cs = whyCards();
+      cs.splice(i, 1);
+      if (!cs.length) {
+        // ⚠️ 全删会让官网那一段只剩标题、下面空一片 ⇒ 拦住并说清原因
+        //    ⛔ 这里仍是 `alert`（本文件最后一个，已挂账给总工），本单不改它。
+        alert("至少要留一张 —— 全删掉的话官网那一段只剩标题，下面空一片。");
+        cs.push({ icon: "doc", fig: "", title: "", body: "" });
+      }
+      renderSite(true);
+    };
+    row.append(del);
+    siteField(row, `homeV4.why.cards.${i}.icon`, `第 ${i + 1} 张 · 图标`,
+      "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc 那个图标。",
+      { options: WHY_ICONS });
+    siteField(row, `homeV4.why.cards.${i}.fig`, `第 ${i + 1} 张 · 大字`,
+      "卡片顶部那个醒目的短字（如 Since 2015 / < 48 h / 100% / 0）。");
+    siteField(row, `homeV4.why.cards.${i}.title`, `第 ${i + 1} 张 · 标题`);
+    siteField(row, `homeV4.why.cards.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+    v.append(row);
+  });
+  const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
+  add.onclick = () => { whyCards().push({ icon: "doc", fig: "", title: "", body: "" }); renderSite(true); };
+  v.append(add);
   form.append(v);
 
   // ── ⑥ 流程 ──
