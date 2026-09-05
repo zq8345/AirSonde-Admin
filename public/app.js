@@ -3421,19 +3421,23 @@ function renderSite(keepDraft = false) {
   const sec = state.siteSection;
 
   if (sec === "contact") {
+    // 🔴 排版与「首页」那一页统一（Joe 2026-09-05 第二轮）：
+    //    标签与内容同一行 · 全部单列 · 值左沿对齐同一条竖线（`.card-inline` 那套，152px 固定标签列）。
+    //    ⛔ 两对左右并排（电话/微信号、营业时间/响应时间）的 `.row2` 已去掉 ——
+    //      与首页那次同一个理由：不用 CSS 把 `.row2` 压成一列，那会留下一个
+    //      **名叫「两栏」却渲染成一栏**的类，下一个人照类名理解布局就被骗了。⇒ 直接不要那个容器。
     const c = siteCard("联系数据", "站上的链接由它们派生");
+    c.classList.add("card-inline");
     siteField(c, "contact.email", "邮箱", "页面上的 mailto: 链接由它拼出来。写错 = 死链接，而页面看不出异常。");
-    const r1 = el("div", "row2"); c.append(r1);
-    siteField(r1, "contact.phone", "电话", "WhatsApp 与拨号链接都由这一个号码派生（wa.me / tel:）。号码只存这一处，不可能出现「号码改了链接没改」。以 + 和国家码开头。");
-    siteField(r1, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
+    siteField(c, "contact.phone", "电话", "WhatsApp 与拨号链接都由这一个号码派生（wa.me / tel:）。号码只存这一处，不可能出现「号码改了链接没改」。以 + 和国家码开头。");
+    siteField(c, "contact.wechatId", "微信号", "联系页那个「复制微信号」按钮复制的就是它。");
     // 二维码紧跟微信号（Joe 2026-09-05 定的位置）。⚠️ 它是**图片**，不走这一页的「保存」——
     //    理由与做法都在 siteAssetSlot 里，界面上也会明说。
     siteAssetSlot(c, "wechat-qr", "微信二维码",
       "官网联系页把鼠标停在 WeChat 那一行时弹出的那张图。**它不走这一页的「保存」**：选好图点「更换」当场就是官网仓的一次提交，约 1 分钟后站上生效。");
     siteField(c, "contact.address", "地址", "Google 地图链接由地址算出来，不单独存 —— 改了地址，地图自动跟着走。");
-    const r2 = el("div", "row2"); c.append(r2);
-    siteField(r2, "contact.hours", "营业时间");
-    siteField(r2, "contact.response", "响应时间");
+    siteField(c, "contact.hours", "营业时间");
+    siteField(c, "contact.response", "响应时间");
     form.append(c);
   } else if (sec === "home") {
     // 🔴 `card-inline`（Joe 2026-09-05）：这两张卡里**值紧跟在标签后面、同一行**

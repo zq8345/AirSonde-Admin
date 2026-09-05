@@ -302,6 +302,23 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
 .card-inline .field > input,
 .card-inline .field > select,
 .card-inline .field > textarea { flex: 1 1 200px; min-width: 0; }
+
+/* ══ 二维码块在 `.card-inline` 里也要守那条竖线（Joe 2026-09-05 第二轮 ④）══
+   🔴 它自带 `padding: 12px 16px`（那是「自管保存」的视觉标记，⛔ 不能删）——
+      不处理的话它的标签和值会整体右移 16px，**那条竖线就断了**。
+   ⇒ 用**等量负外边距**把内容box 拉回与兄弟字段同一条起点：色块照样往两边各鼓出 16px，
+     标记还在，而里面的标签/值与其它行严丝合缝。⛔ 不靠删 padding 来对齐（那会连标记一起删掉）。
+   ⚠️ `.qrrow`（缩略图 + 按钮那一整行）当成"值"，与 input 同一条 flex 规则；
+      `.qrres`（回执条）占满一整行 —— 它是一条消息，不是这一行的值。 */
+/* ⚠️ 负边距要**连那条 2px 左边框一起抵**：只抵 padding 的话内容仍右移 2px，
+   实测差出来就是「401 vs 403」—— 判据写的是"左沿相等"，2px 也是不等。
+   ⇒ 写成 `padding + 边框宽`，⛔ 不填一个实测出来的 18（那样边框一改就又不齐了）。 */
+.card-inline .qrslot {
+  margin-left: calc(-1 * (var(--space-16) + 2px));
+  margin-right: calc(-1 * var(--space-16));
+}
+.card-inline .field > .qrrow { flex: 1 1 200px; min-width: 0; }
+.card-inline .field > .qrres { flex: 0 0 100%; }
 /* 只读态下把下拉的原生箭头去掉：只读皮已经把边框底色洗成透明，只剩那个 ⌄ 还在
    宣称"这里能点" —— 而它是 disabled 的。⛔ 不留一个说假话的可点提示。
    ⚠️ 只在只读态去掉；编辑态**必须留着**，那是"这是个下拉不是输入框"的唯一提示。 */
@@ -314,7 +331,9 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
    ⛔ 修法不是把行加高躲开它 —— 加高正是这一单要消灭的东西（这张卡刚从 321 矮到 264）。
    ⇒ 在行右侧**留出它的宽度**（按钮实测 60 宽，留 68 给出一点缝）。
    ⚠️ `.vprop-del` 是 `right:0` 绝对定位，参照的是 padding 盒 ⇒ 它仍贴右边缘，
-      而里面的 `.row2` 被内容盒收窄，两者不再重叠。 */
+      而里面的字段被内容盒收窄，两者不再重叠。
+   📌 这句原来写的是「里面的 `.row2`」—— 那一层容器 2026-09-05 已经拆掉（Joe 要求字段改成上下排），
+      ⛔ 不留指着已不存在结构的注释。 */
 .card-inline .vprop { padding-right: 68px; }
 /* `.nodel` = 这一行**没有删除按钮**（固定条数的列表：QC 五步、流程三步）
    ⇒ 不留那 68px。⛔ 别为了「整齐」给它留一条永远空着的白边。 */
@@ -353,7 +372,8 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
   .card-inline .vprop { padding-right: 0; }
 }
 
-/* 卖点卡的一张（§6 mockup）：右上「删掉这张」红字，内容 row2 */
+/* 列表里的一行（首页 why 卡 / QC 五步 / 流程三步 / CTA 清单）：右上「删掉这张」红字。
+   📌 原来写的是「内容 row2」—— 那层两栏容器 2026-09-05 已拆，字段现在是上下单列。 */
 .vprop { position: relative; padding: 12px 0 0; border-top: 1px solid var(--border); margin-top: 12px; }
 .vprop:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
 .vprop-del { position: absolute; right: 0; top: 8px; background: none; border: 0; color: var(--red); font: inherit; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
@@ -555,7 +575,12 @@ button:disabled, [disabled] {
 /* v3 §3.6：这一格从"灰字副标"变成**装两段切换的位置** ⇒ 不再压字号/颜色，
    否则里面的段位控件会被继承成一个看不清的小灰块。 */
 .page-head .page-sub { display: flex; align-items: center; }
-.page-head .page-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+/* 🔴 `flex-wrap: wrap`（总工 2026-09-05 批准）：这一行原来是 nowrap，实测 360px 视口下
+   它固定 420px（搜索 185 + 排序 118 + 两个按钮）⇒ **越界 104px，是页面横滚的真凶**。
+   ⚠️ 我先前把横滚归给了 `.fgrid` —— 错的：同一时刻网格宽 296、**0 越界**。
+      ⇒ 报成因之前先量「这个元素本身越界了吗」，⛔ 别拿"看起来最可疑"当结论。
+   ⚠️ 换行只改版式，四个控件一个不少、功能不动（原派单「控件不动」指的是功能）。 */
+.page-head .page-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .page-head > .primary { margin-left: auto; }
 
 /* ⛔ .toolbar / .toolbar-right 已删（crm-skin B 批 §3）：产品页的 全部/在线/未上架 tab 条与「全部机型」下拉没了，筛选住列头。
