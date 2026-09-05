@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>AI 文章试产 · AirSonde Admin</title>
+<!--
+  产线「生成」动作的正式住所（SPEC admin-deepseek-channel 第 2 项：生成端点，内部用，Access 门内）。
+
+  🔴 为什么是一个页面而不是我这边的脚本：
+     密钥只在生产 worker 里，而生产 worker 在 Cloudflare Access 门后。
+     任何窗都不持有 Access 令牌（那是**整个后台的钥匙**，比一把 API key 风险大一级），
+     ⇒ 只有**已经登进后台的浏览器**发得出这几个请求。这个页面就是那个浏览器要点的东西。
+
+  ⛔ 生成 ≠ 发布：这里只产出草稿文件，写进官网仓走的是另一条带契约校验和审计的路。
+-->
+<style>
+  :root { color-scheme: light; --ink:#0f1c18; --green:#0c7a6b; --mint:#e9f2ee; --line:#dfe5e2; --muted:#5b6b66; }
+  body { margin:0; background:#f7f9f8; color:var(--ink);
+         font:15px/1.65 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:var(--muted); margin:0 0 22px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin:0 0 16px; }
+  .note { background:var(--mint); border-left:3px solid var(--green); padding:12px 16px; border-radius:8px; margin:0 0 16px; }
+  button { font:inherit; font-weight:600; padding:11px 20px; border-radius:9px; border:1px solid var(--green);
+           background:var(--green); color:#fff; cursor:pointer; }
+  button[disabled] { opacity:.5; cursor:default; }
+  button.ghost { background:#fff; color:var(--green); }
+  ol { padding-left: 22px; } li { margin: 4px 0; }
+  #log { font:13px/1.6 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-word;
+         background:#0f1c18; color:#d8e6e1; border-radius:10px; padding:14px 16px; min-height:60px; margin-top:14px; }
+  .files a { display:inline-block; margin:6px 10px 0 0; }
+  .warn { color:#8a3d2f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI 文章试产 · A / B</h1>
+  <p class="sub">同一份提示词包，两个模型各生成一版。界面上只叫 <b>A</b> 和 <b>B</b>。</p>
+
+  <div class="note">
+    <!-- ⚠️ 这里是 HTML 不是 Markdown：写 `**粗体**` 会**原样显示成星号**（实测过一次）。加粗用 <b>。 -->
+    <b>生成 ≠ 发布。</b> 这一页只产出<b>草稿文件</b>，什么都不会写进官网。
+    草稿还要过 5 道闸（数字可溯源 / <code>[Joe 补充]</code> 只出现在该出现的位置 /
+    零禁用词 / 无竞品比较 / 900–1300 词）——不过闸就退回重生成，⛔ 不手工改。
+    <br />⚠️ <b>这一页只跑得了其中机器判得了的那几道</b>（词数、禁用词、占位符在不在、
+    UN38.3 有没有限定锂电池、四个内链在不在）。<b>另外两道要人看</b> ——
+    每个数字能不能在溯源表里指到一条来源、有没有无来源的比较断言。⛔ 这一页不假装查过它们。
+  </div>
+
+  <div class="card">
+    <b>你要做的：</b>
+    <ol>
+      <li>点下面那个按钮，等它跑完（两版，大约 1–3 分钟）。</li>
+      <!-- ⚠️ 不写死"三个"：有一版失败时就只有两个甚至一个，
+           而一句说不准的话会让人以为自己漏下了什么。下方日志会按真实产出报数。 -->
+      <li>把出现的文件<b>全部</b>下载下来，发给我们（顺利的话是三个；下面的日志会告诉你实际有几个）。</li>
+      <li>⚠️ 只读 <code>draft-A.md</code> 和 <code>draft-B.md</code> 这两份，然后说你更喜欢哪一版。
+          第三个文件是给排期用的，里面写着哪版是哪个模型 —— <b>看了就不是盲选了。</b></li>
+    </ol>
+    <p style="margin:14px 0 0">
+      <button id="go">开始生成 A / B 两版</button>
+      <button id="again" class="ghost" hidden>只重跑没过闸的那一版</button>
+    </p>
+    <div class="files" id="files"></div>
+    <div id="log">还没开始。</div>
+  </div>
+</main>
+
+<!-- 🔴 提示词包 **原样**取自 crm-content-pilot-deepseek/prompt-package.md（终稿）。
+     ⛔ 不在这里重写、不在这里"优化" —— 它是 CRM 窗的交付物，改它等于改一个别人负责的判据。
+     用 text/plain 块而不是 JS 模板字符串：包里满是反引号和 ${}，模板字符串会当场把它吃掉。 -->
+<script type="text/plain" id="pkg">
+You write B2B sourcing content for AirSonde, a Shenzhen manufacturer of indoor air quality monitors and portable breathalysers, selling OEM/ODM to overseas brands and importers.
+
+**Hard rules — a violation means the draft is discarded, not edited:**
+
+1. **Every number and every factual claim must come from the FACT WHITELIST below.** If a fact you want is not on the list, either leave it out or write the literal placeholder `[Joe 补充]`. Never estimate, never round, never infer a figure from another figure.
+2. **MOQ and price are forbidden.** Wherever the text would naturally state one, write `[Joe 补充]`.
+3. No hype. Banned: revolutionary, cutting-edge, world-leading, best-in-class, game-changing, unparalleled, state-of-the-art. No superlatives about the company.
+4. No competitor comparisons, no naming other suppliers, no claims about "most factories" or "typical suppliers" — you cannot source those.
+5. Native-level British-neutral English. Plain, concrete, declarative. Short sentences.
+6. Do not invent customer names, case studies, testimonials, dates, certifications, or lab results.
+
+## FACT WHITELIST (the only facts you may use)
+
+Company figures, exactly as they appear on airsonde.com and airsonde.com/about/ :
+- `2015` — founded
+- `120+` — staff
+- `200+` — patents
+- `5,000m²` — facility
+- `600,000+` — units / month
+- `100+` — countries
+
+Keep each label exactly as given: `200+ patents` stays "patents"; do not rewrite it as "patents and certifications" or anything else.
+
+Certifications: CE / FCC / RoHS across the product line. UN38.3 applies ONLY to models containing lithium batteries — never write that UN38.3 covers the whole range.
+
+Products: 25 models available today. Form factors: desktop / portable / wall-mounted / breathalysers.
+- OEM = your brand on the housing, firmware and packaging
+- ODM = changes made on top of a reference design
+
+Lead time: `35–45 days`. Write it as "typically 35–45 days"; never "all models" and never "guaranteed".
+
+NOT on the whitelist and therefore forbidden: MOQ, price, any percentage, any "X% faster/cheaper", customer counts, order volumes, revenue, certificate numbers, number of production lines, staff breakdowns.
+
+## Internal links (each used once, natural anchor text, do not stuff)
+
+- `/products/` — see the models available today
+- `/about/` — the factory and its credentials
+- `/contact/` — send an enquiry (the closing CTA points here)
+- `/guides/oem-vs-odm-iaq-programme/` — the difference between OEM and ODM
+
+## Structure (fixed)
+
+Title: **How to Source Private-Label Air Quality Monitors from a Factory**
+
+1. The first three sentences answer "how do I source this" directly — conclusion first, no industry preamble.
+2. The sourcing steps: assess the factory → ask for samples → check certification → start the private-label programme.
+3. A comparison table, OEM vs ODM (two columns).
+4. FAQ ×5.
+5. CTA.
+
+- H2 headings are short. The first paragraph under each H2 must stand on its own as a quotable answer that reads correctly without the paragraphs above it.
+- Length 900–1300 words.
+- Output pure Markdown. No preamble, no "Here is the article".
+
+## Target terms and reader
+
+Primary terms: `private label air quality monitor`, `OEM air quality monitor supplier`.
+Buyers are searching for an independent factory rather than a marketplace, so answer that directly — but never disparage any platform.
+
+Reader: the sourcing lead at a brand or importer. The action after reading: send an enquiry via `/contact/`.
+</script>
+
+<script>
+// ⚠️ 映射只在后台与排期之间；界面上从头到尾只出现 A / B。
+//    🔴 诚实说清一个边界：模型名**在这份页面源码里**，Joe 想查看源代码是看得到的。
+//       盲测靠的是"他没有理由去翻源码"，不是靠技术上藏死 —— ⛔ 不假装它是密封的。
+const VARIANTS = [
+  { id: "A", model: "deepseek/deepseek-chat" },
+  { id: "B", model: "anthropic/claude-sonnet-4.5" },
+];
+
+const BANNED = ["revolutionary","cutting-edge","world-leading","best-in-class","game-changing","unparalleled","state-of-the-art"];
+const MAX_TRIES = 3;   // 不过闸就退回重生成；⛔ 不手工改，也⛔ 不无限重试
+
+const $log = document.getElementById("log");
+const $files = document.getElementById("files");
+const $go = document.getElementById("go");
+let lines = [];
+const say = (s) => { lines.push(s); $log.textContent = lines.join("\n"); };
+
+/**
+ * 机器判得了的那几道闸。
+ * ⚠️ **只有这几道** —— 剩下两道（每个数字能在溯源表里指到一条来源、没有无来源的比较断言）
+ *    要人看，⛔ 这里不假装自己查过它们。页面上也照实说。
+ */
+function mechanicalGates(md) {
+  const fails = [];
+  const words = (md.match(/[A-Za-z0-9'’\-]+/g) || []).length;
+  if (words < 900 || words > 1300) fails.push(`词数 ${words}，不在 900–1300`);
+  const hit = BANNED.filter((w) => new RegExp(w.replace(/-/g, "[- ]"), "i").test(md));
+  if (hit.length) fails.push(`出现禁用词：${hit.join("、")}`);
+  // `[Joe 补充]` 只该出现在 MOQ / 价格 / 样品费三类位置附近；别处出现 = 该写的没写。
+  // ⚠️ 这里只判**有没有**，位置对不对由人看 —— ⛔ 不用一个猜出来的正则冒充位置判定。
+  if (!/\[Joe 补充\]/.test(md)) fails.push("一个 [Joe 补充] 都没有 —— MOQ / 价格本来就该是占位符");
+  // UN38.3 最容易被写成全线覆盖，这条是溯源表里点名的高风险项
+  if (/UN\s*38\.3/i.test(md) && !/lithium/i.test(md)) fails.push("提到 UN38.3 却没限定 lithium —— 不许写成全线覆盖");
+  for (const u of ["/products/", "/about/", "/contact/", "/guides/oem-vs-odm-iaq-programme/"]) {
+    if (!md.includes(u)) fails.push(`缺内链 ${u}`);
+  }
+  return { ok: fails.length === 0, fails, words };
+}
+
+async function generate(model) {
+  const res = await fetch("/api/ai/generate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      system: document.getElementById("pkg").textContent.trim(),
+      prompt: "Write the article now, following every rule above. Output Markdown only.",
+      model, maxTokens: 4000, temperature: 0.7, label: "seo_article_pilot",
+    }),
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j || j.ok === false) {
+    // 🔴 把 kind 原样带出来：模型下架 / 余额 / 密钥无效的处方完全不同，
+    //    ⛔ 不压成一句"生成失败"。
+    const kind = j && j.kind ? j.kind : `HTTP ${res.status}`;
+    throw new Error(`${kind}：${(j && (j.error || j.说明)) || "(没有返回说明)"}`);
+  }
+  return j;
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: type || "text/markdown;charset=utf-8" }));
+  a.download = name; a.textContent = "⬇ " + name;
+  $files.append(a);
+}
+
+$go.addEventListener("click", async () => {
+  $go.disabled = true; lines = []; $files.textContent = "";
+  const meta = { startedAt: new Date().toISOString(), runs: [] };
+  let anyFail = false;
+
+  for (const v of VARIANTS) {
+    let last = null, gate = null;
+    for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      say(`【${v.id}】第 ${attempt} 次生成中…`);
+      try { last = await generate(v.model); }
+      catch (e) {
+        say(`【${v.id}】🔴 ${e.message}`);
+        meta.runs.push({ variant: v.id, model: v.model, attempt, error: String(e.message) });
+        anyFail = true; last = null; break;
+      }
+      gate = mechanicalGates(last.content);
+      meta.runs.push({
+        variant: v.id, model: v.model, modelUsed: last.model, attempt,
+        words: gate.words, tokens: last.tokens, costUsd: last.costUsd, ms: last.ms,
+        gateOk: gate.ok, gateFails: gate.fails,
+      });
+      say(`【${v.id}】第 ${attempt} 次：${gate.words} 词，机器闸 ${gate.ok ? "过" : "没过 —— " + gate.fails.join("；")}`);
+      if (gate.ok) break;
+      if (attempt === MAX_TRIES) { anyFail = true; say(`【${v.id}】⚠️ 三次都没过机器闸，草稿照样给出来，由人判。`); }
+    }
+    if (last) {
+      // ⚠️ 草稿文件里**不写模型名** —— 盲选就是靠这一条。
+      download(`draft-${v.id}.md`, last.content);
+      const c = last.costUsd;
+      say(`【${v.id}】完成。成本：${c === null || c === undefined ? "OpenRouter 没给（照实说不知道，⛔ 不写成 $0）" : "$" + c}`);
+    }
+  }
+
+  meta.finishedAt = new Date().toISOString();
+  meta.note = "⚠️ 只有机器判得了的闸在这里跑过（词数 / 禁用词 / 占位符存在性 / UN38.3 限定 / 四个内链）。"
+    + "剩下两道（每个数字能在溯源表里指到来源、没有无来源的比较断言）必须人看。";
+  download("run-meta.json", JSON.stringify(meta, null, 2), "application/json");
+  // 🔴 收尾这句话必须**按真实产出说**，⛔ 不能照着"顺利跑完"那个剧本写死：
+  //    实测过一次——两版都失败、只产出 1 个文件，它却还在说"把三个文件都发过来"。
+  //    一个说不真话的界面，比没有这句话糟。
+  const n = $files.querySelectorAll("a").length;
+  const drafts = $files.querySelectorAll("a").length - 1;   // 减掉 run-meta.json
+  say("\n" + (drafts === 0
+    ? `一版都没生成出来（见上面的原因类别）。只有 1 个文件 run-meta.json，把它发过来就行。`
+    : `跑完了：${drafts} 版草稿 + run-meta.json，共 ${n} 个文件，都发过来。`
+      + (anyFail ? "　⚠️ 其中有没过机器闸或失败的，上面写了是哪一版。" : "　两版都过了机器闸。")));
+  $go.disabled = false;
+});
+</script>
+</body>
+</html>
