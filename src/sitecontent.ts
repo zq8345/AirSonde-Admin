@@ -273,6 +273,13 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
       errors.push(err("certificates", "type", "certificates 必须是一个对象（四个槽 → 路径或 null）。"));
     } else {
       for (const k of Object.keys(certs)) {
+        // ⚠️ `_readme` 在这里也放行 —— 与顶层那个 `_readme` 是**同一条规则**，⛔ 不是给证书开的特例：
+        //    它是给人看的说明（这里装的是与 Web 窗对齐的契约文本：值为什么带头斜杠、
+        //    换扩展名为什么要同 commit 删旧文件），不是站上的数据。
+        // 🔴 实测过它的代价（2026-09-05）：漏了这条豁免，Web 窗把契约文本写进
+        //    `certificates._readme` 的那一刻起，**后台每一次站点内容保存都会 422** ——
+        //    与当天上午刚修掉的那个生产故障是同一个病：闸在拦一件它不该管的事。
+        if (k === "_readme") continue;
         if (!(CERT_SLOTS as readonly string[]).includes(k)) {
           errors.push(err(`certificates.${k}`, "unknown_field",
             `没有叫「${k}」的证书槽。只有 ${CERT_SLOTS.join(" / ")} —— 官网不读别的键，填了不会有任何效果。`));

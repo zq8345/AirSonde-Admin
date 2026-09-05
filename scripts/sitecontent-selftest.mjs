@@ -294,6 +294,16 @@ const FULL = { ce: "/certificates/ce.pdf", fcc: null, rohs: null, "un38-3": null
     has(validateSiteContent(c, c), "cert_slot_mismatch"));
 }
 {
+  // 🔴 Web 窗 2026-09-05 把**契约文本写进 `certificates._readme`**（同顶层 `_readme` 的用法）。
+  //    它必须放行 —— 拦下它的话，那一支合 main 的当天，后台的**每一次站点内容保存**又会 422，
+  //    正是我今天上午刚修掉的那个生产故障换个位置重演。
+  // ⚠️ 与顶层 `_readme` 是**同一条规则**，⛔ 不是给证书开的特例：
+  //    `_readme` 是给人看的说明，不是站上的数据。
+  const c = CT({ _readme: ["值 = 带头斜杠的 URL 路径；换扩展名时旧文件同 commit 删掉"], ...FULL });
+  const r = validateSiteContent(c, c);
+  ck("⑫ 🔴 certificates._readme 放行（Web 窗把契约文本写在这里）", r.ok, JSON.stringify(r.errors));
+}
+{
   const c = CT({ ...FULL, iso9001: "/certificates/iso9001.pdf" });
   ck("⑫ 不存在的槽 ⇒ 拒（官网不读它 ⇒ 传了不会有任何效果）",
     has(validateSiteContent(c, c), "unknown_field"));
