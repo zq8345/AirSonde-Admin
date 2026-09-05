@@ -1000,7 +1000,22 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
 .fcard.is-empty .fname { color: var(--text-caution); }
 .fplus { font-size: 22px; color: var(--text-caution); }
 .fcard.is-sys { border-color: var(--border-strong); background: var(--panel); }
-.fmeta2 { padding: 9px 11px 11px; min-width: 0; }
+/* ══ 文字区 mint 底（Joe 2026-09-05，照官网产品卡的两层结构：白图区 + mint 文字区）══
+   🔴 色值取自**官网仓的实现**：`airsonde-web/src/styles/home-v4.css` 的 `--mint: #e9f2ee`，
+      ⛔ 不照派单里的字面色号抄（今天已经有一次 SPEC 与真源对不上）。
+   ⚠️ 圆角/收口不用另写：`.fcard` 本身是 `overflow:hidden` + `border-radius:10px`，
+      文字区贴到下沿自然被切成圆角。⛔ 不在这里再写一次圆角 —— 两处圆角迟早对不上。 */
+.fmeta2 { background: #e9f2ee; padding: 9px 11px 11px; min-width: 0; }
+
+/* 🔴 计数行在 mint 上换色 —— 这不是审美，是**实测**：
+      `--hint (#8a94a0)` 在**白底上就只有 3.08**（低于 WCAG AA 正文门槛 4.5），
+      换到 mint 上掉到 **2.70** ⇒ 直接违反本单判据「计数行在 mint 上可读性不降」。
+      换成 `--text-secondary (#4d5762)` ⇒ 在 mint 上是 **6.44**：不但没降，比原来白底上还高一倍。
+   ⚠️ **只在这张卡里换**（`.fmeta2 .fsub`），⛔ 不动全局 `--hint` ——
+      那个变量全站在用，改它等于把一次局部改动扩散成全站改版。
+   📌 `--hint` 在白底上本来就不到 AA 这件事是个更大的问题，已单独报总工，⛔ 本单不扩。 */
+.fmeta2 .fsub { color: var(--text-secondary); }
+/* 警告态与空文件夹的琥珀色在 mint 上实测 5.19，过 AA ⇒ 原样不动。 */
 .fname { font-size: 13px; font-weight: 600; font-family: var(--mono);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fsub { font-size: 12px; color: var(--hint); margin-top: 2px;
