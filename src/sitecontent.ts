@@ -44,12 +44,25 @@ const SHAPE = {
     valueProps: "list",
     contactBlock: { title: "s!", body: "s!" },
   },
-  // 首页 v4（2026-09-05 上线）。后台**只写 `products.featured` 这一处**；
-  // 其余子块（hero/marquee/factory/…）是官网仓维护的，从这里原样穿过去。
-  homeV4: { products: { featured: "list" } },
+  // 首页 v4（2026-09-05 上线）。后台写其中**三处**：hero、why.cards、products.featured；
+  // 其余子块（marquee/solutions/factory/programme/guides/cta/footer）是官网仓维护的，
+  // 从这里原样穿过去（未知子键不判 —— 顶层那条"动了才判"的规则管的是顶层块）。
+  homeV4: { hero: "map", why: { cards: "list" }, products: { featured: "list" } },
   // 证书槽（About 页认证板块）。后台整块拥有它 —— 值是 public/ 下的 URL 路径或 null。
   certificates: "map",
 } as const;
+
+/**
+ * 首页「为什么选我们」卡的图标闭集 —— **校验侧的那一份**。
+ *
+ * 🔴 真源不在本仓：官网 `src/pages/index.astro` 的 `ICONS` 表（2026-09-05 实测这七个）。
+ * ⚠️ 官网那边是 `ICONS[c.icon] ?? ICONS.doc` —— **认不出不报错，静默显示成 doc**。
+ *    ⇒ 这道闸是"选了个官网不认识的图标"这件事**唯一会说话的地方**。
+ * ⚠️ 前端 `app.js` 的 `WHY_ICONS` 是同一份名单的下拉版（带中文标签）。
+ *    两处都是抄件 —— 抄件不可避免（跨仓拿不到），但**必须两处都改**，
+ *    所以两边的注释都写着对方在哪。⛔ 别只改一处。
+ */
+export const WHY_ICON_KEYS = ["factory", "chat", "doc", "star", "send", "reply", "box"] as const;
 
 /**
  * 证书槽的键 —— **全仓唯一定义**（index.ts 从这里 import，只在那边补显示文案）。
@@ -207,6 +220,59 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
         errors.push(err("home.featuredSlugs", "duplicate",
           `有重复的 slug：${[...dup].join("、")}。同一个产品会在首页出现两次。`));
       }
+    }
+  }
+
+  // ── homeV4.hero / homeV4.why.cards：后台从 2026-09-05 起真正在写的两块 ──
+  //
+  // 🔴 起因：后台原来编的是 `home.hero` / `home.valueProps`，而官网 v4 渲染的是
+  //    `homeV4.*`。实测枚举（官网仓 origin/main，排除 site.ts 自身）：
+  //    `HOME_V4` 25 处消费方，`HOME` / `VALUE_PROPS` **各 0 处** ⇒ 旧块整块是死的。
+  // ⚠️ 旧 `home` 块的必填校验（上面 `need(c.home?.hero, …)` 那几条）**保留**：
+  //    数据还在文件里，坏了照样要说话。⛔ 本轮不做数据清理（派单明写）。
+  const v4h = c.homeV4?.hero;
+  if (v4h !== undefined) {
+    if (!v4h || typeof v4h !== "object" || Array.isArray(v4h)) {
+      errors.push(err("homeV4.hero", "type", "homeV4.hero 必须是一个对象。"));
+    } else {
+      // ⚠️ 五个都必填：官网 hero 逐个渲染它们，缺一个就是页面上空一块（而构建不会失败）。
+      //    ⛔ 这里**没有** body —— v4 的 hero 不渲染副文案，后台也不再提供那个框。
+      need(v4h, "homeV4.hero", ["eyebrow", "headline", "headlineEm", "primaryCta", "secondaryCta"]);
+      for (const k of Object.keys(v4h)) {
+        if (!["eyebrow", "headline", "headlineEm", "primaryCta", "secondaryCta"].includes(k)) {
+          errors.push(err(`homeV4.hero.${k}`, "unknown_field", `官网 hero 不读这个键 —— 填了不会有任何效果。`));
+        }
+      }
+    }
+  }
+
+  const v4w = c.homeV4?.why?.cards;
+  if (v4w !== undefined) {
+    if (!Array.isArray(v4w)) {
+      errors.push(err("homeV4.why.cards", "type", "homeV4.why.cards 必须是数组（顺序即首页展示顺序）。"));
+    } else if (!v4w.length) {
+      errors.push(err("homeV4.why.cards", "empty", "至少留一张 —— 全空的话官网那一段只剩标题，下面空一片。"));
+    } else {
+      v4w.forEach((it: any, i: number) => {
+        const p = `homeV4.why.cards[${i}]`;
+        if (!it || typeof it !== "object" || Array.isArray(it)) {
+          errors.push(err(p, "type", `第 ${i + 1} 张必须是一个对象（icon / fig / title / body）。`));
+          return;
+        }
+        need(it, p, ["fig", "title", "body"]);
+        // 🔴 icon 是**闭集**，而官网那边是 `ICONS[c.icon] ?? ICONS.doc` ——
+        //    认不出**不报错、静默显示成 doc**。⇒ 这道闸是唯一会说话的地方。
+        if (typeof it.icon !== "string" || !WHY_ICON_KEYS.includes(it.icon)) {
+          errors.push(err(`${p}.icon`, "unknown_icon",
+            `「${it.icon}」不是官网认识的图标。只有 ${WHY_ICON_KEYS.join(" / ")} —— ` +
+            `官网碰到不认识的**不会报错，会静默显示成 doc**，所以这里必须拦下来。`));
+        }
+        for (const k of Object.keys(it)) {
+          if (!["icon", "fig", "title", "body"].includes(k)) {
+            errors.push(err(`${p}.${k}`, "unknown_field", `官网这张卡不读这个键 —— 填了不会有任何效果。`));
+          }
+        }
+      });
     }
   }
 

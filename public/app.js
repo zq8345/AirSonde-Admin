@@ -2805,6 +2805,27 @@ function mediaPanel(kind, preselectFolder) {
 //    症状是"我改了它没反应"，而界面上没有任何东西是坏的。
 //    ⛔ 修法不是在保存那里加一句 `if (sec === "home") 顺便带上 homeV4` ——
 //    那是把"这一节由哪些键组成"这件事散到第二个地方去；下一次再加一个块又会漏。
+/**
+ * 首页「为什么选我们」卡的图标闭集。
+ *
+ * 🔴 **真源不在本仓**：官网 `airsonde-web/src/pages/index.astro` 里那张 `ICONS` 表
+ *    （2026-09-05 实测：factory / chat / doc / star / send / reply / box）。
+ * ⚠️ 这是一份**必须靠人维护的抄件** —— 后台读不到官网源码，而官网那边
+ *    `ICONS[c.icon] ?? ICONS.doc` **认不出就静默回落**，不会有任何报错。
+ *    ⇒ 官网加了新图标而这里没跟：后台少一个可选项（人发现得了）。
+ *      官网删了一个而这里还留着：选了它站上会变成 doc（人发现不了）——**这一侧更危险**。
+ * ⛔ 别把它做成自由输入框来"绕开同步问题"：那等于把静默失效的入口开给每一次输入。
+ */
+const WHY_ICONS = [
+  { value: "factory", label: "工厂 factory" },
+  { value: "chat", label: "对话 chat" },
+  { value: "doc", label: "文件 doc" },
+  { value: "star", label: "星 star" },
+  { value: "send", label: "发送 send" },
+  { value: "reply", label: "回复 reply" },
+  { value: "box", label: "箱子 box" },
+];
+
 const SITE_SECTIONS = {
   // sub = 页头副标（C 批 §6：那条绿横幅压成这一句）；"保存 ≠ 上线"的完整版挂副标 title
   home: { title: "首页", keys: ["home", "homeV4"], sub: "官网首页文案 · 保存后约 1 分钟上线" },
@@ -2881,17 +2902,39 @@ function siteField(parent, path, label, hint, opts = {}) {
   if (hint) { const q = el("span", "q2", "?"); q.title = String(hint).replace(/\*\*/g, ""); lab.append(q); }
   wrap.append(lab);
   const cur = path.split(".").reduce((o, k) => (o == null ? o : o[k]), state.siteDraft) ?? "";
-  const input = el(opts.multiline ? "textarea" : "input");
-  input.id = id; input.value = cur;
+  // opts.options = [{value,label}] ⇒ **闭集下拉**。
+  // 🔴 加这一支是因为有一个字段的取值集合**写死在官网代码里**（首页 why 卡的 icon）：
+  //    官网是 `ICONS[c.icon] ?? ICONS.doc` —— 填一个它不认识的名字**不会报错，会静默变成 doc**。
+  //    ⇒ 那种字段绝不能给自由输入框：人以为自己选了个图标，站上是另一个，而两边都不吭声。
+  const input = el(opts.options ? "select" : opts.multiline ? "textarea" : "input");
+  input.id = id;
+  if (opts.options) {
+    for (const o of opts.options) input.append(new Option(o.label, o.value));
+    // ⚠️ 值不在闭集里时**补一个显式的选项**并选中它，⛔ 不静默回落到第一项 ——
+    //    静默回落会让"仓里存着一个非法值"这件事在界面上消失，而官网那边照样是坏的。
+    if (cur && !opts.options.some((o) => o.value === cur)) {
+      input.append(new Option(`${cur}（官网不认识这个值 —— 会显示成 doc 图标）`, cur));
+    }
+    input.value = cur;
+  } else {
+    input.value = cur;
+  }
   if (opts.ph) input.placeholder = opts.ph;
   if (opts.multiline) input.rows = opts.rows || 3;
   input.oninput = () => {
     // 写回草稿：一路建出中间对象，缺哪层补哪层
+    // ⚠️ 路径里的数字段是**数组下标**（`homeV4.why.cards.0.title`）——
+    //    缺层时要补 `[]` 而不是 `{}`，否则序列化出去就成了 `{"0":…}`，
+    //    而官网那边 `.map()` 在对象上直接不渲染 ⇒ 整段安静地消失。
     const parts = path.split("."); let o = state.siteDraft;
-    for (let i = 0; i < parts.length - 1; i++) o = (o[parts[i]] ??= {});
+    for (let i = 0; i < parts.length - 1; i++) {
+      o = (o[parts[i]] ??= /^\d+$/.test(parts[i + 1]) ? [] : {});
+    }
     o[parts[parts.length - 1]] = input.value;
     updateSiteDirty();
   };
+  // `<select>` 不发 input 事件的浏览器差异：change 也绑上，⛔ 不赌
+  if (opts.options) input.onchange = input.oninput;
   wrap.append(input);
   // ── A：留空时把**继承来的那句**显示出来 ──
   // 🔴 这一页存在的理由就是回答"这一页在搜索结果里会显示什么"。
@@ -3131,38 +3174,83 @@ function renderSite(keepDraft = false) {
     //    与两态皮同一条规矩：只换 class，⛔ 不重画字段。
     // ⚠️ 只挂在这两张卡上：SPEC 明写「首页精选产品及其他板块不动」，
     //    ⛔ 绝不改全局 `.field` —— 那会连联系方式 / SEO / 产品页一起换掉。
+    // 🔴🔴 2026-09-05：整块从 `home.hero` 改绑到 **`homeV4.hero`**。
+    //
+    // 起因是 Joe 抓到的一处生产不一致：后台显示「Browse products」而官网按钮是
+    // 「Browse all products」。查下来不是文案没同步 —— 是**后台接在一个死开关上**：
+    //   · 官网 v4 首页渲染 `HOME_V4 = content.homeV4`（`index.astro` 的 `V.hero.*`）
+    //   · 后台却在编 `content.home.hero.*`（经 site.ts 的 `HOME` 导出）
+    // 实测枚举（origin/main，排除 site.ts 自身）：`HOME_V4` 有 **25 处**消费方，
+    // 而 `HOME` / `VALUE_PROPS` / `HOME_SECTIONS` / `CONTACT_BLOCK` 各 **0 处**。
+    // ⇒ 旧 `home` 块**整块是死的**。在它上面改字，界面会说"保存成功"，官网纹丝不动。
+    //
+    // ⚠️ 键名与字段集**都不一样**，⛔ 不是改个前缀就完事（派单也明说别按旧键名猜）：
+    //   旧：eyebrow / headline / body / primaryCtaLabel / secondaryCtaLabel
+    //   新：eyebrow / headline / **headlineEm** / primaryCta / secondaryCta
+    // 🔴 `body`（副文案）**在 v4 里根本不存在** —— `index.astro` 的 hero 只渲染上面那五个。
+    //    ⇒ 那个输入框已从这里移除：留着它就是留一个"改了永远没反应"的控件。
+    //    ⚠️ 数据不动（派单：只解绑不删），旧值仍在 `home.hero.body` 里躺着。
     const h = siteCard("Hero", "首页第一屏");
     h.classList.add("card-inline");
-    siteField(h, "home.hero.eyebrow", "小标", null, { meta: "eyebrow" });
-    siteField(h, "home.hero.headline", "大标题", "首页的 H1，搜索引擎最看重的一行。", { meta: "H1" });
-    siteField(h, "home.hero.body", "副文案", null, { multiline: true, rows: 2 });
+    siteField(h, "homeV4.hero.eyebrow", "小标", null, { meta: "eyebrow" });
+    siteField(h, "homeV4.hero.headline", "大标题", "首页 H1 的**前半句**（深色那半）。搜索引擎最看重这一行。", { meta: "H1" });
+    siteField(h, "homeV4.hero.headlineEm", "大标题·后半句", "H1 的**后半句**，官网上是绿色那半（`<em>`）。两句连起来才是完整标题。", { meta: "绿字" });
     // Joe 2026-09-05（看过上线效果后）：次按钮**移到主按钮正下方**，不再左右两栏。
     // ⛔ 做法不是把 `.row2` 用 CSS 压成一列 —— 那会留下一个名叫「两栏」却渲染成一栏的类，
     //    下一个人照类名去理解布局就会被骗。⇒ 直接不要那个容器。
-    siteField(h, "home.hero.primaryCtaLabel", "主按钮文字", "只能改文字。按钮指向哪里（/contact）留在代码里 —— 链接改错是 404，文案改错只是难看。");
-    siteField(h, "home.hero.secondaryCtaLabel", "次按钮文字");
+    siteField(h, "homeV4.hero.primaryCta", "主按钮文字", "只能改文字。按钮指向哪里（/contact/）写死在官网代码里 —— 链接改错是 404，文案改错只是难看。");
+    siteField(h, "homeV4.hero.secondaryCta", "次按钮文字", "同上，它固定指向 /products/。");
     form.append(h);
 
-    // 卖点卡（§6 mockup）：每张 = row2（标题 | 正文），右上「删掉这张」红字；卡底「+ 加一张」描边小按钮
-    const v = siteCard("卖点卡", `首页那几张小卡 · ${(state.siteDraft.home.valueProps || []).length} 张`);
-    v.classList.add("card-inline");   // 同上（Joe 红框里的第二块）
-    (state.siteDraft.home.valueProps || []).forEach((_, i) => {
+    // ══ 「为什么选我们」四张卡 —— 原来叫「卖点卡」，2026-09-05 一并改绑 ══
+    //
+    // 🔴 与 Hero 同一个病：旧的 `home.valueProps` 经 `VALUE_PROPS` 导出，而**消费方 0 处**。
+    //    官网 v4 首页渲染的是 `V.why.cards`（`index.astro` 的 ⑤ WHY 段）。
+    // ⚠️ 字段也多了两个，⛔ 不是换个路径：旧 `{title, body}` → 新 `{icon, fig, title, body}`。
+    //    · `icon` 的取值**写死在官网代码里**（`ICONS` 那个表），而且是
+    //      `ICONS[c.icon] ?? ICONS.doc` —— 填错**静默变成 doc** ⇒ 这里给闭集下拉。
+    //    · `fig` 是卡片顶部那个大字（"Since 2015" / "< 48 h" / "100%" / "0"）。
+    // ⚠️ 官网 `.feat-row` 是 `repeat(4, 1fr)`，而渲染是 `.map()` **不截断** ⇒
+    //    第 5 张会自己掉到第二行独占一格（不是丢失，只是难看）——所以下面只提示、不阻断。
+    const whyCards = () => {
+      const w = ((state.siteDraft.homeV4 ??= {}).why ??= {});
+      if (!Array.isArray(w.cards)) w.cards = [];
+      return w.cards;
+    };
+    const cards = whyCards();
+    const v = siteCard("首页「为什么选我们」卡", `官网首页那一排 · ${cards.length} 张 · 官网一行排 4 张`);
+    v.classList.add("card-inline");
+    if (cards.length > 4) {
+      v.append(mkNotice("warn", `现在有 **${cards.length} 张**，而官网那一排是 4 列 ⇒ ` +
+        `**第 5 张起会掉到第二行**（不会丢，只是那一行不满）。不影响保存。`));
+    }
+    cards.forEach((_, i) => {
       const row = el("div", "vprop");
       const del = el("button", "vprop-del", "删掉这张"); del.type = "button";
       del.onclick = () => {
         // ⚠️ 数组是整块提交的，所以这里真删一条，保存后站上就少一张卡
-        state.siteDraft.home.valueProps.splice(i, 1);
-        if (!state.siteDraft.home.valueProps.length) { alert("至少要留一张 —— 全删掉首页那一段会整块空掉。"); state.siteDraft.home.valueProps = state.siteBase.home.valueProps.slice(0, 1); }
+        const cs = whyCards();
+        cs.splice(i, 1);
+        if (!cs.length) {
+          // ⚠️ 全删会让官网那一段只剩标题、下面空一片 ⇒ 拦住并说清原因
+          //    ⛔ 这里仍是 `alert`（本文件最后一个，已挂账给总工），本单不改它。
+          alert("至少要留一张 —— 全删掉的话官网那一段只剩标题，下面空一片。");
+          cs.push({ icon: "doc", fig: "", title: "", body: "" });
+        }
         renderSite(true);
       };
       row.append(del);
-      // Joe 2026-09-05：正文**移到标题正下方**，标题/正文不再左右分栏（同上，⛔ 不压 `.row2`）。
-      siteField(row, `home.valueProps.${i}.title`, `第 ${i + 1} 张 · 标题`);
-      siteField(row, `home.valueProps.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
+      siteField(row, `homeV4.why.cards.${i}.icon`, `第 ${i + 1} 张 · 图标`,
+        "取值是官网代码里写死的那几个。⚠️ 填一个它不认识的名字，官网**不会报错**，会静默显示成 doc 那个图标。",
+        { options: WHY_ICONS });
+      siteField(row, `homeV4.why.cards.${i}.fig`, `第 ${i + 1} 张 · 大字`,
+        "卡片顶部那个醒目的短字（如 Since 2015 / < 48 h / 100% / 0）。");
+      siteField(row, `homeV4.why.cards.${i}.title`, `第 ${i + 1} 张 · 标题`);
+      siteField(row, `homeV4.why.cards.${i}.body`, `第 ${i + 1} 张 · 正文`, null, { multiline: true, rows: 2 });
       v.append(row);
     });
     const add = el("button", "btn-secondary btn-mini", "+ 加一张"); add.type = "button";
-    add.onclick = () => { state.siteDraft.home.valueProps.push({ title: "", body: "" }); renderSite(true); };
+    add.onclick = () => { whyCards().push({ icon: "doc", fig: "", title: "", body: "" }); renderSite(true); };
     v.append(add);
     form.append(v);
 

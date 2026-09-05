@@ -265,6 +265,64 @@ const OKITEM = { slug: "ak35", tagline: "18-in-1 desktop", chips: ["CO₂", "PM2
   ck("⑪ 反向：没有 homeV4 也合法（不是必填）", validateSiteContent(c, c).ok);
 }
 
+// ══════ ⑬ homeV4.hero / homeV4.why.cards —— 后台 2026-09-05 起真正在写的两块 ══════
+//
+// 🔴 背景：后台原来编 `home.hero` / `home.valueProps`，而官网 v4 渲染 `homeV4.*`
+//    （实测：`HOME_V4` 25 处消费方，`HOME`/`VALUE_PROPS` 各 0 处）⇒ 后台一直接在死开关上。
+const HERO_OK = { eyebrow: "e", headline: "h", headlineEm: "em", primaryCta: "p", secondaryCta: "s" };
+const CARD_OK = { icon: "factory", fig: "Since 2015", title: "t", body: "b" };
+const V4HW = (hero, cards) => { const c = GOOD(); c.homeV4 = { hero, why: { cards } }; return c; };
+{
+  const c = V4HW(HERO_OK, [CARD_OK]);
+  ck("⑬ 正对照：合法的 hero + why.cards ⇒ 放行", validateSiteContent(c, c).ok,
+    JSON.stringify(validateSiteContent(c, c).errors));
+}
+{
+  const { headlineEm, ...noEm } = HERO_OK;
+  const c = V4HW(noEm, [CARD_OK]);
+  ck("⑬ hero 缺 headlineEm ⇒ 拒（官网 H1 的后半句会空掉，而构建不会失败）",
+    has(validateSiteContent(c, c), "required"));
+}
+{
+  // 🔴 旧字段名塞进新块：官网不读它 ⇒ 改了永远没反应。这正是这一整单要消灭的形状。
+  const c = V4HW({ ...HERO_OK, body: "副文案" }, [CARD_OK]);
+  ck("⑬ 🔴 hero 里出现 v4 不渲染的 body ⇒ 拒（填了不会有任何效果）",
+    has(validateSiteContent(c, c), "unknown_field"));
+}
+{
+  // 🔴🔴 最要紧的一条：官网是 `ICONS[c.icon] ?? ICONS.doc` —— 认不出**静默变 doc**。
+  //    这道闸是唯一会说话的地方。
+  const c = V4HW(HERO_OK, [{ ...CARD_OK, icon: "rocket" }]);
+  ck("⑬ 🔴 icon 不在官网闭集里 ⇒ 拒（官网会静默显示成 doc，没有任何报错）",
+    has(validateSiteContent(c, c), "unknown_icon"));
+}
+{
+  // ⚠️ 反向自证：闭集里的每一个都必须放行 —— ⛔ 否则"一律拒"也能让上面那条全绿
+  const bad = ["factory", "chat", "doc", "star", "send", "reply", "box"].filter((k) => {
+    const c = V4HW(HERO_OK, [{ ...CARD_OK, icon: k }]);
+    return !validateSiteContent(c, c).ok;
+  });
+  ck("⑬ 🔴 反向自证：闭集里那七个图标**逐个**都放行", bad.length === 0, "被拒的：" + bad.join(","));
+}
+{
+  const c = V4HW(HERO_OK, []);
+  ck("⑬ why.cards 空数组 ⇒ 拒（官网那段只剩标题、下面空一片）", has(validateSiteContent(c, c), "empty"));
+}
+{
+  const c = V4HW(HERO_OK, [{ ...CARD_OK, subtitle: "x" }]);
+  ck("⑬ 卡里的未知键 ⇒ 拒（官网不读它）", has(validateSiteContent(c, c), "unknown_field"));
+}
+{
+  const c = V4HW(HERO_OK, [{ icon: "doc", fig: "", title: "t", body: "b" }]);
+  ck("⑬ fig 是空串 ⇒ 拒（卡片顶部那个大字会空着）", has(validateSiteContent(c, c), "empty"));
+}
+{
+  // 🔴 迁移的关键一条：旧 `home` 块**还在文件里**（本轮只解绑不删），不能因此把保存挡住。
+  const c = V4HW(HERO_OK, [CARD_OK]);
+  ck("⑬ 🔴 旧 home.hero / home.valueProps 仍在 ⇒ 照旧合法（只解绑不删数据）",
+    validateSiteContent(c, c).ok && !!c.home.hero && !!c.home.valueProps);
+}
+
 // ══════ ⑫ certificates —— About 页四张认证卡指向的文件 ══════
 const CT = (certs) => { const c = GOOD(); c.certificates = certs; return c; };
 const FULL = { ce: "/certificates/ce.pdf", fcc: null, rohs: null, "un38-3": null };

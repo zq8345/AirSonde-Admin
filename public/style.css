@@ -288,7 +288,11 @@ label { display: block; font-size: 13px; font-weight: 600; margin-bottom: var(--
    ⚠️ 基准 200px + 允许换行：窄到放不下时输入框整个掉到下一行（回到原来的两行样子），
       ⛔ 而不是被挤成一条缝 —— 那才是"窄窗不横向溢出"的真做法。 */
 .card-inline .field { flex-wrap: wrap; }
+/* ⚠️ `select` 必须一起列上（2026-09-05 漏过一次）：不列的话它吃全局
+   `input, select, textarea { width: 100% }` ⇒ 撑满整行、把自己挤到标签下面去，
+   而其余字段都还在同一行 —— 一屏里出现两种排布，看起来像"这几个字段坏了"。 */
 .card-inline .field > input,
+.card-inline .field > select,
 .card-inline .field > textarea { flex: 1 1 200px; min-width: 0; }
 
 /* 🔴 行变矮之后，卖点卡右上角那个绝对定位的「删掉这张」**压到了正文文本域上**。
