@@ -180,12 +180,15 @@ for (const f of ["slug", "name", "model", "category", "sensors", "status", "imag
   check("④-b 关键：internal_field 仍然在 warnings 里（详情页要显示，只是不计入 badge）",
     r.warnings.some((w) => w.code === "internal_field"), JSON.stringify(wcodes(r)));
 }
-{
-  // 反向自证：这不是"把 warning 计数关掉了" —— 非状态说明类照常计数
-  const r = mut((p) => { p.model = "AK101"; p.name = "Air Gas Analyzer Monitor Quality Detector Tester System Indoor Equipment Pm 2.5 10 Device Aire Pollution Multi Smart 4G Desktop"; });
-  check("④-b 反向自证：真正需要处理的 warning 照常计数（不是把计数关掉了）",
-    actionableWarnCount(r.warnings) >= 1, `warnings=${JSON.stringify(wcodes(r))}`);
-}
+// 🔴 「④-b 反向自证：真正需要处理的 warning 照常计数」**已删，理由要留在这里**：
+//    它拿 `looks_like_listing_title` 当素材，而那条规则 2026-09-04 整块删了。
+//
+// ⚠️ 换个素材也测不了 —— **删掉它之后，`internal_field` 成了唯一的 warning，** 
+//    而它在 `INFO_CODES` 里 ⇒ **`actionableWarnCount()` 从此只可能返回 0。**
+//    ⇒ "计数没被关掉"这个性质**现在无法证伪**：写任何断言都恒绿，
+//      而恒绿的断言不度量任何东西（它与"闸坏了"长得一模一样）。
+// ⇒ 已上报：`warnCount` / `INFO_CODES` / `actionableWarnCount` 这一整套此刻是**空转**的，
+//    要不要退役由派单方定，⛔ 不在本单里顺手删。
 
 // ════════ 枚举 ════════
 {
@@ -233,19 +236,9 @@ const ALIBABA = "https://www.alibaba.com/product-detail/16-in-1-Air-Quality_1601
   check("⑥ 但要提示它是内部字段", hasWarn(r, "internal_field"), JSON.stringify(wcodes(r)));
 }
 
-// ════════ 硬规则 2：listing 标题（warning，不阻塞）════════
-{
-  // 契约原文里的反面例子，逐字照抄
-  const STUFFED = "Air Gas Analyzer Monitor Quality Detector Tester System Indoor Equipment Pm 2.5 10 Device Aire Pollution Multi Smart 4G Desktop";
-  const r = mut((p) => { p.name = STUFFED; });
-  check("⑦ 契约原文那个反例标题必须被吼", hasWarn(r, "looks_like_listing_title"), JSON.stringify(wcodes(r)));
-  check("⑦ 但只是 warning，不阻塞（判不了的事不硬拦）", r.ok, JSON.stringify(codes(r)));
-}
-{
-  // 反向自证：正常长名字不该被吼，否则这条 warning 天天误报，人就不看它了
-  const r = mut((p) => { p.name = "Wall-Mounted Indoor Air Quality Monitor with Display"; });
-  check("⑦ 反向自证：正常的长产品名不该被吼", !hasWarn(r, "looks_like_listing_title"), JSON.stringify(wcodes(r)));
-}
+// ⛔ 「硬规则 2：listing 标题」那三条已随规则本体一起删（Joe 2026-09-04）。
+//    ⚠️ ⛔ 不留一条"断言它不出现"的替身：那是在给一条已经不存在的规则立碑，
+//       而且它恒绿 —— 恒绿的断言不度量任何东西。
 
 // ════════ 其它字段规则 ════════
 {

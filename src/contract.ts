@@ -183,37 +183,17 @@ function scanSupplierLeak(p: any, out: Issue[]): void {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// 硬规则 2 的闸：`name` 不许照抄供应商 listing 标题
+// ⛔ 「硬规则 2 的闸」（`checkNameStuffing` + `STUFFING_WORDS` + `looks_like_listing_title`）
+//    **整块已删**（Joe 2026-09-04：「这个文字干掉」）。
 //
-// ⚠️ 这一条**做不成硬判据**，所以它是 warning 不是 error —— 并且我说明白为什么：
-//    "是不是照抄的"没有可判定的形式特征，真源（供应商标题）也不在我们手里。
-//    硬拦的话，一个正当的长产品名会被永久挡住，而人会去想办法绕过闸 —— 绕过之后就没人看了。
-//    ⇒ 这里只认**关键词堆砌的形态特征**，命中就吼一声让人自己看，不替他决定。
-//    契约里那个反面例子（"Air Gas Analyzer Monitor Quality Detector Tester System Indoor
-//    Equipment Pm 2.5 10 Device Aire Pollution Multi Smart 4G Desktop"）能被下面三条全部命中。
-const STUFFING_WORDS = [
-  "analyzer", "monitor", "detector", "tester", "device", "equipment",
-  "system", "meter", "sensor", "quality", "indoor", "smart", "multi",
-];
-
-function checkNameStuffing(name: string, out: Issue[]): void {
-  const words = name.trim().split(/\s+/);
-  const low = name.toLowerCase();
-  const hits = STUFFING_WORDS.filter((w) => low.includes(w));
-  const reasons: string[] = [];
-  if (words.length > 10) reasons.push(`${words.length} 个词`);
-  if (name.length > 70) reasons.push(`${name.length} 个字符`);
-  if (hits.length >= 4) reasons.push(`同义堆砌词 ${hits.length} 个（${hits.slice(0, 5).join("/")}）`);
-
-  // 三条特征命中两条才吼 —— 只中一条的多半是正当的长名字，吼了会变成噪音，
-  // 而一个天天误报的闸，人很快就不看它了。
-  if (reasons.length >= 2) {
-    out.push(err("name", "looks_like_listing_title",
-      `这个名字像是从供应商 listing 直接抄来的（${reasons.join("；")}）。` +
-      `供应商标题是给阿里站内搜索堆关键词的，放到自己官网上是灾难 —— 请改写成正常英文产品名。`));
-  }
-}
+// ⚠️ 删的是**元素与产生它的判断逻辑一起**，⛔ 不是用 CSS 把那句话藏起来 ——
+//    藏起来的话它仍在 warnings 里，仍会被计数、被别的地方渲染，
+//    而"看不见"与"不存在"在屏幕上同形。
+// ⚠️ 契约里那条硬规则本身（别照抄供应商 listing 标题）**没有作废** ——
+//    作废的是这个**自动判定**：它判不出"是不是照抄的"，只认关键词堆砌的形态，
+//    Joe 已经明确不要这个提示。⇒ 编辑页产品标题的 `?` 悬浮说明仍然保留（那是人自己看的）。
+// 🔴 与它配套的三条自检（contract-selftest 的 ⑦ 组）**同时删掉** ——
+//    留着会红，而"把断言改成期望它不出现"是在给一条已经不存在的规则立碑。
 
 /**
  * 🔴 这里原来有 `KNOWN_MODEL_PREFIXES` + `checkModelPrefix()`：model 不以 `AK` 开头
@@ -291,7 +271,6 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
   if (typeof p.name !== "string" || !p.name.trim()) {
     errors.push(err("name", "required", "name 必填（展示名）。"));
   } else {
-    checkNameStuffing(p.name, warnings);
   }
 
   // ---- model（必填。硬规则 3，契约 v1.3 修订）----
@@ -303,8 +282,10 @@ export function validateProduct(input: unknown, axes: Axes): ValidationResult {
   //
   // 现在的判据：必填 + 非空 + 不含供应商痕迹（供应商痕迹由 scanSupplierLeak 统一扫，
   // 它覆盖所有公开字段，model 不需要自己再写一遍）。
-  // 前缀只**吼一声**，不阻断 —— 与 checkNameStuffing 同构：
-  // 闸拦的是"确定错的"，吼的是"看着可疑但可能正当"。一个天天误报的闸，人很快就不看它了。
+  // ⚠️ 这里原来拿 `checkNameStuffing` 举例（"吼一声不阻断"那种闸）——
+  //    那条规则 2026-09-04 已整块删除，例子跟着删，⛔ 不留一个指向不存在的东西的引用。
+  //    道理本身仍然成立：闸拦的是"确定错的"，吼的是"看着可疑但可能正当"；
+  //    一个天天误报的闸，人很快就不看它了。
   if (typeof p.model !== "string" || !p.model.trim()) {
     errors.push(err("model", "required", "model 必填。"));
   }

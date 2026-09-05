@@ -1015,12 +1015,21 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
    ⚠️ 原来是缩略图下面一个整宽大虚线框，占了半屏 —— 而它承担的信息量只有"点这里加图"。
    ⚠️ 一张图都没有时它仍然在（它是网格里唯一的一格），且要看得出是可点的。 */
 .iadd {
-  /* 🔴 与 `.icard` 取**同一个** `--tile`，⛔ 不再写死 116 —— 卡片改边长时它自动跟上 */
-  width: var(--tile); flex: 0 0 auto;
-  /* ⚠️ 高度**不写死**：用 stretch 跟着同一行里最高的卡片走。
-     写死 116 的话，卡片底下那行文件名让它变成 120 —— 底边差 4px，网格看起来是歪的。
-     而写死的数字还会在将来卡片改高时**再错一次**，且没人会想到回来改这里。 */
-  height: var(--tile);
+  /* 🔴 `width: var(--tile)` / `height: var(--tile)` **两条都已删**（Joe 2026-09-04）：
+     `--tile` 在 967 行被改成"由列宽出"之后就**再没有被定义过** ⇒ 这两条声明
+     一直是 invalid-at-computed-value-time，**退回 auto，什么都没做**。
+     ⚠️ 未定义的自定义属性不报错、不变红 —— 上面那段注释描述的行为
+        （"与 .icard 取同一个 --tile"）**从来没有生效过**。
+
+     症状分两页，实测（1278 档）：
+       编辑页（8 张图）：166 × 198.4 —— grid 的 stretch 跟着同行最高的卡走，看着是方的
+       新建页（0 张图）：166 × **24** —— 没有兄弟可跟，塌成一个 `＋` 的行高
+                                        ⇒ Joe 看到的"一条横向宽虚线胶囊"
+     🔴 **同一份 CSS、同一个元素，只有空态坏** —— 而"空态"从来没有人量过。
+
+   ⇒ `aspect-ratio: 1/1` 让它自己就是方的，**不依赖有没有兄弟**。
+     ⛔ 不写死像素（列宽随视口变）；⛔ 不给"空态"加特例（那是同一个元素的同一条规则）。 */
+  aspect-ratio: 1 / 1;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px dashed var(--border); border-radius: var(--radius);
   background: var(--bg-app); cursor: pointer; color: var(--text-secondary);
