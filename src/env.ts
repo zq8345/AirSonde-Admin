@@ -79,6 +79,19 @@ export interface Env {
    */
   ALLOW_GITHUB_WRITE?: string;
 
+  /**
+   * 🔴 OpenRouter（DeepSeek 等）的密钥。**Worker secret**，⛔ 不进仓、⛔ 不进 vars、⛔ 不进日志。
+   * 只有 Joe 能放：`npx wrangler secret put OPENROUTER_API_KEY`。
+   * ⚠️ 没有它 ⇒ AI 端点**明报缺配置**（`AiError("missing_key")`），
+   *    ⛔ 不静默降级、⛔ 不返回空串假装成功。
+   */
+  OPENROUTER_API_KEY?: string;
+  /**
+   * AI 默认模型。⚠️ 做成变量是为了**模型被下架时不用等一次部署**就能换
+   *（请求体里也能传 model 覆盖它）—— 那是 CRM 窗真栽过的坑。
+   */
+  AI_MODEL?: string;
+
   // ---- 仅 scripts/dev.mjs 派生的本地配置里有；生产出现即 500 ----
   DEV_BYPASS_AUTH?: string;
 }
