@@ -4124,10 +4124,29 @@ $("#editPane").addEventListener("change", invalidatePreviewIfStale);
 function confirmDelete(slug) {
   const dlg = $("#delDlg");
   if (!dlg || typeof dlg.showModal !== "function") {
-    // ⚠️ 兜底也**不降低门槛**：拿不到 <dialog> 就退回原来那个输入 slug 的原生框，
-    //    ⛔ 不退回成一个"点确定就删"的 confirm()。
-    const typed = prompt(`删除 ${slug}？确认请输入它的 slug：\n${slug}`);
-    return Promise.resolve(typed === slug);
+    // 🔴 拿不到对话框 ⇒ **明确拒绝并说清**，⛔ 不删。
+    //
+    // ⚠️ 这里原来退回一个原生 `prompt`（要求输入 slug）。两个理由换掉它：
+    //   ① **它和主路径问的不是同一样东西** —— 主路径 2026-09-05 已改成输**型号**
+    //      （Joe 用型号认产品），而这条还在要 slug 且大小写敏感。
+    //      同一个函数两条分支问两样东西，真触发时他会以为"删不掉"。
+    //   ② 原生弹窗撞 Joe 的零弹窗常驻规矩，而且**会被浏览器抑制** ——
+    //      那正是这条流程当初重做的起因。一条几乎不触发的原生 prompt 路径，
+    //      就是一颗迟早撞上那条规矩的雷。
+    //
+    // ⇒ 与其维护一条死路径的一致性，不如让它**响亮地拒绝**
+    //   （"守卫会静默失效 ⇒ 换成不需要守卫的写法"）。
+    // ⛔ 绝不改成"直接返回 false 但不说话"：那就是"点了删除什么都不发生"，
+    //   正是 2026-09-05 刚修过的那个**挂死且无症状**的形状。
+    const box = $("#preview");
+    if (box) {
+      box.hidden = false; box.innerHTML = "";
+      box.append(mkNotice("bad",
+        "**删除确认框加载失败，这次没有删除任何东西。** 请刷新一下页面（Ctrl+R）再试。"
+        + "⚠️ 刷新之后如果还是这样，把这句话告诉开发窗 —— 那说明页面结构出问题了，⛔ 不是偶发。"));
+    }
+    console.error(JSON.stringify({ evt: "delete_dialog_missing", slug }));
+    return Promise.resolve(false);
   }
   // 🔴 **简洁版**（Joe 2026-09-05：「搞那么多文字干嘛」）。
   //    上一版每句都是真话，但**把机器的账本也说给他了** —— 数据文件名、"同一个 commit"
