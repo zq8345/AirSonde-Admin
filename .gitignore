@@ -8,3 +8,9 @@ dist/
 
 # scripts/dev.mjs 每次从 wrangler.jsonc 派生，绝不手改、绝不入库
 .wrangler.dev.jsonc
+
+# 开发工具自己的本机配置（Claude Code 的 .claude/launch.json 之类）。
+# 🔴 不是"整洁"问题，是**部署闸**问题：scripts/deploy.mjs 用 `git status --porcelain`
+#    判工作区脏不脏，而它把**未跟踪文件也算进去** ⇒ 这个目录一存在就永远部署不了，
+#    而当时看起来唯一的出路是 ALLOW_DIRTY_DEPLOY=1 —— 那恰恰是那道闸要挡的事。
+.claude/
