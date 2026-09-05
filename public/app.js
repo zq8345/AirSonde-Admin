@@ -2262,7 +2262,23 @@ async function loadMedia() {
   $("#mediaGroups").innerHTML = "";
   $("#mediaSummary").innerHTML = '<div class="notice notice-warn">读取中…</div>';
   try {
-    const { body } = await api("/api/media");
+    // 🔴🔴 文件夹网格的输入有**两个**，⛔ 不能只等一个：
+    //    ① `/api/media` 的文件清单 ② **产品列表**（`state.list`）。
+    //    未上架产品的图住在 `_draft/`，它们**没有自己的目录** ⇒ 那些卡完全由产品列表撑出来。
+    //
+    // ⚠️ 实测过的后果（2026-09-05，Joe 的截图与我的读数对不上才查出来）：
+    //    产品列表没到就渲染 ⇒ 页头印出「**27 个文件夹**」，而齐了是「**57 个文件夹**」——
+    //    少掉的正好是 30 个未上架产品。判别式：直接把 `state.list` 清空再重画，
+    //    57 → 27；还原 → 57。
+    // 🔴 最毒的地方在于**它不是"加载中"，是一个确定的错数字** ——
+    //    人看一眼会以为那 30 个产品的图没了。⇒ 两个都到齐才画。
+    // ⛔ 也不能"进来偷偷预拉一次"就算完：那只是把窗口变窄，取不到时同一个错还在
+    //    ⇒ 失败分支必须**说出来**（见 renderFolderGrid 里那条）。
+    state.listFailed = null;
+    const [{ body }] = await Promise.all([
+      api("/api/media"),
+      state.listMeta ? Promise.resolve() : loadList().catch((e) => { state.listFailed = String(e?.message || e); }),
+    ]);
     state.media = body;
     renderMedia();
   } catch (e) {
@@ -2382,8 +2398,22 @@ function renderFolderGrid(m) {
   const noImgs = [...productFolders].filter((k) => !filesFor(k).files.length).length;
 
   // ── 页头 ──
-  $("#mediaSub").textContent =
-    `${productFolders.size + Object.keys(SYS_FOLDERS).length} 个文件夹 · ${m.total} 张 · 在用 ${m.referenced}`;
+  //
+  // 🔴 产品清单没到 ⇒ **不许印文件夹数**。理由见 loadMedia 里那段：
+  //    未上架产品的卡完全由产品列表撑出来，清单一缺，这个数就是个**确定的错数字**
+  //    （实测 57 → 27），而它长得和正确答案一模一样。
+  // ⛔ 也不许静默少显示 —— 那与"这些文件夹不存在"在屏幕上同形。⇒ 位置照占、话照说。
+  const listReady = !!state.listMeta;
+  $("#mediaSub").textContent = listReady
+    ? `${productFolders.size + Object.keys(SYS_FOLDERS).length} 个文件夹 · ${m.total} 张 · 在用 ${m.referenced}`
+    : `${m.total} 张 · 在用 ${m.referenced}`;
+  if (!listReady) {
+    $("#mediaSummary").append(mkNotice("warn",
+      "**产品清单没读到 ⇒ 下面这些文件夹列不全。**" +
+      "未上架产品的图放在草稿区、没有自己的目录，它们的卡片要靠产品清单才画得出来。" +
+      (state.listFailed ? `（原因：${state.listFailed}）` : "") +
+      "⇒ 上面**没有**给出文件夹总数 —— 这时候给一个数就是给一个错数。刷新一下再看。"));
+  }
   const head = $("#mediaHead"); head.innerHTML = "";
   // 🔴 「未被引用」入口：**仅 N > 0 时出现**（0 的时候⛔ 不占位置）。
   //    它是唯一会引导破坏性操作（清理）的信号 —— 文件夹网格上只能看出**哪个文件夹**有孤儿，

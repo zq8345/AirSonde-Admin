@@ -122,8 +122,20 @@ const GOOD = () => ({
 
 // ══════ ⑥ 未知字段：静默吞掉 = "改了没反应"，最难查 ══════
 {
+  // ⚠️ 这一条**改过**（2026-09-05）：原来断言的是「不传基线也拒未知页面」，
+  //    而规则已换成「后台动了才判」⇒ 不传基线（GET 那种"只是显示一份体检报告"的用法）不下结论。
+  //    ⛔ 留着旧断言就是留一条测已废行为的检查 —— 它会在下一次改动时把人指向错的方向。
+  //    真正的判据搬到 ⑥c 那一组（新增/改动 ⇒ 拒；原样带过 ⇒ 放行）。
   const c = GOOD(); c.seo.pages.about = { title: "About", description: "x" };
-  ck("⑥ 站上没有的页面 ⇒ 拒并说明改了不会有效果", has(validateSiteContent(c), "unknown_page"));
+  ck("⑥ 不传基线（GET 的用法）⇒ 不报 unknown_page", !has(validateSiteContent(c), "unknown_page"));
+}
+{
+  // 但**说明必须仍然到位**：后台真去新增一页时，错误里要说清"改了不会有效果"
+  const base = GOOD(); const c = GOOD(); c.seo.pages.about = { title: "About", description: "x" };
+  const r = validateSiteContent(c, base);
+  ck("⑥ 后台新增未知页面时，理由要说清后台不会渲染它",
+    r.errors.some((e) => e.code === "unknown_page" && /不会渲染|不该悄悄/.test(e.message)),
+    JSON.stringify(r.errors.map((e) => e.message)));
 }
 // ── ⑥b 未知顶层节：判据是「**后台动没动它**」，不是「它存不存在」（2026-09-05 改）──
 //
@@ -164,6 +176,41 @@ const GOOD = () => ({
 {
   const c = GOOD(); c.home.valueProps[0].icon = "star";
   ck("⑥ valueProps 里的未知字段 ⇒ 拒", has(validateSiteContent(c), "unknown_field"));
+}
+// ── ⑥c `seo.pages` 里的未知页面：同一条「动了才判」（2026-09-05，同族第三次）──
+//
+// 🔴 前两次改的是顶层那道闸，而 `seo.pages` 里**还有第二道白名单**（SEO_PAGES 那张表）。
+//    官网仓往 seo.pages 加一页（about）⇒ 后台每一次保存都被 unknown_page 拦掉。
+//    ⚠️ "把外层放宽了" ≠ "里面每一道都放宽了" —— 每一道白名单都要单独过一遍。
+{
+  const base = GOOD(); base.seo.pages.about = { title: "About | AirSonde", description: "d" };
+  const same = JSON.parse(JSON.stringify(base));
+  const r = validateSiteContent(same, base);
+  ck("⑥c 🔴 官网仓加的页面**原样带过** ⇒ 放行（否则后台一次都存不了）", r.ok, JSON.stringify(r.errors));
+}
+{
+  const base = GOOD();
+  const c = GOOD(); c.seo.pages.about = { title: "后台自己加的", description: "d" };
+  ck("⑥c 反向：后台**新增**一个它不认识的页面 ⇒ 拒", has(validateSiteContent(c, base), "unknown_page"));
+}
+{
+  const base = GOOD(); base.seo.pages.about = { title: "原值", description: "d" };
+  const c = JSON.parse(JSON.stringify(base)); c.seo.pages.about.title = "被后台改了";
+  ck("⑥c 反向：后台**改动**它不认识的页面 ⇒ 拒", has(validateSiteContent(c, base), "unknown_page"));
+}
+{
+  // 🔴 反向自证：放宽的只有"未知页面"这一条 —— **已知四页照旧严校验**
+  //    ⛔ 少了这条，"传了基线就一路放行"这种改坏法会全绿。
+  const base = GOOD(); base.seo.pages.about = { title: "x", description: "d" };
+  const c = JSON.parse(JSON.stringify(base)); c.seo.pages.home.title = "   ";
+  ck("⑥c 🔴 反向自证：已知页面的空 title 仍被拒", has(validateSiteContent(c, base), "required"));
+}
+{
+  // ⚠️ 另一向仍是硬错误：SEO_PAGES 里有、JSON 里没有 ⇒ required。
+  //    这条决定了加新页面的**顺序**：官网仓先落键、后台再进表，⛔ 反过来会 422。
+  const base = GOOD(); const c = GOOD(); delete c.seo.pages.contact;
+  ck("⑥c 已知页面在 JSON 里缺失 ⇒ 仍拒（搜索结果里会是一行空白）",
+    has(validateSiteContent(c, base), "required"));
 }
 
 // ══════ ⑦ 合并：「我没收到」≠「用户要清空」 ══════

@@ -178,11 +178,27 @@ export function validateSiteContent(c: any, baseline?: any): { ok: boolean; erro
           `${pg.description.trim().length} 字符，超过 ${SEO_LIMITS.description} 通常会被截断。`));
       }
     }
+    // ── 未知页面：判据是「**后台动没动它**」，不是「我认不认识它」（2026-09-05 改）──
+    //
+    // 🔴 这是**同一个病在同一份文件上的第三次**：
+    //    ① 顶层块（homeV4/productsV1/…）②`certificates._readme` ③ 这里的 `seo.pages.*`。
+    //    前两次改的是顶层那道闸，而 `seo.pages` 里**还有第二道白名单**（`SEO_PAGES` 这张表）——
+    //    它没跟着改，于是官网仓往 `seo.pages` 加一页（`about`），后台的**每一次**站点内容保存
+    //    都会被 `unknown_page` 拦掉（已实测：拿真实 origin/main + about 跑一遍就是这个结果）。
+    // ⇒ 判据换成与顶层同一条：原样带过 ⇒ 放行；后台自己新增/改动一个它不认识的页面 ⇒ 拒。
+    //    这样闸的**原意一个字没松**（后台不许悄悄写它不理解的东西），而官网仓加页面不再锁死后台。
+    // ⚠️ 反过来那一向（`SEO_PAGES` 里有、而 JSON 里没有）仍然是硬错误（上面的 `required`）——
+    //    那确实是后台该管的：一个没有 title 的页面 = 搜索结果里一行空白。
+    //    ⇒ 所以给后台加新页面时，**顺序必须是"官网仓先落键、后台再进表"**，⛔ 反过来会 422。
     for (const k of Object.keys(pages)) {
-      if (!(k in SEO_PAGES)) {
-        errors.push(err(`seo.pages.${k}`, "unknown_page",
-          `站上没有叫「${k}」的页面。改这里不会有任何效果 —— 而"改了没反应"最难查。`));
-      }
+      if (k in SEO_PAGES) continue;
+      if (!baseline) continue;                       // 没基线 ⇒ 判不了"变没变"，⛔ 不下结论
+      const before = baseline?.seo?.pages?.[k];
+      if (JSON.stringify(before) === JSON.stringify(pages[k])) continue;   // 原样带过
+      errors.push(err(`seo.pages.${k}`, "unknown_page",
+        before === undefined
+          ? `后台想新增一个它不认识的页面「${k}」。后台不会渲染它，也不该悄悄写进去。`
+          : `后台改动了它不认识的页面「${k}」。这一页由官网仓维护，后台只该原样带过。`));
     }
   }
 

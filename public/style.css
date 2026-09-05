@@ -964,6 +964,11 @@ tr.pend-renamed, tr.pend-deleted { background: var(--bg-caution-soft); }
       ⛔ 不为一张 mockup 破闭集：闭集一旦开口，下一处就没有理由拒绝。 */
 .fgrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-16); }
 @media (max-width: 1100px) { .fgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* 🔴 再往下的两档（Joe 2026-09-05 批准）：原来只到 1100 就不降了 ⇒ 420px 时仍排 4 列、
+   每格被挤到 **77px**，`.main` 横向溢出 **42px**（实测；A/B 证过与 mint 那次改动无关）。
+   ⚠️ 断点值取本文件已有的那两个（820 / 560），⛔ 不新造一套。 */
+@media (max-width: 820px)  { .fgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .fcard {
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px;
   overflow: hidden; cursor: pointer; min-width: 0;
