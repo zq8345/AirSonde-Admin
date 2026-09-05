@@ -44,6 +44,9 @@ const SHAPE = {
     valueProps: "list",
     contactBlock: { title: "s!", body: "s!" },
   },
+  // 首页 v4（2026-09-05 上线）。后台**只写 `products.featured` 这一处**；
+  // 其余子块（hero/marquee/factory/…）是官网仓维护的，从这里原样穿过去。
+  homeV4: { products: { featured: "list" } },
 } as const;
 
 /** SEO 长度只给**警告**不给错误：超长不会让构建失败，只是搜索结果里被截断。 */
@@ -60,8 +63,12 @@ function walkStrings(v: unknown, path: string, fn: (s: string, p: string) => voi
 /**
  * 校验一份完整的 site-content。
  * 返回 `{ok, errors, warnings}`；**errors 非空 ⇒ 绝不允许写入**。
+ *
+ * @param baseline 仓里**现在**那一份（写入路径必传）。只有一个用处：判断"后台不认识的顶层块"
+ *   是被原样带过还是被改动了 —— 见文件末尾那段。⛔ 别拿它做别的比较，
+ *   已知字段一律按自身规则严校验，不因为"跟原来一样"就放过。
  */
-export function validateSiteContent(c: any): { ok: boolean; errors: Issue[]; warnings: Issue[] } {
+export function validateSiteContent(c: any, baseline?: any): { ok: boolean; errors: Issue[]; warnings: Issue[] } {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
 
@@ -189,6 +196,57 @@ export function validateSiteContent(c: any): { ok: boolean; errors: Issue[]; war
     }
   }
 
+  // ── homeV4.products.featured：首页 v4 那六张产品卡（**现在的真源**）──
+  //
+  // 🔴 上面那个 `home.featuredSlugs` 已经是死字段：首页 v4 不读它了（2026-09-05 合 main）。
+  //    ⚠️ 但**本轮不删它**（派单明写）—— 删数据是另一件事，而且删错了没有回头路。
+  //    这里两条都校验：旧的还在文件里，坏了照样要说话。
+  //
+  // ⚠️ 与旧字段的形状差别是**实打实的**，⛔ 不能当成"数组换了个名字"：
+  //    旧：`["slug", …]`　新：`[{slug, tagline, chips[]}, …]`
+  //    ⇒ 少写一个 tagline，首页上就是一张**没有说明文字**的卡（渲染得出来，只是空着）。
+  const fv = c.homeV4?.products?.featured;
+  if (fv !== undefined) {
+    if (!Array.isArray(fv)) {
+      errors.push(err("homeV4.products.featured", "type", "必须是数组（顺序即首页展示顺序）。"));
+    } else {
+      const seenV = new Set<string>(); const dupV = new Set<string>();
+      fv.forEach((it: any, i: number) => {
+        const p = `homeV4.products.featured[${i}]`;
+        if (!it || typeof it !== "object" || Array.isArray(it)) {
+          errors.push(err(p, "type", `第 ${i + 1} 张必须是一个对象（含 slug / tagline / chips）。`));
+          return;
+        }
+        if (typeof it.slug !== "string" || !it.slug.trim()) {
+          errors.push(err(`${p}.slug`, "required", `第 ${i + 1} 张没有选产品 —— 首页会拿不到图和型号。`));
+        } else {
+          const k = it.slug.trim();
+          if (seenV.has(k)) dupV.add(k);
+          seenV.add(k);
+        }
+        // tagline 空不算错（官网渲染得出来，只是那张卡少一行字）⇒ **警告**，让人看得见但存得下去
+        if (it.tagline != null && typeof it.tagline !== "string") {
+          errors.push(err(`${p}.tagline`, "type", "一句话说明必须是文字。"));
+        } else if (!String(it.tagline || "").trim()) {
+          warnings.push(err(`${p}.tagline`, "empty", `第 ${i + 1} 张没写那一句话 —— 首页上这张卡会少一行说明。`));
+        }
+        if (it.chips != null && (!Array.isArray(it.chips) || it.chips.some((x: any) => typeof x !== "string" || !x.trim()))) {
+          errors.push(err(`${p}.chips`, "type", "chips 必须是一组非空文字（如 CO₂ / PM2.5）。"));
+        }
+        for (const k of Object.keys(it)) {
+          if (k !== "slug" && k !== "tagline" && k !== "chips") {
+            errors.push(err(`${p}.${k}`, "unknown_field", `只支持 slug / tagline / chips —— 官网不读别的键。`));
+          }
+        }
+      });
+      if (dupV.size) {
+        // 与旧字段同一个理由：重复看起来像"某个产品没排上"，人会去找丢掉的那个。
+        errors.push(err("homeV4.products.featured", "duplicate",
+          `有重复的产品：${[...dupV].join("、")}。同一个产品会在首页出现两次。`));
+      }
+    }
+  }
+
   // ── 供应商痕迹：与产品同一条硬规则。这里**没有** supplierRef 那样的豁免字段。 ──
   walkStrings(stripReadme(c), "", (s, path) => {
     const low = s.toLowerCase();
@@ -201,12 +259,33 @@ export function validateSiteContent(c: any): { ok: boolean; errors: Issue[]; war
     }
   });
 
-  // ── 未知的顶层结构：拒收，不静默吞 ──
+  // ── 未知的顶层结构 ──
+  //
+  // 🔴 这条闸挡的是「**后台**悄悄写进一个它不认识的块」，⛔ 不是「文件里存在后台不认识的块」。
+  //    这两件事以前是同一个判据，而 2026-09-05 它把自己变成了一次生产故障：
+  //    官网仓陆续多了 `homeV4` / `productsV1` / `solutionsV3` / `contactV1` 四个块（Web 窗加的，
+  //    官网自己在读），于是**后台的每一次保存都 422** —— 改个邮箱都存不进去，而且
+  //    错误说的是"未知的顶层字段"，看起来像数据坏了，实际上是这道闸在拦一件它不该管的事。
+  //
+  // ⇒ 判据换成：**这个未知的块，和仓里原本那份一样吗？**
+  //    · 一样 ⇒ 后台只是把它原样带过（mergeSiteContent 不碰没收到的字段）—— 放行。
+  //    · 不一样 / 仓里原本没有 ⇒ 那就是后台在新增或改动一个它不认识的东西 —— 拒。
+  //    这样闸的**原意一个字没松**，而它不再因为别人往文件里加东西就把后台锁死。
+  //
+  // ⚠️ ⛔ 不采用"把这四个名字加进白名单"：那是给症状打补丁 ——
+  //    Web 窗下次再落一个 `aboutV2`，同一个生产故障会原样重演，而且照样没有征兆。
+  // ⚠️ `baseline` 缺省时（GET 只是要显示一份体检报告，没有"改动"这回事）**不报错**：
+  //    那种场景下"未知"不代表任何人做错了什么。
   for (const k of Object.keys(c)) {
     if (k === "_readme") continue;
-    if (!(k in SHAPE)) {
-      errors.push(err(k, "unknown_section", `未知的顶层字段「${k}」。后台不认识它 ⇒ 它不会被渲染，也不该被悄悄写进去。`));
-    }
+    if (k in SHAPE) continue;
+    if (!baseline) continue;                       // 没有基线 ⇒ 判不了"变没变"，就别下结论
+    const before = (baseline as any)[k];
+    if (JSON.stringify(before) === JSON.stringify((c as any)[k])) continue;   // 原样带过
+    errors.push(err(k, "unknown_section",
+      before === undefined
+        ? `后台想新增一个它不认识的顶层字段「${k}」。它不会被后台渲染，也不该被悄悄写进去。`
+        : `后台改动了它不认识的顶层字段「${k}」。这一块由官网仓维护，后台只该原样带过。`));
   }
 
   return { ok: errors.length === 0, errors, warnings };

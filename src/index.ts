@@ -1298,17 +1298,26 @@ app.get("/api/site-content", async (c) => {
     try {
       const products = await listExpanded(c.env);
       const by = new Map(products.filter((p: any) => p && !p.error).map((p: any) => [p.slug, p]));
-      const list: string[] = Array.isArray((content as any)?.home?.featuredSlugs)
-        ? (content as any).home.featuredSlugs : [];
+      // 🔴 真源换成 `homeV4.products.featured`（首页 v4，2026-09-05 合 main）。
+      //    ⚠️ 旧的 `home.featuredSlugs` **首页已经不读了** —— 还照它算的话，界面上显示的
+      //       是一份"改了也不会反映到首页"的清单，而那种错没有任何症状：页面好好的，只是没听你的。
+      //    ⚠️ 形状也变了：旧的是裸 slug 数组，新的是 `{slug, tagline, chips[]}`。
+      //       tagline/chips **原样带给界面**（它们是官网真读的字段，后台要能编辑）；
+      //       图 / 型号 / 上架状态仍旧从产品库解析 —— 那三样不进 site-content（`homeV4._readme` 也这么写）。
+      const raw = (content as any)?.homeV4?.products?.featured;
+      const list: any[] = Array.isArray(raw) ? raw : [];
       featured = {
         checked: true,
-        items: list.map((slug) => {
+        items: list.map((it) => {
+          const slug = typeof it === "string" ? it : String(it?.slug ?? "");
           const p = by.get(slug);
           // ⚠️ 卡片要画缩略图和型号 ⇒ 一并发过去。
           //    坏条目这两样**必然是 null**（产品不存在或读不出来）——
           //    界面要能靠这个画出"坏卡"，⛔ 而不是取不到图就跳过它。
           return { slug, exists: !!p, status: p?.status ?? null, name: p?.name ?? null,
                    image: p?.image ?? null, model: p?.model ?? null,
+                   tagline: typeof it === "string" ? "" : String(it?.tagline ?? ""),
+                   chips: Array.isArray(it?.chips) ? it.chips : [],
                    ok: !!p && p.status === "published" };
         }),
         // 可选清单：**只有已上架的**。未上架的选了等于选了一个官网上不存在的页面。
@@ -1358,7 +1367,10 @@ app.put("/api/site-content", async (c) => {
     if (scConflict) return c.json(scConflict, 409);
 
     const merged = mergeSiteContent(existing, body.patch);
-    const v = validateSiteContent(merged);
+    // 🔴 第二个参数是**仓里现在那一份**：未知顶层块（homeV4/productsV1/… 官网仓自己加的）
+    //    只有在"后台真的改动了它"时才算错，原样带过要放行。⛔ 不传的话每一次保存都会 422 ——
+    //    2026-09-05 生产上就是这个样子。理由写在 sitecontent.ts 末尾。
+    const v = validateSiteContent(merged, existing);
     if (!v.ok) {
       return c.json({ wrote: false, reason: "未通过站点内容校验，**没有产生任何 commit**", validation: v }, 422);
     }

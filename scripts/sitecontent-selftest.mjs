@@ -125,9 +125,41 @@ const GOOD = () => ({
   const c = GOOD(); c.seo.pages.about = { title: "About", description: "x" };
   ck("⑥ 站上没有的页面 ⇒ 拒并说明改了不会有效果", has(validateSiteContent(c), "unknown_page"));
 }
+// ── ⑥b 未知顶层节：判据是「**后台动没动它**」，不是「它存不存在」（2026-09-05 改）──
+//
+// 🔴 这条判据被改过一次，起因是它自己造成的一次生产故障：官网仓陆续多了
+//    homeV4 / productsV1 / solutionsV3 / contactV1 四个块（官网自己在读），
+//    而旧判据「文件里有后台不认识的块就拒」⇒ **后台每一次保存都 422**，改个邮箱都存不进去，
+//    而且错误说的是"未知的顶层字段"，看起来像数据坏了。
+// ⇒ 现在：原样带过放行；新增或改动 ⇒ 拒。下面把**两个方向**都钉住。
 {
+  const base = GOOD(); base.footer = { text: "官网仓自己加的块" };
+  const same = JSON.parse(JSON.stringify(base));
+  const r = validateSiteContent(same, base);
+  ck("⑥b 🔴 未知顶层节**原样带过** ⇒ 放行（生产上那四个块就是这个情形）", r.ok, JSON.stringify(r.errors));
+}
+{
+  const base = GOOD();
+  const c = GOOD(); c.footer = { text: "后台自己加的" };
+  ck("⑥b 反向：后台**新增**一个不认识的顶层节 ⇒ 拒", has(validateSiteContent(c, base), "unknown_section"));
+}
+{
+  const base = GOOD(); base.footer = { text: "原值" };
+  const c = JSON.parse(JSON.stringify(base)); c.footer.text = "被后台改了";
+  ck("⑥b 反向：后台**改动**一个不认识的顶层节 ⇒ 拒", has(validateSiteContent(c, base), "unknown_section"));
+}
+{
+  // GET 只是显示一份体检报告，没有"改动"这回事 ⇒ 不传基线时不该报这个错
   const c = GOOD(); c.footer = { text: "x" };
-  ck("⑥ 未知顶层节 ⇒ 拒", has(validateSiteContent(c), "unknown_section"));
+  ck("⑥b 不传基线（GET 的用法）⇒ 不报 unknown_section", !has(validateSiteContent(c), "unknown_section"));
+}
+{
+  // 🔴 反向自证：放宽的**只有**未知顶层节这一条 —— 已知字段照旧严校验。
+  //    ⛔ 少了这条，"传了基线就一路放行"这种改坏法会全绿。
+  const base = GOOD(); base.footer = { text: "x" };
+  const c = JSON.parse(JSON.stringify(base)); c.contact.email = "不是邮箱";
+  ck("⑥b 🔴 反向自证：带了基线也不放过已知字段的错（email 仍被拒）",
+    has(validateSiteContent(c, base), "email_shape"));
 }
 {
   const c = GOOD(); c.home.valueProps[0].icon = "star";
@@ -181,6 +213,56 @@ const GOOD = () => ({
   const r = validateSiteContent(c);
   ck("⑩ title 超长 ⇒ 警告，不是错误", r.ok && r.warnings.some((w) => w.code === "too_long"),
     `ok=${r.ok} warns=${JSON.stringify(r.warnings.map((w) => w.code))}`);
+}
+
+// ══════ ⑪ homeV4.products.featured —— 首页 v4 的产品位（2026-09-05 起的真源）══════
+//
+// ⚠️ 与旧的 `home.featuredSlugs` **形状不同**，⛔ 不是"数组换了个名字"：
+//    旧 `["slug", …]`　新 `[{slug, tagline, chips[]}, …]`。
+const V4 = (items) => { const c = GOOD(); c.homeV4 = { products: { featured: items } }; return c; };
+const OKITEM = { slug: "ak35", tagline: "18-in-1 desktop", chips: ["CO₂", "PM2.5"] };
+{
+  const c = V4([OKITEM, { slug: "ak36", tagline: "x", chips: [] }]);
+  const r = validateSiteContent(c, c);   // 正对照：合法的一份必须放行
+  ck("⑪ 正对照：合法的 featured ⇒ 放行", r.ok, JSON.stringify(r.errors));
+}
+{
+  const c = V4(["ak35"]);   // 旧形状塞进新字段
+  ck("⑪ 条目是裸字符串（旧形状）⇒ 拒", has(validateSiteContent(c, c), "type"));
+}
+{
+  const c = V4([{ slug: "", tagline: "x", chips: [] }]);
+  ck("⑪ 没选产品（slug 空）⇒ 拒 —— 首页会拿不到图和型号", has(validateSiteContent(c, c), "required"));
+}
+{
+  const c = V4([OKITEM, { ...OKITEM }]);
+  ck("⑪ 🔴 同一个产品出现两次 ⇒ 拒（看起来像「少了一个」，人会去找丢掉的那个）",
+    has(validateSiteContent(c, c), "duplicate"));
+}
+{
+  const c = V4([{ slug: "ak35", tagline: "", chips: [] }]);
+  const r = validateSiteContent(c, c);
+  ck("⑪ tagline 空 ⇒ **警告不是错误**（首页渲染得出来，只是少一行字）",
+    r.ok && r.warnings.some((w) => w.code === "empty"), `ok=${r.ok} ${JSON.stringify(r.warnings.map((w) => w.code))}`);
+}
+{
+  const c = V4([{ slug: "ak35", tagline: "x", chips: ["CO₂", ""] }]);
+  ck("⑪ chips 里有空串 ⇒ 拒（首页会渲染一个空标签）", has(validateSiteContent(c, c), "type"));
+}
+{
+  const c = V4([{ ...OKITEM, icon: "star" }]);
+  ck("⑪ 条目里的未知字段 ⇒ 拒（官网不读它 ⇒ 填了没反应）", has(validateSiteContent(c, c), "unknown_field"));
+}
+{
+  // 🔴 迁移的关键一条：旧字段**还在文件里**（本轮不清理），它不能因此把保存挡住。
+  const c = V4([OKITEM]); c.home.featuredSlugs = ["ak35", "ak36"];
+  ck("⑪ 🔴 旧字段 home.featuredSlugs 仍在 ⇒ 照旧合法（本轮不做数据清理）",
+    validateSiteContent(c, c).ok, JSON.stringify(validateSiteContent(c, c).errors));
+}
+{
+  // ⚠️ 反向：新字段整个不存在也合法 —— 官网仓那份可能还没落 homeV4
+  const c = GOOD();
+  ck("⑪ 反向：没有 homeV4 也合法（不是必填）", validateSiteContent(c, c).ok);
 }
 
 console.log(out.join("\n"));

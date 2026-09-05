@@ -677,10 +677,27 @@ function renderBatch() {
  * ⚠️ 数据可能还没读过（没进过「首页」那一页）⇒ 这时**说"没核过"，不说"没有"** ——
  *    把"我不知道"报成"没问题"，正是这一单要防的那种沉默。
  */
+/**
+ * 首页产品位的真源 —— **全文件只有这两个函数知道它在哪**。
+ *
+ * 🔴 2026-09-05 从 `home.featuredSlugs` 迁到 `homeV4.products.featured`：首页 v4 已合 main，
+ *    **旧字段官网不读了**。⚠️ 旧字段本轮不删（派单明写），但后台一个字也不再写它 ——
+ *    继续写它 = 界面上改了、首页纹丝不动，而这种错没有任何症状。
+ * ⚠️ 形状也变了：旧的是裸 slug 数组，新的是 `{slug, tagline, chips[]}`。
+ *    ⛔ 别在别处再写一次这个路径 —— 迁移之所以要枚举"谁假设了旧形态"，就是因为上一次
+ *    这个路径散在五处，改一处不改另一处不会有任何报错。
+ */
+const featList = (c) => {
+  const a = c?.homeV4?.products?.featured;
+  return Array.isArray(a) ? a : null;
+};
+const setFeatList = (d, next) => { ((d.homeV4 ??= {}).products ??= {}).featured = next; };
+
 function featuredAmong(slugs) {
-  const list = state.site?.content?.home?.featuredSlugs;
-  if (!Array.isArray(list)) return { known: false, hit: [] };
-  return { known: true, hit: slugs.filter((s) => list.includes(s)) };
+  const list = featList(state.site?.content);
+  if (!list) return { known: false, hit: [] };
+  const have = new Set(list.map((x) => (typeof x === "string" ? x : x?.slug)));
+  return { known: true, hit: slugs.filter((s) => have.has(s)) };
 }
 
 /** 把"会影响首页"这件事拼成一句人话，接在确认框后面。没影响就返回空串。 */
@@ -2781,11 +2798,18 @@ function mediaPanel(kind, preselectFolder) {
 //    当成"清空"的话，保存联系方式就会把首页文案抹掉，而两边都显示保存成功。
 // ⚠️ 字段清单不是我照着源码列的，是**照产出页实测过**的：每一条都在构建产物里
 //    渲染得出来。渲染不出来的（那两个 heading、整个 CAPABILITIES）**故意没放进来**。
+// 🔴 `keys` 是**复数**（2026-09-05 由 `key` 改）：一个视图可以管不止一个顶层节。
+//    ⚠️ 起因是一个会静默吃掉整次迁移的缺口：首页产品位从 `home.featuredSlugs` 迁到
+//    `homeV4.products.featured` 之后，改动落在 `homeV4` 里，而"算改动"和"发 patch"
+//    两处都只看 `home` 这一个键 ⇒ **保存按钮根本不会亮，改了也发不出去**。
+//    症状是"我改了它没反应"，而界面上没有任何东西是坏的。
+//    ⛔ 修法不是在保存那里加一句 `if (sec === "home") 顺便带上 homeV4` ——
+//    那是把"这一节由哪些键组成"这件事散到第二个地方去；下一次再加一个块又会漏。
 const SITE_SECTIONS = {
   // sub = 页头副标（C 批 §6：那条绿横幅压成这一句）；"保存 ≠ 上线"的完整版挂副标 title
-  home: { title: "首页", key: "home", sub: "官网首页文案 · 保存后约 1 分钟上线" },
-  contact: { title: "联系方式", key: "contact", sub: "站上的邮箱 / 电话 / 地图链接都由它们派生" },
-  seo: { title: "SEO", key: "seo", sub: "站级默认 + 逐页 title / description" },
+  home: { title: "首页", keys: ["home", "homeV4"], sub: "官网首页文案 · 保存后约 1 分钟上线" },
+  contact: { title: "联系方式", keys: ["contact"], sub: "站上的邮箱 / 电话 / 地图链接都由它们派生" },
+  seo: { title: "SEO", keys: ["seo"], sub: "站级默认 + 逐页 title / description" },
 };
 
 /**
@@ -3135,9 +3159,13 @@ function renderSite(keepDraft = false) {
 
     // ══ 首页精选产品（Joe 2026-08-27）══
     //
-    // 真源是 site-content.json 的 `home.featuredSlugs`，**数组顺序 = 首页展示顺序**。
+    // 真源是 site-content.json 的 `homeV4.products.featured`，**数组顺序 = 首页展示顺序**。
+    // 🔴 2026-09-05 从 `home.featuredSlugs` 迁过来：首页 v4 已合 main，**旧字段官网不读了**。
+    //    旧字段仍留在文件里（本轮不清理），但后台一个字也不写它。
     // ⚠️ 只能选**已上架**的：选一个未上架的等于指向一个官网上不存在的页面，
-    //    首页那张卡会渲染不出来 —— 而官网构建只打印警告、**不失败**，人不会知道。
+    //    首页那张卡会渲染不出来 —— 而官网构建只打印警告、**不失败**，人不会知道
+    //    （真源 index.astro:38 就是 `console.warn(... card skipped)`）。
+    // ⚠️ 还有一个硬上限：首页只取前 6 张有效卡（index.astro:44）—— 见 renderFeatured 里那道提示。
     renderFeatured(form);
 
     const o = siteCard("其它段落");
@@ -3201,10 +3229,10 @@ function renderSite(keepDraft = false) {
  */
 function renderFeatured(form) {
   const f = state.site?.featured;
-  const list = state.siteDraft?.home?.featuredSlugs;
-  if (!Array.isArray(list)) return;
+  const list = featList(state.siteDraft);
+  if (!list) return;
 
-  const card = siteCard("首页精选产品", `${list.length} 个 · 顺序就是首页的展示顺序`);
+  const card = siteCard("首页精选产品", `${list.length} 个 · 顺序就是首页的展示顺序 · 首页最多显示 6 张`);
   card.classList.add("card-featured");
 
   if (f && f.checked === false) {
@@ -3212,12 +3240,6 @@ function renderFeatured(form) {
       "下面只按 slug 显示，看不出哪些已经下架或不存在了。"));
   }
 
-  // ⚠️ 不是 4 的倍数就说一句 —— ⛔ 不阻断（实测 6 条渲染 6 张、9 条渲染 9 张，网格都不塌）
-  if (list.length % 4 !== 0) {
-    card.append(mkNotice("warn",
-      `现在是 **${list.length} 个**，不是 4 的倍数 —— 首页那个网格是 4 列，**最后一行会缺 ${4 - (list.length % 4)} 个位置**。` +
-      "不影响保存，也不会让构建失败，只是看起来会缺一角。"));
-  }
 
   // 🔴 查找表要**同时**盖住两种条目，⛔ 不能只用服务端算的那一份。
   //
@@ -3241,12 +3263,41 @@ function renderFeatured(form) {
                            name: p.name, image: p.image, model: p.model, ok: true });
   }
   for (const x of (f?.items || [])) byStatus.set(x.slug, x);
+
+  // ── 首页 v4 的**硬上限**：3 列 × 2 行 = 6 张（Joe 的首页 v4，2026-09-05 合 main）──
+  //
+  // 🔴 真源不是我数出来的，是官网源码写死的（`src/pages/index.astro:44`）：
+  //      const rows = [featured.slice(0, 3), featured.slice(3, 6)].filter(r => r.length > 0);
+  //    ⇒ **第 7 张起被官网直接丢掉**，不报错、不失败、页面照常渲染。
+  // ⚠️ 而且 slice 是在**过滤掉未上架的之后**才做的 ⇒ 数的是**有效卡**，不是列表长度。
+  //    ⛔ 拿 list.length 去判会在"列表里有坏条目"时给出错误的结论。
+  // ⚠️ 这里替换掉了原来那条「不是 4 的倍数」——首页 v4 是 3 列不是 4 列，
+  //    那句话现在是**假的**。⛔ 一个说假话的提示比没有提示更糟：人会照它去凑数量。
+  const okList = list.filter((x) => {
+    const s = typeof x === "string" ? x : x?.slug;
+    const st = byStatus.get(s);
+    return st && st.ok;
+  });
+  if (okList.length > 6) {
+    const dropped = okList.slice(6).map((x) => (typeof x === "string" ? x : x?.slug));
+    card.append(mkNotice("bad",
+      `**首页最多只显示 6 张。** 现在有 ${okList.length} 张能上首页的，` +
+      `**排在第 7 位之后的 ${dropped.length} 张会被官网直接丢掉** —— 不报错、页面照常渲染，` +
+      "所以从站上看不出它们没上去。⇒ 要么删掉几张，要么把想上的拖到前 6 位。"));
+  } else if (okList.length && okList.length !== 3 && okList.length !== 6) {
+    card.append(mkNotice("warn",
+      `现在有 **${okList.length} 张**能上首页的。首页是 **3 列**，` +
+      `**最后一行会缺 ${(3 - (okList.length % 3)) % 3} 个位置**。不影响保存，也不会让构建失败，只是看起来会缺一角。`));
+  }
   // ⭐ 卡片网格，**4 列**（Joe 2026-08-27）。
   //    🔴 4 不是随便挑的：官网首页就是 4 列 ⇒ **后台看到的排列 == 首页看到的排列**，
   //       排序时不用在脑子里做一次转换。这才是这一块改成可视化的价值。
   //    ⛔ 不显示 slug（Joe 前面刚让列表撤掉它，这里同理）。
   const ul = el("div", "featgrid");
-  list.forEach((slug, i) => {
+  list.forEach((it, i) => {
+    // ⚠️ 兼容读到裸字符串（迁移期间若哪份数据还是旧形状，⛔ 不能当场炸掉整页）——
+    //    但**写回去的一律是新形状**，⛔ 不把旧形状再写回仓里。
+    const slug = typeof it === "string" ? it : String(it?.slug ?? "");
     const st = byStatus.get(slug);
     // 🔴 `st` 压根查不到，也是**坏条目**，⛔ 不能当成"正常卡但字段恰好都空"。
     //    原来写的是 `st && !st.ok` ⇒ `st` 为 undefined 时它是 undefined（假值）⇒
@@ -3276,16 +3327,49 @@ function renderFeatured(form) {
       cardEl.append(el("div", "featslug", slug));   // ⚠️ 坏卡才显示 slug：这时它是**唯一**能指认是谁的东西
     }
 
+    // ── 首页 v4 新增的两个字段：一句话 + chips ──
+    //
+    // 🔴 它们**必须能在这里编辑**，否则这次迁移是把首页改坏：新加一张卡会写出
+    //    `{slug, tagline:"", chips:[]}` ⇒ 首页上那张卡没有说明文字、没有标签，
+    //    而它渲染得出来 —— 又是一个"看起来正常、其实缺了东西"的形状。
+    // ⚠️ 输入直接写回草稿对象、**不重画**：重画会让每敲一个字就丢一次焦点。
+    if (typeof it === "string") list[i] = { slug, tagline: "", chips: [] };   // 顺手升形状，⛔ 旧形状不再写回仓
+    const item = list[i];
+
+    const tag = el("input", "feattagin");
+    tag.value = String(item.tagline || "");
+    tag.placeholder = "一句话说明（首页卡上那行小字）";
+    tag.title = "首页那张卡上产品名下面的一行小字。留空的话卡上就少一行。";
+    tag.oninput = () => { item.tagline = tag.value; updateSiteDirty(); };
+
+    const chips = el("input", "featchipsin");
+    chips.value = (Array.isArray(item.chips) ? item.chips : []).join("、");
+    chips.placeholder = "标签，用「、」隔开（CO₂、PM2.5）";
+    // ⚠️ 这里对人说的是"用、隔开"，而**存进去的是数组** ——
+    //    ⛔ 别让人以为存的是一串文字：他要是在某个标签里写了顿号，那一个会被切成两个。
+    //    这是个真实存在的限制，写在 title 里，⛔ 不假装它不存在。
+    chips.title = "存进去的是一组标签（数组），这里只是用「、」来分隔。⚠️ 标签自身不能含「、」——含了会被切成两个。";
+    chips.oninput = () => {
+      item.chips = chips.value.split(/[、,]/).map((s) => s.trim()).filter(Boolean);
+      updateSiteDirty();
+    };
+    const fields = el("div", "featfields");
+    fields.append(tag, chips);
+    cardEl.append(fields);
+
     const rm = el("button", "featdel", "×"); rm.type = "button";
     rm.title = "从首页精选里移除（不删产品）";
     rm.onclick = () => {
-      state.siteDraft.home.featuredSlugs = list.filter((_, k) => k !== i);
+      setFeatList(state.siteDraft, list.filter((_, k) => k !== i));
       renderSite(true);
     };
     cardEl.append(rm);
 
     // 拖拽换序 —— 与图片列表同一套
     cardEl.addEventListener("dragstart", (e) => {
+      // 🔴 卡片是 draggable 的，而它现在**装着输入框**：在框里按住拖选文字，浏览器会
+      //    把它当成"开始拖这张卡" ⇒ 选不中字，还会莫名换序。⛔ 不能只靠"别那么操作"。
+      if (e.target.closest("input, textarea")) { e.preventDefault(); return; }
       state.featDrag = i; cardEl.classList.add("is-dragging");
       e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i));
     });
@@ -3303,7 +3387,11 @@ function renderFeatured(form) {
   card.append(ul);
 
   // 添加：**只列已上架、且还没在列表里的**
-  const pool = (f?.["选得到的"] || []).filter((p) => !list.includes(p.slug));
+  // ⚠️ 条目现在是对象 ⇒ 判"在不在列表里"要比 slug，⛔ 不能再 `list.includes(p.slug)`
+  //    （那个在新形状下**永远为假** ⇒ 已经在精选里的产品会重新出现在"可加"里，
+  //      加进去就是同一个产品在首页出现两次，而校验器要到保存那一刻才拦得住）。
+  const inList = new Set(list.map((x) => (typeof x === "string" ? x : x?.slug)));
+  const pool = (f?.["选得到的"] || []).filter((p) => !inList.has(p.slug));
   // ── 「加一个产品」：与上面那排卡**同一套视觉**（Joe 2026-08-28）──
   //
   // ⚠️ 原来是原生 `<select>`，只显示得了纯文本，而最长那条产品名是：
@@ -3329,7 +3417,8 @@ function renderFeatured(form) {
       b.append(v.thumb); b.append(v.body);
       b.title = `加入首页精选：${st?.name || p.slug}`;
       b.onclick = () => {
-        state.siteDraft.home.featuredSlugs = [...list, p.slug];
+        // 新形状：加进来的是一个对象。tagline/chips 先留空，卡片上就能直接填。
+        setFeatList(state.siteDraft, [...list, { slug: p.slug, tagline: "", chips: [] }]);
         renderSite(true);
       };
       grid.append(b);
@@ -3361,12 +3450,12 @@ function featVisual(st, slug, opts = {}) {
 
 /** 换序。⚠️ 单独一个函数，是为了拖拽之外也调得到（自检、将来的键盘操作）。 */
 function moveFeatured(from, to) {
-  const list = state.siteDraft?.home?.featuredSlugs;
-  if (!Array.isArray(list) || from === to || from == null || to == null) return;
+  const list = featList(state.siteDraft);
+  if (!list || from === to || from == null || to == null) return;
   const next = list.slice();
   const [m] = next.splice(from, 1);
   next.splice(to, 0, m);
-  state.siteDraft.home.featuredSlugs = next;
+  setFeatList(state.siteDraft, next);
   state.featDrag = null;
   renderSite(true);
 }
@@ -3391,9 +3480,11 @@ function siteChangedPaths() {
     }
     if (path) out.push(path);
   };
-  const sec = SITE_SECTIONS[state.siteSection]?.key;
-  if (!state.siteDraft || !state.siteBase || !sec) return out;
-  walk(state.siteBase[sec], state.siteDraft[sec], sec);
+  const keys = SITE_SECTIONS[state.siteSection]?.keys;
+  if (!state.siteDraft || !state.siteBase || !keys) return out;
+  // ⚠️ 逐个键走 —— 「首页」现在管 home + homeV4 两个顶层节。
+  //    漏掉一个的后果不是报错，是**保存按钮不亮**：他改了产品位，界面说"没有改动"。
+  for (const k of keys) walk(state.siteBase[k], state.siteDraft[k], k);
   return out;
 }
 
@@ -3401,7 +3492,8 @@ function siteChangedPaths() {
 $("#siteEdit").onclick = () => setSiteEditing(true);
 $("#siteCancel").onclick = () => { state.siteEditing = false; renderSite(); };
 $("#siteSave").onclick = async () => {
-  const sec = SITE_SECTIONS[state.siteSection].key;
+  const sec = state.siteSection;
+  const keys = SITE_SECTIONS[sec].keys;
   const changed = siteChangedPaths();
   if (!changed.length) return;
   if (!confirm(`确认保存 ${changed.length} 处改动？\n\n${changed.join("\n")}\n\n会产生一次 commit 并触发官网重建。`)) return;
@@ -3412,7 +3504,21 @@ $("#siteSave").onclick = async () => {
     const r = await fetch("/api/site-content", {
       method: "PUT", headers: { "content-type": "application/json" },
       // ⚠️ 只提交自己这一节 + 基线 sha（乐观锁）
-      body: JSON.stringify({ patch: { [sec]: state.siteDraft[sec] }, expectedSha: state.site.sha, section: sec }),
+      // 🔴 "自己这一节"现在可能是**多个顶层键**（首页 = home + homeV4）。
+      //    ⛔ 别再写成 `{ [sec]: … }` —— 那个形状把"节名"和"键名"当成了同一个东西，
+      //    而它们从 2026-09-05 起就不是了；漏掉的那个键会被**静默丢弃**（服务端合并时
+      //    "没收到" = "不动"），于是保存成功、首页产品位纹丝不动。
+      //
+      // ⚠️ `homeV4` 是**两个窗共有的块**：后台只拥有 `products.featured`，hero/marquee/factory…
+      //    都是官网仓那边维护的，而这里是**整块回传**。撑住它的是乐观锁（`expectedSha` 是
+      //    整个文件的 blob sha）⇒ 别人在我读到之后改过这个文件，这次保存会 **409**，
+      //    ⛔ 不会把他们的改动覆盖掉。
+      //    ⛔ 不要为此把 patch 收窄成 `{homeV4:{products:{featured}}}`：锁是**文件级**的，
+      //    收窄一个字也不会减少冲突，只会多出一套"这一节拥有哪些路径"的机器。
+      body: JSON.stringify({
+        patch: Object.fromEntries(keys.filter((k) => state.siteDraft[k] !== undefined).map((k) => [k, state.siteDraft[k]])),
+        expectedSha: state.site.sha, section: sec,
+      }),
     });
     const b = await r.json().catch(() => null);
     if (b?.wrote === true) {

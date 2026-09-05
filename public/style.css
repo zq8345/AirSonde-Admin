@@ -1293,10 +1293,18 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
    🔴 **4 列不是随便挑的**：官网首页就是 4 列 ⇒ 后台看到的排列 == 首页看到的排列，
       排序时不用在脑子里做一次转换。这才是这一块的价值。
    ⚠️ 窄屏才降列数 —— 降的是列数不是"改成另一种排布"，那样两边就对不上了。 */
-.card-featured .featgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-12); margin: var(--space-12) 0 0; }
-@media (max-width: 1100px) { .card-featured .featgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 🔴 2026-09-05 从 4 列改成 **3 列**：首页 v4 的产品段是 3 列 × 最多 2 行
+      （真源 `airsonde-web/src/pages/index.astro:44`：`[featured.slice(0,3), featured.slice(3,6)]`）。
+   ⚠️ 这一块之所以要跟官网对齐，理由就写在上面那句：**后台看到的排列 == 首页看到的排列**。
+      那么留着 4 列就不只是"看着不一样"，是让这条理由变成一句假话。 */
+.card-featured .featgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin: var(--space-12) 0 0; }
 @media (max-width: 820px)  { .card-featured .featgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px)  { .card-featured .featgrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 卡内的两个输入框（一句话 / chips）。⚠️ 卡片是 draggable 的 ⇒ 输入框要能正常选字：
+   拖拽的拦截在 JS 的 dragstart 里（见 app.js），这里只管长相。 */
+.featfields { display: flex; flex-direction: column; gap: var(--space-4); }
+.featfields input { font-size: 12px; padding: var(--space-4) var(--space-6); border-radius: 6px; }
 
 .featcard {
   position: relative; display: flex; flex-direction: column; gap: var(--space-6);
@@ -1365,13 +1373,14 @@ input::placeholder, textarea::placeholder { color: var(--hint); opacity: 1; }
 /* 🔴 与 `.card-featured .featgrid` **同一套断点**：后台看到的排列 == 首页看到的排列。
    ⛔ 别为选择器另立一套列数 —— 那会让同一批产品在两处排得不一样。 */
 .featpickgrid {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-8);
+  /* ⚠️ 跟着 featgrid 一起从 4 列改成 3 列（2026-09-05）——上面那句「同一套断点」是**判据**，
+     不是描述：改了一边不改另一边，那句话当场变成假话，而两处排列不同没有任何报错。 */
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8);
   /* 🔴 产品变多时**纵向滚动**，⛔ 绝不横向 ——
      这次改动的直接目的就是消灭那条被超长产品名拉出来的横滚。 */
   max-height: 320px; overflow-y: auto; overflow-x: hidden;
   padding: var(--space-4); margin: 0 calc(-1 * var(--space-4));
 }
-@media (max-width: 1100px) { .featpickgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 820px)  { .featpickgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px)  { .featpickgrid { grid-template-columns: minmax(0, 1fr); } }
 
