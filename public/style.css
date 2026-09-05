@@ -672,6 +672,35 @@ th.filt { position: relative; overflow: visible; }
    ⚠️ `margin-left:auto` 一并让出：它是给实心块按钮靠右用的，
       套在行内链接上会把「删除」推到格子最右边，与「改名」离得莫名其妙地远。
    ⛔ 不改 `.linkish` 去迁就它：`#deleteBtn` 那个真·实心红块按钮**要保持原样**。 */
+/* ══ 删除确认对话框（Joe 2026-09-05）══
+   原生 `<dialog>`：Esc / 遮罩 / 焦点陷阱由浏览器负责，这里只管长相。
+   ⚠️ 宽度用 min()：窄屏时它得跟着缩，⛔ 不写死一个在 990 分屏下会出血的宽度。 */
+.cdlg { width: min(460px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 12px 40px rgba(0,0,0,.22); }
+.cdlg::backdrop { background: rgba(16, 20, 24, .45); }
+.cdlg form { padding: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
+.cdlg h3 { margin: 0; font-size: 15px; font-weight: 700; }
+/* 删的是**哪一个** —— 型号 + 标题放最显眼处，⛔ 不让人靠"我记得我点的是哪个"去确认。 */
+.cdlg-what { font-size: 13px; font-weight: 600; padding: var(--space-8);
+  background: var(--bg-critical-soft); border-radius: 6px; color: var(--text-critical); word-break: break-word; }
+.cdlg-body { font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 3px; }
+.cdlg-li { line-height: 1.5; }
+.cdlg-feat { margin-top: var(--space-6); padding: var(--space-8); border-radius: 6px;
+  background: var(--bg-caution-soft); color: var(--text-caution); line-height: 1.5; white-space: pre-wrap; }
+.cdlg-lab { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-top: var(--space-6); }
+.cdlg-slug { font-family: var(--mono); font-size: 12px; padding: var(--space-6) var(--space-8);
+  background: var(--bg-app); border: 1px solid var(--border); border-radius: 5px; word-break: break-all; user-select: all; }
+.cdlg-foot { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-8); }
+/* ⚠️ 这里原来写着 `.cdlg-foot .danger { margin-left: 0 }`，想让两个键靠右并排 ——
+   **那条规则从来没赢过**：`button.danger:not(.linkish)`（0,2,1）压过 `.cdlg-foot .danger`（0,2,0），
+   它的 `margin-left:auto` 仍然生效（实测 computed = 314px）。
+   ⇒ 实际长相是**取消在左、删除在右、中间隔开**。
+
+   🔴 那个长相**对破坏性操作反而更好**（两个键离得远，误点的代价小）⇒ 保留它，
+     ⛔ 但把那条死规则删掉：一条什么都没做、而注释说它做了某事的规则，
+     比没有这条规则更坏 —— 下一个人会照着注释去理解布局。
+   ⚠️ 今天第三次撞上 `button.danger:not(.linkish)` 的特异性（分类页行高、这里）。 */
+
 button.danger:not(.linkish) { background: var(--bg-critical-soft); border: 1px solid var(--border-critical); color: var(--text-critical);
   padding: var(--space-8) var(--space-12); border-radius: 6px; font: inherit; cursor: pointer; margin-left: auto; }
 

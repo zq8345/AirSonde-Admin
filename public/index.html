@@ -20,7 +20,7 @@
      没人会替你算 hash。改了样式却不改这个串，用户刷新看到的还是旧 CSS ——
      而症状是"你说改了，我这儿没变"，最容易被当成"没做"。
      ⚠️ 改 style.css / app.js 时**必须同时改这个数字**。 -->
-<link rel="stylesheet" href="/style.css?v=123">
+<link rel="stylesheet" href="/style.css?v=126">
 </head>
 <body>
 
@@ -335,6 +335,32 @@
                ⚠️ 「删除…」在「保存」**左边**（Joe 定）：一个常用一个不可逆，
                   视觉权重必须拉开 —— 删除保持描边红字，⛔ 不做成红实心。 -->
           <button type="button" id="deleteBtn" class="danger" hidden>删除…</button>
+
+        <!-- ⭐ 删除确认对话框（Joe 2026-09-05：「点击删除需要加一个确认弹窗」）。
+             ⚠️ 现状核过：**本来就有确认**，但走的是原生 `prompt()` —— 他没把它当成"弹窗"，
+                而且原生框在某些浏览器设置下会被抑制。⇒ 换成页内自绘。
+
+             🔴 用原生 `<dialog>`，⛔ 不手搓 modal：Esc 关闭、`::backdrop`、焦点陷阱、
+                inert 背景**都是浏览器白送的**，手搓一套只会少几样而且没人发现少了哪样。
+
+             🔴 **输入 slug 才能删这一步保留** —— 原来的 prompt 就要求它。
+                Joe 要的是"有个弹窗"，⛔ 不是"更容易删"：删除不可逆，
+                借着换 UI 顺手把门槛降低，是把一条安全措施混在一次改版里删掉。
+             ⚠️ 确认键**不拿默认焦点**（autofocus 在取消上）—— 回车不该等于删除。 -->
+        <dialog id="delDlg" class="cdlg" aria-labelledby="delDlgTitle">
+          <form method="dialog">
+            <h3 id="delDlgTitle">删除这个产品？</h3>
+            <div id="delDlgWhat" class="cdlg-what"></div>
+            <div id="delDlgBody" class="cdlg-body"></div>
+            <label class="cdlg-lab" for="delDlgType">确认请输入它的 slug：</label>
+            <code id="delDlgSlug" class="cdlg-slug"></code>
+            <input id="delDlgType" type="text" autocomplete="off" spellcheck="false" placeholder="在这里输入上面那一串">
+            <div class="cdlg-foot">
+              <button type="submit" value="cancel" class="btn-secondary" id="delDlgNo" autofocus>取消</button>
+              <button type="submit" value="ok" class="danger" id="delDlgYes" disabled>删除</button>
+            </div>
+          </form>
+        </dialog>
           <button type="submit" form="editPane" class="primary" id="previewBtn" hidden>保存</button>
         </div>
       </div>
@@ -522,7 +548,7 @@
   </main>
 </div>
 
-<script src="/app.js?v=123"></script>
+<script src="/app.js?v=126"></script>
 </body>
 </html>
 

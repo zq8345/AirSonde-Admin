@@ -4065,12 +4065,100 @@ $("#editPane").addEventListener("change", invalidatePreviewIfStale);
 
 // ── 删除：二次确认要求打出 slug 本身 ──
 // ⚠️ 不用"你确定吗"那种确认框：它训练人闭着眼睛点确定。要求打出名字，是让手停一下。
+/**
+ * 删除确认框。返回 true 才继续删。
+ *
+ * 🔴 用原生 `<dialog>.showModal()`：Esc 关闭、`::backdrop`、焦点陷阱、背景 inert
+ *    **全是浏览器给的**。⛔ 不手搓 modal —— 手搓的那套总会少一样，而少的那样没人发现。
+ * ⚠️ 点遮罩关闭**要自己接**（`<dialog>` 不自带）：判据是"点击落在 dialog 元素本身"，
+ *    因为内容都在 `<form>` 里，落到 dialog 自己身上的只可能是遮罩区域。
+ * 🔴 确认键**不拿默认焦点**（autofocus 在取消上，见 HTML）—— 回车不该等于删除。
+ */
+function confirmDelete(slug) {
+  const dlg = $("#delDlg");
+  if (!dlg || typeof dlg.showModal !== "function") {
+    // ⚠️ 兜底也**不降低门槛**：拿不到 <dialog> 就退回原来那个输入 slug 的原生框，
+    //    ⛔ 不退回成一个"点确定就删"的 confirm()。
+    const typed = prompt(`删除 ${slug}？确认请输入它的 slug：\n${slug}`);
+    return Promise.resolve(typed === slug);
+  }
+  const p = state.loaded?.product || {};
+  const model = p.model || "(没有型号)";
+  const name = p.name || slug;
+  const imgs = [p.images?.main, ...(p.images?.gallery || [])].filter(Boolean);
+
+  $("#delDlgWhat").textContent = `${model} — ${name}`;
+  const body = $("#delDlgBody"); body.innerHTML = "";
+  // ⚠️ 走 appendMd，⛔ 不用 el(…, text)：`**粗体**` 靠 appendMd 变 <b>，
+  //    直接塞 textContent 会把星号**原样印在屏幕上**。
+  //    ⚠️ 同一个坑今天已经踩过一次（分类页那条悬空引用提示）—— 记在这里。
+  const li = (t) => appendMd(body.appendChild(el("div", "cdlg-li")), t);
+  li(`· 数据文件 ${slug}.json`);
+  // ⚠️ 图片张数**现算**，⛔ 不写"和它的图片"这种含糊话 —— 他要知道会少几张。
+  li(imgs.length ? `· 它引用的 ${imgs.length} 张图片（主图 + gallery）` : "· 它没有引用任何图片");
+  li("· 以上在**同一个 commit** 里删掉，官网随后自动重建，约 1 分钟后生效");
+  li("· **不可撤销** —— 要找回只能去 git 历史里翻");
+  const feat = featuredWarning([slug], "删除");
+  if (feat.trim()) appendMd(body.appendChild(el("div", "cdlg-feat")), feat.trim());
+
+  $("#delDlgSlug").textContent = slug;
+  const inp = $("#delDlgType"); inp.value = "";
+  const yes = $("#delDlgYes"); yes.disabled = true;
+  const no = $("#delDlgNo");
+  // 🔴 只有逐字相同才解锁 —— 与原来那个 prompt 同一个门槛，⛔ 没有放松。
+  inp.oninput = () => { yes.disabled = inp.value.trim() !== slug; };
+
+  // 🔴🔴 **不等 `close` 事件** —— 实测（in-app 预览浏览器）：点「取消」之后
+  //    `dlg.open` 变 false、`dlg.returnValue` 也更新了，**但 `close` 事件一次都没触发**
+  //    （`addEventListener("close")` 与 `onclose` 都没响）。
+  //    第一版就是等它 ⇒ Promise 永远不 settle ⇒ `await confirmDelete()` 挂死 ⇒
+  //    **点了删除什么都不发生，而且屏幕上没有任何异常**（按钮文案都没变）。
+  //
+  // ⛔ 修法不是"再多绑一个事件试试"（cancel / onclose / close 三个一起绑）——**那是继续赌事件**。
+  //    与本文件里 fitSensorRows 从 resize 事件改成观察列宽是同一条：
+  //    **在"决定真正发生的那个地方"决定**，⛔ 不依赖引擎是否派发某个通知。
+  //  ⇒ 三个出口各自 resolve：取消键 / 删除键 / 遮罩与 Esc。
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => {
+      if (done) return;                     // ⚠️ 三个出口可能重入（例如 Esc 之后表单又提交）
+      done = true;
+      dlg.onclick = null; dlg.onkeydown = null; inp.oninput = null;
+      no.onclick = null; yes.onclick = null;
+      try { if (dlg.open) dlg.close(); } catch { /* 已经关了就算了 */ }
+      resolve(v);
+    };
+    // ⚠️ 两个键都是 `type=submit`（`<form method=dialog>` 负责关框）——
+    //    这里**只负责给出答案**，⛔ 不 preventDefault：关框那件事交给浏览器做得更稳。
+    no.onclick = () => finish(false);
+    // 🔴 删除键上**再判一次** slug：按钮的 disabled 是可以被绕过的（改 DOM / 脚本），
+    //    而这是不可逆操作 ⇒ 判据落在**值本身**，⛔ 不落在按钮的状态上。
+    yes.onclick = () => finish(inp.value.trim() === slug);
+    // 点遮罩 = 取消（落在 dialog 元素本身上的点击只可能是遮罩，内容都在 <form> 里）
+    dlg.onclick = (e) => { if (e.target === dlg) finish(false); };
+    // Esc = 取消。⚠️ 自己接 keydown，⛔ 不依赖 `cancel`/`close` 事件（见上）。
+    dlg.onkeydown = (e) => { if (e.key === "Escape") finish(false); };
+    dlg.returnValue = "";
+    dlg.showModal();
+  });
+}
+
 $("#deleteBtn").onclick = async () => {
   const slug = state.slug;
   if (!slug) return;
-  const feat = featuredWarning([slug], "删除");
-  const typed = prompt(`删除会同时删掉这个产品的 JSON 和它的图片，并触发官网重建。${feat}\n\n确认请输入 slug：\n${slug}`);
-  if (typed !== slug) { if (typed !== null) alert("输入不匹配，已取消。"); return; }
+  // ⭐ 页内确认对话框（Joe 2026-09-05）。⛔ 不再用原生 prompt。
+  //
+  // 🔴 框里说的每一件事都必须**真的会发生** —— 这是上次那句
+  //    「删除仍然会二次确认」（承诺了一个不存在的护栏）的反面：
+  //    这次真有确认了，那就轮到"它说的后果必须属实"。
+  //    下面每一句都对着服务端 DELETE 的真实行为写（src/index.ts）：
+  //      · `planDelete` 删数据文件 + images.main + images.gallery，**同一个 commit**
+  //      · CF Pages 自动重建 ⇒ 官网约 1 分钟后生效
+  //      · 首页精选那一段由 featuredWarning 现算，⛔ 不写死
+  //    ⚠️ 有一种情况框里**不预告**：数据文件不是合法 JSON 时服务端只删数据文件、不删图。
+  //       那件事这里判不了（要读文件才知道），⇒ ⛔ 不承诺它，由服务端删完回报。
+  const ok = await confirmDelete(slug);
+  if (!ok) return;
   const btn = $("#deleteBtn"); btn.disabled = true; btn.textContent = "删除中…";
   let wroteOk = false, commitSha = null;
   try {
